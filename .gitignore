@@ -23,3 +23,5 @@ build/
 *.prefs
 .metadata/
 .factorypath
+
+/bin/

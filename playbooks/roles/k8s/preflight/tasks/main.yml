@@ -1,0 +1,7 @@
+- name: Parse k8s_interface
+  set_fact:
+    k8s_interface: "{{ item }}"
+  when:
+    - hostvars[inventory_hostname]['ansible_facts'][item]['ipv4'] | default({'address':''})| community.general.json_query('address') == k8s_ip
+  with_items:
+    - "{{ ansible_interfaces }}"

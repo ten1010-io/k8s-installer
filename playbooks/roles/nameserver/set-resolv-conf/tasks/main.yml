@@ -1,0 +1,18 @@
+- include_role:
+    name: host-configuration/disable-resolved
+
+- name: Set resolv.conf for nameserver
+  template:
+    dest: "/etc/resolv.conf"
+    src: nameserver-resolv.conf.j2
+    owner: root
+    mode: 0644
+  when: enable_nameserver
+
+- name: Set resolv.conf for forwarder
+  template:
+    dest: "/etc/resolv.conf"
+    src: forwarder-resolv.conf.j2
+    owner: root
+    mode: 0644
+  when: not enable_nameserver

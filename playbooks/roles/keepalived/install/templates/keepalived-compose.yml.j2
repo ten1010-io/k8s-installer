@@ -1,0 +1,16 @@
+services:
+  keepalived:
+    image: osixia/keepalived:2.0.20
+    command: [--copy-service]
+    volumes:
+      - /run/docker.sock:/run/docker.sock
+      - ./keepalived.conf:/container/service/keepalived/assets/keepalived.conf
+      - ./check_node.sh:/etc/keepalived/check_node.sh
+    environment:
+      TZ: Asia/Seoul
+    cap_add:
+      - NET_ADMIN
+      - NET_BROADCAST
+      - NET_RAW
+    network_mode: host
+    restart: always

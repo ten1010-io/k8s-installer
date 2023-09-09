@@ -1,0 +1,62 @@
+- name: Include tasks preflight.yml
+  include_tasks: preflight.yml
+
+- name: Delete cluster-boot-registry tmp bin directory
+  file:
+    path: /tmp/k8s-installer/bin/cluster-boot-registry
+    state: absent
+
+- name: Create cluster-boot-registry tmp bin directory
+  file:
+    path: /tmp/k8s-installer/bin/cluster-boot-registry
+    state: directory
+    mode: 0755
+    recurse: true
+
+- name: Copy registry-2.8-image.tar file to host
+  copy:
+    src: ../../../../bin/cluster-boot-registry/registry-2.8-image.tar
+    dest: /tmp/k8s-installer/bin/cluster-boot-registry
+
+- name: Copy cluster-boot-registry.tgz file to host
+  copy:
+    src: ../../../../bin/cluster-boot-registry/cluster-boot-registry.tgz
+    dest: /tmp/k8s-installer/bin/cluster-boot-registry
+
+- name: Load registry-2.8-image.tar
+  command: docker load -i /tmp/k8s-installer/bin/cluster-boot-registry/registry-2.8-image.tar
+
+- name: Create k8s_installer_var_root directory
+  file:
+    path: "{{ k8s_installer_var_root }}"
+    state: directory
+    mode: 0755
+    recurse: true
+
+- name: Extract cluster-boot-registry.tgz
+  command: tar xzf /tmp/k8s-installer/bin/cluster-boot-registry/cluster-boot-registry.tgz -C {{ k8s_installer_var_root }}
+
+- name: Create cluster-boot-registry directory
+  file:
+    path: "{{ docker_compose_root }}/cluster-boot-registry"
+    state: directory
+
+- name: Write tls_cert variable to tls.crt
+  copy:
+    content: "{{ tls_cert }}"
+    dest: "{{ docker_compose_root }}/cluster-boot-registry/tls.crt"
+
+- name: Write tls_key variable to tls.key
+  copy:
+    content: "{{ tls_key }}"
+    dest: "{{ docker_compose_root }}/cluster-boot-registry/tls.key"
+
+- name: Set compose.yml
+  template:
+    dest: "{{ docker_compose_root }}/cluster-boot-registry/compose.yml"
+    src: compose.yml.j2
+    owner: root
+    mode: 0644
+
+- name: Run the cluster-boot-registry service
+  command: "docker compose -f {{ docker_compose_root }}/cluster-boot-registry/compose.yml up -d"

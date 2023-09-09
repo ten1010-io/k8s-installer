@@ -1,0 +1,12 @@
+helm_chart_root: "{{ k8s_installer_etc_root }}/charts"
+
+# K8S control plane
+kubernetes_version: 1.27.9
+k8s_control_plane_endpoint_address: "k8s.example.com"
+k8s_control_plane_endpoint_port: "16443"
+
+# Helm packages...
+
+# Flannel
+enable_flannel: true
+flannel_iface_can_reach: "123.123.123.123"

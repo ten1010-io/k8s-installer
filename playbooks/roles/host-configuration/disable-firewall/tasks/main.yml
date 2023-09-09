@@ -1,0 +1,41 @@
+- name: Fail if distribution is not supported
+  fail:
+    msg: "{{ ansible_distribution }} is not supported"
+  when:
+    - ansible_distribution not in ["RedHat", "CentOS", "Ubuntu"]
+
+- name: Disable the firewalld service
+  block:
+  - name: Get firewalld service status
+    ansible.builtin.systemd:
+      name: "firewalld"
+    register: service_status
+
+  - name: Disable the firewalld service
+    systemd:
+      name: firewalld
+      state: stopped
+      enabled: false
+      masked: no
+    when:
+      - service_status.status.LoadState != "not-found"
+  when:
+    - ansible_distribution == "RedHat" or ansible_distribution == "CentOS"
+
+- name: Disable the ufw service
+  block:
+    - name: Get ufw service status
+      ansible.builtin.systemd:
+        name: "ufw"
+      register: service_status
+
+    - name: Disable the ufw service
+      systemd:
+        name: ufw
+        state: stopped
+        enabled: false
+        masked: no
+      when:
+        - service_status.status.LoadState != "not-found"
+  when:
+    - ansible_distribution == "Ubuntu"

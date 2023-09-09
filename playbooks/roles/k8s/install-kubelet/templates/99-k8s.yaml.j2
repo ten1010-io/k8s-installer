@@ -1,0 +1,11 @@
+network:
+{% if k8s_interface.startswith('bond') %}
+  bonds:
+{% else %}
+  ethernets:
+{% endif %}
+    {{ k8s_interface }}:
+      routes:
+        - to: 10.96.0.0/12
+          via: {{ k8s_ip }}
+  version: 2

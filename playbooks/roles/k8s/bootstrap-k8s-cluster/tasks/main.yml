@@ -1,0 +1,15 @@
+- name: Include tasks preflight.yml
+  include_tasks: preflight.yml
+
+- name: Include tasks initialize-first-control-plane.yml
+  include_tasks: initialize-first-control-plane.yml
+  when: "inventory_hostname == first_control_plane_k8s_node"
+
+- include_role:
+    name: k8s/attach-node
+  when: "inventory_hostname in (groups['k8s_node'] | difference(first_control_plane_k8s_node))"
+  vars:
+    kubeadm_init_stdout_lines: "{{ hostvars[first_control_plane_k8s_node]['kubeadm_init'].stdout_lines | default([]) }}"
+    kubeadm_token: "{{ kubeadm_init_stdout_lines | regex_search('--token ([^ ]+)', '\\1') | first}}"
+    kubeadm_discovery_token_ca_cert_hash: "{{ kubeadm_init_stdout_lines | regex_search('--discovery-token-ca-cert-hash ([^ ]+)', '\\1') | first}}"
+    kubeadm_certificate_key: "{{ kubeadm_init_stdout_lines | regex_search('--certificate-key ([\\w]+)', '\\1') | first }}"

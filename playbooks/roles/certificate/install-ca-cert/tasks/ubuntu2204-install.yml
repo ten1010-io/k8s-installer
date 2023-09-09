@@ -1,0 +1,19 @@
+- name: Set fact install_ca_supported from ubuntu2204
+  set_fact:
+    install_ca_supported: true
+
+- name: Create ca-certificates directory
+  file:
+    path: /usr/local/share/ca-certificates
+    state: directory
+    mode: 0755
+    recurse: true
+
+- name: Create a symbolic link of k8s-installer-ca.crt
+  file:
+    src: "{{ k8s_installer_etc_root }}/k8s-installer-ca.crt"
+    dest: /usr/local/share/ca-certificates/k8s-installer-ca.crt
+    state: link
+
+- name: Execute update-ca-certificates
+  command: "update-ca-certificates"

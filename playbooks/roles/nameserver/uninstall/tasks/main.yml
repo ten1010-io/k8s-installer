@@ -1,0 +1,17 @@
+- name: Stat nameserver directory
+  stat:
+    path: "{{ docker_compose_root }}/nameserver"
+  register: nameserver_directory
+
+- block:
+  - name: Include tasks remove-dns-from-daemon-json.yml
+    include_tasks: remove-dns-from-daemon-json.yml
+
+  - name: Remove nameserver service
+    command: "docker compose -f {{ docker_compose_root }}/nameserver/compose.yml down"
+
+  - name: Remove nameserver directory
+    file:
+      path: "{{ docker_compose_root }}/nameserver"
+      state: absent
+  when: nameserver_directory.stat.exists

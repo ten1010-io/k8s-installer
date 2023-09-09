@@ -1,0 +1,67 @@
+- name: Fail if distribution is not supported
+  fail:
+    msg: "{{ ansible_distribution }}{{ ansible_distribution_version }} is not supported"
+  when:
+    - minor_version | int > 3
+
+- name: Set fact install_docker_supported from ubuntu2204
+  set_fact:
+    install_docker_supported: true
+
+- name: Delete docker ubuntu2204 directory
+  file:
+    path: /tmp/k8s-installer/bin/docker-node/docker/ubuntu2204
+    state: absent
+
+- name: Create docker ubuntu2204 directory
+  file:
+    path: /tmp/k8s-installer/bin/docker-node/docker/ubuntu2204
+    state: directory
+    mode: 0755
+    recurse: true
+
+- name: From0
+  block:
+    - name: Copy docker ubuntu2204 files to host (from0)
+      copy:
+        src: ../../../../bin/docker-node/docker/ubuntu2204/from0
+        dest: /tmp/k8s-installer/bin/docker-node/docker/ubuntu2204
+
+    - name: Install docker dependency packages (from0)
+      shell: dpkg -i /tmp/k8s-installer/bin/docker-node/docker/ubuntu2204/from0/dependencies/*.deb
+      ignore_errors: true
+
+    - name: Install docker packages (from0)
+      shell: dpkg -i /tmp/k8s-installer/bin/docker-node/docker/ubuntu2204/from0/*.deb
+  when:
+    - minor_version | int >= 0
+    - minor_version | int <= 3
+
+- name: Install nvidia-container-toolkit
+  block:
+    - name: Delete nvidia-container-toolkit ubuntu2204 directory
+      file:
+        path: /tmp/k8s-installer/bin/docker-node/nvidia-container-toolkit/ubuntu2204
+        state: absent
+
+    - name: Create nvidia-container-toolkit ubuntu2204 directory
+      file:
+        path: /tmp/k8s-installer/bin/docker-node/nvidia-container-toolkit/ubuntu2204
+        state: directory
+        mode: 0755
+        recurse: true
+
+    - name: From0
+      block:
+        - name: Copy nvidia-container-toolkit ubuntu2204 files to host (from0)
+          copy:
+            src: ../../../../bin/docker-node/nvidia-container-toolkit/ubuntu2204/from0
+            dest: /tmp/k8s-installer/bin/docker-node/nvidia-container-toolkit/ubuntu2204
+
+        - name: Install nvidia-container-toolkit packages (from0)
+          shell: dpkg -i /tmp/k8s-installer/bin/docker-node/nvidia-container-toolkit/ubuntu2204/from0/*.deb
+      when:
+        - minor_version | int >= 0
+        - minor_version | int <= 3
+  when:
+    - nvidia_gpu_node | default(False) | bool == true

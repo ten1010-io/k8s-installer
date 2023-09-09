@@ -1,0 +1,20 @@
+- name: Fail if host is not in tls_cert_issuer group
+  fail:
+    msg: "host is not in tls_cert_issuer group"
+  when: inventory_hostname not in groups['tls_cert_issuer']
+
+- name: Fail if tls_domain_name is invalid
+  fail:
+    msg: "'{{ tls_domain_name | default('undefined') }}' is invalid domain name"
+  when: tls_domain_name is undefined or
+    tls_domain_name | length <= 0
+
+- name: Stat tls.crt
+  stat:
+    path: "{{ k8s_installer_etc_root }}/tls-certificate-issue-tool/output/{{ tls_domain_name }}/tls.crt"
+  register: output_tls_crt
+
+- name: Fail if tls.crt does not exist
+  fail:
+    msg: "File \"{{ k8s_installer_etc_root }}/tls-certificate-issue-tool/output/{{ tls_domain_name }}/tls.crt\" does not exist"
+  when: not output_tls_crt.stat.exists

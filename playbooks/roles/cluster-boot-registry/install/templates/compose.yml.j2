@@ -1,0 +1,20 @@
+services:
+  cluster-boot-registry:
+    image: registry:2.8
+    ports:
+      - "{{ cluster_boot_registry_port }}:5000"
+    volumes:
+      - "{{ k8s_installer_var_root }}/cluster-boot-registry:/var/lib/registry"
+      - "./tls.crt:/etc/registry/tls.crt"
+      - "./tls.key:/etc/registry/tls.key"
+    environment:
+      TZ: "Asia/Seoul"
+      REGISTRY_STORAGE_MAINTENANCE: |-
+        uploadpurging:
+          enabled: false
+        readonly:
+          enabled: true
+      REGISTRY_HTTP_TLS_CERTIFICATE: "/etc/registry/tls.crt"
+      REGISTRY_HTTP_TLS_KEY: "/etc/registry/tls.key"
+    network_mode: bridge
+    restart: always

@@ -1,0 +1,2 @@
+# NTP server
+ntp_server_offline_mode: false

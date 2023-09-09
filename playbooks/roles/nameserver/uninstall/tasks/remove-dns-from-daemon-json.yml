@@ -1,0 +1,21 @@
+- name: Load daemon_json variable from daemon.json
+  slurp:
+    src: /etc/docker/daemon.json
+  register: daemon_json
+
+- name: Remove dns field from daemon_json
+  set_fact:
+    daemon_json: "{{ daemon_json.content | b64decode | from_json | default({}) | combine({ 'dns': omit }) }}"
+
+- name: Write daemon_json variable to daemon.json
+  copy:
+    content: "{{ daemon_json | to_nice_json }}"
+    dest: /etc/docker/daemon.json
+
+- name: Restart docker
+  systemd:
+    name: docker
+    state: restarted
+    enabled: yes
+    daemon-reload: yes
+    masked: no

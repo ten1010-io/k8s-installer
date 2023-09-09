@@ -1,0 +1,14 @@
+services:
+  ntp-server:
+    image: cturra/ntp:latest
+    ports:
+      - 123:123/udp
+    environment:
+      TZ: Asia/Seoul
+{% if ntp_server_offline_mode %}
+      NTP_SERVERS: 127.127.1.1
+{% else %}
+      NTP_SERVERS: time1.google.com,time2.google.com,time3.google.com,time4.google.com
+{% endif %}
+    network_mode: bridge
+    restart: always

@@ -1,0 +1,15 @@
+# Nameserver
+nameserver_zone: "example.com"
+nameserver_a_records:
+  - host: "@"
+    ip: "123.123.123.123"
+  - host: "*"
+    ip: "123.123.123.123"
+  - host: "cluster-boot-registry"
+    ip: "123.123.123.123"
+  - host: "ns1"
+    ip: "123.123.123.123"
+  - host: "k8s"
+    ip: "123.123.123.123"
+  - host: "time"
+    ip: "123.123.123.123"

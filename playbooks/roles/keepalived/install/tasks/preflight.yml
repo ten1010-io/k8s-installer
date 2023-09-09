@@ -1,0 +1,40 @@
+- name: Stat keepalived directory
+  stat:
+    path: "{{ docker_compose_root }}/keepalived"
+  register: keepalived_directory
+
+- name: Fail if keepalived directory already exist
+  fail:
+    msg: "Directory \"{{ docker_compose_root }}/keepalived\" already exist"
+  when: keepalived_directory.stat.exists
+
+- name: Fail if keepalived_ip is invalid
+  fail:
+    msg: "'{{ keepalived_ip | default('undefined') }}' is invalid ip"
+  when: (keepalived_ip | default('undefined')) is not ansible.utils.ipv4
+
+- name: Parse keepalived_interface
+  set_fact:
+    keepalived_interface: "{{ item }}"
+  when:
+    - ansible_facts[item]['ipv4'] | default({'address':''})| community.general.json_query('address') == keepalived_ip
+  with_items:
+    - "{{ ansible_interfaces }}"
+
+- name: Fail if keepalived_interface is invalid
+  fail:
+    msg: "'{{ keepalived_interface | default('undefined') }}' is invalid interface"
+  when: keepalived_interface is undefined or
+    keepalived_interface | length <= 0
+
+- name: Set first_keepalived
+  set_fact:
+    first_keepalived: "{{ groups['keepalived'] | first }}"
+
+- name: Set peer_keepaliveds
+  set_fact:
+    peer_keepaliveds: "{{ groups['keepalived'] | difference(inventory_hostname) }}"
+
+- name: Set priority variable
+  ansible.builtin.set_fact:
+    priority: "{{ (101 - (lookup('ansible.utils.index_of', groups['keepalived'], 'eq', inventory_hostname) | int)) | int }}"

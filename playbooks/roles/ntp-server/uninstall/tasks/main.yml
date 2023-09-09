@@ -1,0 +1,14 @@
+- name: Stat ntp-server directory
+  stat:
+    path: "{{ docker_compose_root }}/ntp-server"
+  register: ntp_server_directory
+
+- block:
+  - name: Remove ntp-server service
+    command: "docker compose -f {{ docker_compose_root }}/ntp-server/compose.yml down"
+
+  - name: Remove ntp-server directory
+    file:
+      path: "{{ docker_compose_root }}/ntp-server"
+      state: absent
+  when: ntp_server_directory.stat.exists

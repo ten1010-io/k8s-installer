@@ -1,0 +1,19 @@
+- block:
+    - name: Check whether flannel is installed
+      command: "helm get notes -n kube-flannel flannel"
+      ignore_errors: true
+      register: helm_get_flannel
+
+    - block:
+        - name: Uninstall flannel
+          command: "helm uninstall --namespace kube-flannel flannel"
+
+        - name: Delete kube-flannel namespace
+          command: "kubectl delete ns kube-flannel"
+      when: helm_get_flannel.rc == 0
+  when: not skip_uninstall_from_cluster
+
+- name: Remove flannel directory
+  file:
+    path: "{{ helm_chart_root }}/flannel"
+    state: absent

@@ -1,0 +1,14 @@
+- name: Stat keepalived directory
+  stat:
+    path: "{{ docker_compose_root }}/keepalived"
+  register: keepalived_directory
+
+- block:
+    - name: Remove keepalived service
+      command: "docker compose -f {{ docker_compose_root }}/keepalived/compose.yml down"
+
+    - name: Remove keepalived directory
+      file:
+        path: "{{ docker_compose_root }}/keepalived"
+        state: absent
+  when: keepalived_directory.stat.exists

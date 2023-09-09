@@ -1,0 +1,25 @@
+- name: Parse addresses of cluster's nodes
+  command: "{{cmd}}"
+  register: nodes_addresses
+  changed_when: false
+  vars:
+    cmd: !unsafe kubectl get nodes -o go-template='{{range .items}}["{{.metadata.name}}"{{range .status.addresses}}, "{{.address}}"{{end}}]{{"\n"}}{{end}}'
+
+- name: Set node_name variable
+  set_fact:
+    node_name: "{{ item }}"
+  with_items: "{{ nodes_addresses.stdout_lines | map('from_json') | community.general.json_query(query) }}"
+  vars:
+    query: "[? contains(@, '{{ target_node_k8s_ip }}')][0]"
+
+- name: Fail if node_name is invalid
+  fail:
+    msg: "'{{ node_name | default('undefined') }}' is invalid node name"
+  when: node_name is undefined or
+    node_name | length <= 0
+
+- name: Drain node
+  command: "kubectl drain --ignore-daemonsets --delete-emptydir-data --force {{ node_name }}"
+
+- name: Delete node
+  command: "kubectl delete node {{ node_name }}"

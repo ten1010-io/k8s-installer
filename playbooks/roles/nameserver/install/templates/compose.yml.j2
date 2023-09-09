@@ -1,0 +1,13 @@
+services:
+  nameserver:
+    image: ubuntu/bind9:9.18-22.04_beta
+    ports:
+      - 53:53/udp
+    volumes:
+      - ./named.conf.options:/etc/bind/named.conf.options
+      - ./named.conf.local:/etc/bind/named.conf.local
+      - ./db:/etc/bind/db
+    environment:
+      TZ: Asia/Seoul
+    network_mode: bridge
+    restart: always

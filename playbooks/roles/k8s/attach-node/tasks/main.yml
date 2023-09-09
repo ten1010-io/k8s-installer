@@ -1,0 +1,20 @@
+- name: Include tasks preflight.yml
+  include_tasks: preflight.yml
+
+- name: Include tasks create-kubeadm-token.yml
+  include_tasks: create-kubeadm-token.yml
+  when: kubeadm_token is undefined
+
+- name: Join as control plane
+  block:
+    - name: Join as control plane
+      command: "kubeadm join '{{ k8s_control_plane_endpoint_address }}:{{ k8s_control_plane_endpoint_port }}' --apiserver-advertise-address '{{ k8s_ip }}' --token {{ kubeadm_token }} --discovery-token-ca-cert-hash {{ kubeadm_discovery_token_ca_cert_hash }} --control-plane --certificate-key {{ kubeadm_certificate_key }}"
+      throttle: 1
+
+    - name: Set kubectl config
+      shell: "mkdir -p $HOME/.kube && \\cp /etc/kubernetes/admin.conf $HOME/.kube/config && sudo chown $(id -u):$(id -g) $HOME/.kube/config"
+  when: "inventory_hostname in (groups['control_plane_k8s_node'])"
+
+- name: Join as worker
+  command: "kubeadm join '{{ k8s_control_plane_endpoint_address }}:{{ k8s_control_plane_endpoint_port }}' --token {{ kubeadm_token }} --discovery-token-ca-cert-hash {{ kubeadm_discovery_token_ca_cert_hash }}"
+  when: "inventory_hostname in (groups['non_control_plane_k8s_node'] | default([]))"

@@ -1,0 +1,100 @@
+- hosts: all:localhost
+  gather_facts: true
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: gather-facts
+
+- hosts: k8s_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: k8s/preflight
+    - include_role:
+        name: k8s/uninstall-packages
+      vars:
+        skip_uninstall_from_cluster: true
+      when: inventory_hostname == first_control_plane_k8s_node
+    - include_role:
+        name: k8s/reset-kubelet
+    - include_role:
+        name: k8s/uninstall-kubelet
+
+- hosts: ntp_server_client
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: ntp-server/set-ntp-client-conf
+      vars:
+        enable_ntp_server: false
+
+- hosts: ntp_server
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: ntp-server/uninstall
+      when: enable_ntp_server
+
+- hosts: k8s_haproxy
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: k8s-haproxy/uninstall
+      when: enable_k8s_haproxy
+
+- hosts: nameserver_client
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: nameserver/set-resolv-conf
+      vars:
+        enable_nameserver: false
+
+- hosts: nameserver
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: nameserver/uninstall
+      when: enable_nameserver
+
+- hosts: cluster_boot_registry
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: cluster-boot-registry/uninstall
+
+- hosts: keepalived
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: keepalived/uninstall
+      when: enable_keepalived
+
+- hosts: docker_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: docker/uninstall
+
+- hosts: ca_client
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: certificate/uninstall-ca-cert
+
+- hosts: tls_cert_issuer
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: certificate/uninstall-tls-issue-tool

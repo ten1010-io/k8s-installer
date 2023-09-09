@@ -1,0 +1,9 @@
+- name: Fail if host is not in first_control_plane_k8s_node group
+  fail:
+    msg: "host is not in first_control_plane_k8s_node group"
+  when: inventory_hostname != first_control_plane_k8s_node
+
+- name: Fail if skip_uninstall_from_cluster is undefined
+  fail:
+    msg: "Variable skip_uninstall_from_cluster is undefined"
+  when: skip_uninstall_from_cluster is undefined

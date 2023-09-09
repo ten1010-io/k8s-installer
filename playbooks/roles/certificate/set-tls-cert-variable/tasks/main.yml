@@ -1,0 +1,20 @@
+- name: Include tasks preflight.yml
+  include_tasks: preflight.yml
+
+- name: Load tls_cert variable from tls.crt
+  slurp:
+    src: "{{ k8s_installer_etc_root }}/tls-certificate-issue-tool/output/{{ tls_domain_name }}/tls.crt"
+  register: tls_cert_slurp
+
+- name: Set tls_cert variable
+  set_fact:
+    tls_cert: "{{ tls_cert_slurp.content | b64decode }}"
+
+- name: Load tls_key variable from tls.key
+  slurp:
+    src: "{{ k8s_installer_etc_root }}/tls-certificate-issue-tool/output/{{ tls_domain_name }}/tls.key"
+  register: tls_key_slurp
+
+- name: Set tls_key variable
+  set_fact:
+    tls_key: "{{ tls_key_slurp.content | b64decode }}"

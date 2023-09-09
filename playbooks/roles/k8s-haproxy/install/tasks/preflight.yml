@@ -1,0 +1,9 @@
+- name: Stat k8s-haproxy directory
+  stat:
+    path: "{{ docker_compose_root }}/k8s-haproxy"
+  register: k8s_haproxy_directory
+
+- name: Fail if k8s-haproxy directory already exist
+  fail:
+    msg: "Directory \"{{ docker_compose_root }}/k8s-haproxy\" already exist"
+  when: k8s_haproxy_directory.stat.exists

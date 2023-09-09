@@ -1,0 +1,71 @@
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: preflight/ensure-bin-directory-exist
+
+- hosts: all:localhost
+  gather_facts: true
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: gather-facts
+
+- hosts: tls_cert_issuer
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: certificate/uninstall-tls-issue-tool
+    - include_role:
+        name: certificate/install-tls-issue-tool-and-create-ca
+    - include_role:
+        name: certificate/set-ca-cert-variable
+
+- hosts: ca_client
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: certificate/uninstall-ca-cert
+    - include_role:
+        name: certificate/install-ca-cert
+      vars:
+        ca_cert: "{{ hostvars[groups['tls_cert_issuer'] | first]['ca_cert'] }}"
+
+- hosts: tls_cert_issuer
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: certificate/create-tls-cert
+      vars:
+        tls_domain_name: "{{ cluster_boot_registry_domain_name }}"
+    - include_role:
+        name: certificate/set-tls-cert-variable
+      vars:
+        tls_domain_name: "{{ cluster_boot_registry_domain_name }}"
+
+- hosts: cluster_boot_registry
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: cluster-boot-registry/uninstall
+    - include_role:
+        name: cluster-boot-registry/install
+      vars:
+        tls_cert: "{{ hostvars[groups['tls_cert_issuer'] | first]['tls_cert'] }}"
+        tls_key: "{{ hostvars[groups['tls_cert_issuer'] | first]['tls_key'] }}"
+
+- hosts: docker_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Restart docker service
+      systemd:
+        state: restarted
+        enabled: true
+        daemon_reload: true
+        name: docker

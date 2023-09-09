@@ -1,0 +1,3 @@
+# Keepalived
+enable_keepalived: true
+keepalived_vip: "123.123.123.123"

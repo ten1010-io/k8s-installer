@@ -1,0 +1,47 @@
+- name: Include tasks preflight.yml
+  include_tasks: preflight.yml
+
+- block:
+    - name: Include tasks ubuntu2204-install.yml
+      include_tasks: ubuntu2204-install.yml
+      when:
+        - ansible_distribution in ["Ubuntu"]
+        - major_version == "22.04"
+
+    - name: Include tasks rhel8-install.yml
+      include_tasks: rhel8-install.yml
+      when:
+        - ansible_distribution in ["RedHat"]
+        - major_version == "8"
+
+    - name: Include tasks centos8-install.yml
+      include_tasks: centos8-install.yml
+      when:
+        - ansible_distribution in ["CentOS"]
+        - major_version == "8"
+
+    - name: Fail if distribution is not supported
+      fail:
+        msg: "{{ ansible_distribution }}{{ ansible_distribution_version }} is not supported"
+      when: install_docker_supported | default(False) | bool == false
+  always:
+    - name: Remove k8s packages on debian os family
+      shell: |-
+        apt remove -y --purge --allow-change-held-packages \
+        kubeadm \
+        kubectl \
+        kubelet \
+        cri-tools \
+        kubernetes-cni
+      ignore_errors: true
+      when: ansible_os_family == "Debian"
+
+    - name: Remove k8s packages on redhat os family
+      shell: |-
+        yum erase -y \
+        kubeadm \
+        kubectl \
+        kubelet \
+        cri-tools \
+        kubernetes-cni
+      when: ansible_os_family == "RedHat"

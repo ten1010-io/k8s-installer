@@ -1,0 +1,23 @@
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: preflight/ensure-bin-directory-exist
+
+- hosts: all:localhost
+  gather_facts: true
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: gather-facts
+
+- hosts: k8s_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: k8s/preflight
+    - include_role:
+        name: k8s/install-packages
+      when: inventory_hostname == first_control_plane_k8s_node

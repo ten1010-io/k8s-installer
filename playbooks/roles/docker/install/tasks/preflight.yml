@@ -1,0 +1,15 @@
+- name: Get docker service status
+  ansible.builtin.systemd:
+    name: "docker"
+  register: service_status
+
+- name: Fail if docker is already installed
+  fail:
+    msg: "docker is already installed'"
+  when:
+    - service_status.status.LoadState != "not-found"
+
+- name: Include tasks ensure-nvidia-gpu-driver.yml
+  include_tasks: ensure-nvidia-gpu-driver.yml
+  when:
+    - nvidia_gpu_node | default(False) | bool == true

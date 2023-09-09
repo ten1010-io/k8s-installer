@@ -1,0 +1,9 @@
+- name: Stat ntp-server directory
+  stat:
+    path: "{{ docker_compose_root }}/ntp-server"
+  register: ntp_server_directory
+
+- name: Fail if ntp-server directory already exist
+  fail:
+    msg: "Directory \"{{ docker_compose_root }}/ntp-server\" already exist"
+  when: ntp_server_directory.stat.exists

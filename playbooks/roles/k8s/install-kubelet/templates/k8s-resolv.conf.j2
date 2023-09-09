@@ -1,0 +1,7 @@
+{% if enable_nameserver %}
+nameserver {{ nameserver_ip_for_clients }}
+{% else %}
+{% for forwarder in nameserver_forwarders %}
+nameserver {{ forwarder }}
+{% endfor %}
+{% endif %}

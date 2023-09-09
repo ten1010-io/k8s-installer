@@ -1,0 +1,87 @@
+- name: Include tasks preflight.yml
+  include_tasks: preflight.yml
+
+- name: Include tasks ubuntu2204-install.yml
+  include_tasks: ubuntu2204-install.yml
+  when:
+    - ansible_distribution in ["Ubuntu"]
+    - major_version == "22.04"
+
+- name: Include tasks rhel8-install.yml
+  include_tasks: rhel8-install.yml
+  when:
+    - ansible_distribution in ["RedHat"]
+    - major_version == "8"
+
+- name: Include tasks centos8-install.yml
+  include_tasks: centos8-install.yml
+  when:
+    - ansible_distribution in ["CentOS"]
+    - major_version == "8"
+
+- name: Fail if distribution is not supported
+  fail:
+    msg: "{{ ansible_distribution }}{{ ansible_distribution_version }} is not supported"
+  when: install_docker_supported | default(False) | bool == false
+
+- name: Set containerd cpu configuration
+  template:
+    dest: "/etc/containerd/config.toml"
+    src: cpu-config.toml.j2
+    owner: root
+    mode: 0644
+  when:
+    - nvidia_gpu_node | default(False) | bool == false
+
+- name: Set containerd gpu configuration
+  template:
+    dest: "/etc/containerd/config.toml"
+    src: gpu-config.toml.j2
+    owner: root
+    mode: 0644
+  when:
+    - nvidia_gpu_node | default(False) | bool == true
+
+- name: Start service containerd
+  systemd:
+    state: restarted
+    enabled: true
+    daemon_reload: true
+    name: containerd
+
+- name: Set docker cpu configuration
+  template:
+    dest: "/etc/docker/daemon.json"
+    src: cpu-daemon.json.j2
+    owner: root
+    mode: 0644
+  when:
+    - nvidia_gpu_node | default(False) | bool == false
+
+- name: Set docker gpu configuration
+  template:
+    dest: "/etc/docker/daemon.json"
+    src: gpu-daemon.json.j2
+    owner: root
+    mode: 0644
+  when:
+    - nvidia_gpu_node | default(False) | bool == true
+
+- name: Start service docker
+  systemd:
+    state: restarted
+    enabled: true
+    daemon_reload: true
+    name: docker
+
+- include_role:
+    name: host-configuration/disable-firewall
+
+- include_role:
+    name: host-configuration/flush-iptables
+
+- name: Create docker compose root directory
+  file:
+    path: "{{ docker_compose_root }}"
+    state: directory
+    recurse: yes

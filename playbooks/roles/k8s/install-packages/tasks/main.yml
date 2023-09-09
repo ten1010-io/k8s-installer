@@ -1,0 +1,6 @@
+- name: Include tasks preflight.yml
+  include_tasks: preflight.yml
+
+- name: Include tasks install-flannel.yml
+  include_tasks: install-flannel.yml
+  when: enable_flannel

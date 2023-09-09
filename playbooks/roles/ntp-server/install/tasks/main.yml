@@ -1,0 +1,37 @@
+- name: Include tasks preflight.yml
+  include_tasks: preflight.yml
+
+- name: Delete ntp-server tmp bin directory
+  file:
+    path: /tmp/k8s-installer/bin/ntp-server
+    state: absent
+
+- name: Create ntp-server tmp bin directory
+  file:
+    path: /tmp/k8s-installer/bin/ntp-server
+    state: directory
+    mode: 0755
+    recurse: true
+
+- name: Copy ntp-latest-image.tar file to host
+  copy:
+    src: ../../../../bin/ntp-server/ntp-latest-image.tar
+    dest: /tmp/k8s-installer/bin/ntp-server
+
+- name: Load ntp-latest-image.tar
+  command: docker load -i /tmp/k8s-installer/bin/ntp-server/ntp-latest-image.tar
+
+- name: Create ntp-server directory
+  file:
+    path: "{{ docker_compose_root }}/ntp-server"
+    state: directory
+
+- name: Set compose.yml
+  template:
+    dest: "{{ docker_compose_root }}/ntp-server/compose.yml"
+    src: compose.yml.j2
+    owner: root
+    mode: 0644
+
+- name: Run the ntp-server service
+  command: "docker compose -f {{ docker_compose_root }}/ntp-server/compose.yml up -d"

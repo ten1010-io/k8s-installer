@@ -1,0 +1,27 @@
+- name: Set fact set_ntp_client_conf_supported from ubuntu2204
+  set_fact:
+    set_ntp_client_conf_supported: true
+
+- name: Set timesyncd.conf for k8s-installer ntp-server
+  template:
+    dest: "/etc/systemd/timesyncd.conf"
+    src: k8s-installer-timesyncd.conf.j2
+    owner: root
+    mode: 0644
+  when: enable_ntp_server
+
+- name: Set timesyncd.conf for internet ntp-server
+  template:
+    dest: "/etc/systemd/timesyncd.conf"
+    src: internet-timesyncd.conf.j2
+    owner: root
+    mode: 0644
+  when: not enable_ntp_server
+
+- name: Restart systemd-timesyncd
+  systemd:
+    name: systemd-timesyncd
+    state: restarted
+    enabled: yes
+    daemon-reload: yes
+    masked: no

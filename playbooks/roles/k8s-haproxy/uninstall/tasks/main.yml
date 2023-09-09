@@ -1,0 +1,14 @@
+- name: Stat k8s-haproxy directory
+  stat:
+    path: "{{ docker_compose_root }}/k8s-haproxy"
+  register: k8s_haproxy_directory
+
+- block:
+  - name: Remove k8s-haproxy service
+    command: "docker compose -f {{ docker_compose_root }}/k8s-haproxy/compose.yml down"
+
+  - name: Remove k8s-haproxy directory
+    file:
+      path: "{{ docker_compose_root }}/k8s-haproxy"
+      state: absent
+  when: k8s_haproxy_directory.stat.exists

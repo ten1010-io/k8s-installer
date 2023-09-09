@@ -1,0 +1,27 @@
+- name: Delete k8s-installer-ca.crt
+  file:
+    path: "{{ k8s_installer_etc_root }}/k8s-installer-ca.crt"
+    state: absent
+
+- name: Include tasks ubuntu2204-uninstall.yml
+  include_tasks: ubuntu2204-uninstall.yml
+  when:
+    - ansible_distribution in ["Ubuntu"]
+    - major_version == "22.04"
+
+- name: Include tasks rhel8-uninstall.yml
+  include_tasks: rhel8-uninstall.yml
+  when:
+    - ansible_distribution in ["RedHat"]
+    - major_version == "8"
+
+- name: Include tasks centos8-uninstall.yml
+  include_tasks: centos8-uninstall.yml
+  when:
+    - ansible_distribution in ["CentOS"]
+    - major_version == "8"
+
+- name: Fail if distribution is not supported
+  fail:
+    msg: "{{ ansible_distribution }}{{ ansible_distribution_version }} is not supported"
+  when: uninstall_ca_supported | default(False) | bool == false

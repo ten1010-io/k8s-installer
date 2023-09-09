@@ -1,0 +1,7 @@
+- name: Include tasks preflight.yml
+  include_tasks: preflight.yml
+
+- name: Remove tls-certificate-issue-tool directory
+  file:
+    path: "{{ k8s_installer_etc_root }}/tls-certificate-issue-tool"
+    state: absent

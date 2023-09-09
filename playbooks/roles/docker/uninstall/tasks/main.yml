@@ -1,0 +1,52 @@
+- name: Remove nvidia-container-toolkit packages on debian os family
+  shell: apt remove -y --purge --allow-change-held-packages nvidia-container-toolkit nvidia-container-toolkit-base libnvidia-container1 libnvidia-container-tools
+  ignore_errors: true
+  when:
+    - ansible_os_family == "Debian"
+    - nvidia_gpu_node | default(False) | bool == true
+
+- name: Remove nvidia-container-toolkit packages on redhat os family
+  shell: yum erase -y nvidia-container-toolkit libnvidia-container1 libnvidia-container-tools nvidia-container-toolkit-base
+  when:
+    - ansible_os_family == "RedHat"
+    - nvidia_gpu_node | default(False) | bool == true
+
+- name: Remove docker packages on debian os family
+  shell: |-
+    apt remove -y --purge --allow-change-held-packages \
+    docker-ce \
+    docker-ce-cli \
+    containerd.io \
+    docker-buildx-plugin \
+    docker-compose-plugin
+  ignore_errors: true
+  when: ansible_os_family == "Debian"
+
+- name: Remove docker packages on redhat os family
+  shell: |-
+    yum erase -y \
+    docker-ce \
+    docker-ce-cli \
+    containerd.io \
+    docker-buildx-plugin \
+    docker-compose-plugin
+  when: ansible_os_family == "RedHat"
+
+- name: Stop docker socket
+  command: "systemctl stop docker.socket"
+  ignore_errors: true
+
+- name: Remove docker directory
+  file:
+    path: "{{ docker_root }}"
+    state: absent
+
+- name: Remove docker daemon.json
+  file:
+    path: "/etc/docker/daemon.json"
+    state: absent
+
+- name: Remove containerd directory
+  file:
+    path: "{{ containerd_root }}"
+    state: absent

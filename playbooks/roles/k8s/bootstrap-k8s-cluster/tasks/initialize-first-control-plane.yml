@@ -1,0 +1,35 @@
+- name: Initialize first control plane
+  command: "kubeadm init --apiserver-advertise-address '{{ k8s_ip }}' --control-plane-endpoint '{{ k8s_control_plane_endpoint_address }}:{{ k8s_control_plane_endpoint_port }}' --upload-certs --pod-network-cidr=10.244.0.0/16 --image-repository {{ cluster_boot_registry_domain_name }}:{{ cluster_boot_registry_port }} --kubernetes-version {{ kubernetes_version }}"
+  register: kubeadm_init
+
+- name: Set kubectl config
+  shell: "mkdir -p $HOME/.kube && \\cp /etc/kubernetes/admin.conf $HOME/.kube/config && sudo chown $(id -u):$(id -g) $HOME/.kube/config"
+
+- name: Delete kubelet-config
+  command: "kubectl delete configmap -n kube-system kubelet-config"
+
+- name: Set kubelet file
+  template:
+    dest: "/tmp/kubelet"
+    src: kubelet.j2
+    owner: root
+    mode: 0644
+
+- name: Create kubelet-config
+  command: "kubectl create configmap -n kube-system kubelet-config --from-file /tmp/kubelet"
+
+- name: Upgrade kubelet-config
+  command: "kubeadm upgrade node phase kubelet-config"
+
+- name: Restart kubelet
+  systemd:
+    name: kubelet
+    state: restarted
+    enabled: yes
+    daemon-reload: yes
+    masked: no
+
+- name: Create charts directory
+  file:
+    path: "{{ helm_chart_root }}"
+    state: directory

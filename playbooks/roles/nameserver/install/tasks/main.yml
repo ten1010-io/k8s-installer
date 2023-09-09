@@ -1,0 +1,71 @@
+- name: Include tasks preflight.yml
+  include_tasks: preflight.yml
+
+- include_role:
+    name: host-configuration/disable-resolved
+
+- name: Set resolv.conf for forwarder
+  template:
+    dest: "/etc/resolv.conf"
+    src: forwarder-resolv.conf.j2
+    owner: root
+    mode: 0644
+
+- name: Delete nameserver tmp bin directory
+  file:
+    path: /tmp/k8s-installer/bin/nameserver
+    state: absent
+
+- name: Create nameserver tmp bin directory
+  file:
+    path: /tmp/k8s-installer/bin/nameserver
+    state: directory
+    mode: 0755
+    recurse: true
+
+- name: Copy bind9-9.18-22.04_beta-image.tar file to host
+  copy:
+    src: ../../../../bin/nameserver/bind9-9.18-22.04_beta-image.tar
+    dest: /tmp/k8s-installer/bin/nameserver
+
+- name: Load bind9-9.18-22.04_beta-image.tar
+  command: docker load -i /tmp/k8s-installer/bin/nameserver/bind9-9.18-22.04_beta-image.tar
+
+- name: Create nameserver directory
+  file:
+    path: "{{ docker_compose_root }}/nameserver"
+    state: directory
+
+- name: Set compose.yml
+  template:
+    dest: "{{ docker_compose_root }}/nameserver/compose.yml"
+    src: compose.yml.j2
+    owner: root
+    mode: 0644
+
+- name: Set named.conf.options
+  template:
+    dest: "{{ docker_compose_root }}/nameserver/named.conf.options"
+    src: named.conf.options.j2
+    owner: root
+    mode: 0644
+
+- name: Set named.conf.local
+  template:
+    dest: "{{ docker_compose_root }}/nameserver/named.conf.local"
+    src: named.conf.local.j2
+    owner: root
+    mode: 0644
+
+- name: Set db
+  template:
+    dest: "{{ docker_compose_root }}/nameserver/db"
+    src: db.j2
+    owner: root
+    mode: 0644
+
+- name: Run the nameserver service
+  command: "docker compose -f {{ docker_compose_root }}/nameserver/compose.yml up -d"
+
+- name: Include tasks add-dns-to-daemon-json.yml
+  include_tasks: add-dns-to-daemon-json.yml

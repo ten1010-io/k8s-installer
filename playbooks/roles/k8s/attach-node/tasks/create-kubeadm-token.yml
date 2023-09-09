@@ -1,0 +1,21 @@
+- name: Create kubeadm_token
+  command: kubeadm token create --ttl 30m --print-join-command
+  register: kubeadm_token_create
+  delegate_to: "{{ first_control_plane_k8s_node }}"
+
+- name: Set kubeadm_token
+  set_fact:
+    kubeadm_token: "{{ kubeadm_token_create.stdout_lines | regex_search('--token ([^ ]+)', '\\1') | first}}"
+    kubeadm_discovery_token_ca_cert_hash: "{{ kubeadm_token_create.stdout_lines | regex_search('--discovery-token-ca-cert-hash ([^ ]+)', '\\1') | first}}"
+
+- name: Create kubeadm_certificate_key
+  block:
+    - name: Create kubeadm_certificate_key
+      command: kubeadm init phase upload-certs --upload-certs
+      register: kubeadm_upload_certs
+      delegate_to: "{{ first_control_plane_k8s_node }}"
+
+    - name: Set kubeadm_certificate_key
+      set_fact:
+        kubeadm_certificate_key: "{{ kubeadm_upload_certs.stdout_lines | last }}"
+  when: "inventory_hostname in groups['control_plane_k8s_node']"

@@ -1,0 +1,14 @@
+- name: Stat bin directory
+  stat:
+    path: "../bin"
+  register: stat_bin_directory
+
+- name: Fail if bin directory does not exist
+  fail:
+    msg: "Directory \"bin\" does not exist. please execute \"download-bin.sh\" first"
+  when: not stat_bin_directory.stat.exists
+
+- name: Fail if bin directory is invalid
+  fail:
+    msg: "File of which name is \"bin\" is not directory. please delete the file and execute \"download-bin.sh\""
+  when: stat_bin_directory.stat.isdir is undefined or not stat_bin_directory.stat.isdir

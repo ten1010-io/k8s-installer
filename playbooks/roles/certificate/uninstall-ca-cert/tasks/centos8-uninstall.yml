@@ -1,0 +1,11 @@
+- name: Set fact uninstall_ca_supported from centos8
+  set_fact:
+    uninstall_ca_supported: true
+
+- name: Delete a symbolic link of k8s-installer-ca.crt
+  file:
+    dest: /etc/pki/ca-trust/source/anchors/k8s-installer-ca.crt
+    state: absent
+
+- name: Execute update-ca-trust
+  command: "update-ca-trust"

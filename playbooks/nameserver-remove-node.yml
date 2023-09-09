@@ -1,0 +1,63 @@
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Fail if node variable is invalid
+      fail:
+        msg: "node variable '{{ node | default('undefined') }}' is invalid host"
+      when: node is undefined or
+        node | length <= 0
+    - name: Fail if node variable does not belong to nameserver group
+      fail:
+        msg: "node variable '{{ node }}' does not belong to nameserver group"
+      when: node not in groups['nameserver']
+
+- hosts: all:localhost
+  gather_facts: true
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: gather-facts
+
+- hosts: "{{ node }}"
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - include_role:
+        name: nameserver/uninstall
+    - include_role:
+        name: docker/uninstall
+      when:
+        - "'cluster_boot_registry' not in group_names"
+        - "'keepalived' not in group_names"
+        - "'nameserver' not in group_names"
+        - "'k8s_haproxy' not in group_names"
+        - "'ntp_server' not in group_names"
+    - include_role:
+        name: ntp-server/set-ntp-client-conf
+      vars:
+        enable_ntp_server: false
+      when:
+        - "'cluster_boot_registry' not in group_names"
+        - "'keepalived' not in group_names"
+        - "'nameserver' not in group_names"
+        - "'k8s_haproxy' not in group_names"
+        - "'ntp_server' not in group_names"
+    - include_role:
+        name: nameserver/set-resolv-conf
+      vars:
+        enable_nameserver: false
+      when:
+        - "'cluster_boot_registry' not in group_names"
+        - "'keepalived' not in group_names"
+        - "'nameserver' not in group_names"
+        - "'k8s_haproxy' not in group_names"
+        - "'ntp_server' not in group_names"
+    - include_role:
+        name: certificate/uninstall-ca-cert
+      when:
+        - "'cluster_boot_registry' not in group_names"
+        - "'keepalived' not in group_names"
+        - "'nameserver' not in group_names"
+        - "'k8s_haproxy' not in group_names"
+        - "'ntp_server' not in group_names"

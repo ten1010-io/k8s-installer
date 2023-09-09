@@ -1,0 +1,5 @@
+- name: Include tasks preflight.yml
+  include_tasks: preflight.yml
+
+- name: Include tasks install-keepalived.yml
+  include_tasks: install-keepalived.yml

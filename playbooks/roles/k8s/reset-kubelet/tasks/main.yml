@@ -1,0 +1,26 @@
+- name: Execute kubeadm reset
+  command: "kubeadm reset -f"
+  ignore_errors: true
+  throttle: 1
+
+- name: Delete k8s network links
+  shell: "ip link del cni0; ip link del flannel.1;"
+  ignore_errors: true
+
+- name: Remove cni dir
+  file:
+    path: "/etc/cni/net.d"
+    state: absent
+
+- name: Remove flannel dir
+  file:
+    path: "/var/run/flannel"
+    state: absent
+
+- include_role:
+    name: host-configuration/flush-iptables
+
+- name: Remove kubectl config
+  file:
+    path: "{{ ansible_env.HOME }}/.kube"
+    state: absent

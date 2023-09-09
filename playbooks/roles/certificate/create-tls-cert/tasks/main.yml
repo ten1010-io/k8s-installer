@@ -1,0 +1,5 @@
+- name: Include tasks preflight.yml
+  include_tasks: preflight.yml
+
+- name: Create tls certificate
+  shell: "{{ k8s_installer_etc_root }}/tls-certificate-issue-tool/create-tls-crt.sh --domain-name {{ tls_domain_name }} --days 3650"

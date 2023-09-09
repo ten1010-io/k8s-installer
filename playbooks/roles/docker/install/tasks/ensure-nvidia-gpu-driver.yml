@@ -1,0 +1,10 @@
+- name: Try nvidia-smi
+  command: nvidia-smi
+  changed_when: false
+  failed_when: false
+  register: nvidia_smi
+  
+- name: Fail if nvidia-smi fail
+  fail:
+    msg: "Nvidia gpu driver appears to be missing or broken"
+  when: nvidia_smi.rc != 0

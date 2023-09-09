@@ -1,0 +1,17 @@
+- name: Fetch os information
+  script: ../../../scripts/os-information.sh
+  register: os_information
+  changed_when: false
+
+- set_fact:
+    distribution: "{{ os_information.stdout_lines[0] }}"
+    major_version: "{{ os_information.stdout_lines[1] }}"
+    minor_version: "{{ os_information.stdout_lines[2] }}"
+
+- include_role:
+    name: k8s/create-control-plane-group
+  when: inventory_hostname in groups['k8s_node']
+
+- name: Set first_control_plane_k8s_node
+  set_fact:
+    first_control_plane_k8s_node: "{{ groups['control_plane_k8s_node'] | first }}"
