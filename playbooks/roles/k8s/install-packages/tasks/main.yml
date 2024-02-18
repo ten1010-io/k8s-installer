@@ -4,3 +4,7 @@
 - name: Include tasks install-flannel.yml
   include_tasks: install-flannel.yml
   when: enable_flannel
+
+- name: Include tasks install-metallb.yml
+  include_tasks: install-metallb.yml
+  when: enable_metallb
