@@ -1,0 +1,12 @@
+controller:
+  image:
+    repository: {{ cluster_boot_registry_domain_name }}:{{ cluster_boot_registry_port }}/metallb/controller
+    tag: v0.14.4
+speaker:
+  image:
+    repository: {{ cluster_boot_registry_domain_name }}:{{ cluster_boot_registry_port }}/metallb/speaker
+    tag: v0.14.4
+  frr:
+    image:
+      repository: {{ cluster_boot_registry_domain_name }}:{{ cluster_boot_registry_port }}/frrouting/frr
+      tag: 9.0.2

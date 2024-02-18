@@ -1,0 +1,17 @@
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: {{ pool_name }}
+  namespace: metallb
+spec:
+  ipAddressPools:
+  - {{ pool_name }}
+  nodeSelectors:
+{% for node in nodes %}
+  - matchLabels:
+      kubernetes.io/hostname: {{ node_name_to_k8s_hostname_map[node] }}
+{% endfor %}
+  interfaces:
+{% for interface in interfaces %}
+  - {{ interface }}
+{% endfor %}

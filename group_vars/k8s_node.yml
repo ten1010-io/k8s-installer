@@ -10,3 +10,13 @@ k8s_control_plane_endpoint_port: "16443"
 # Flannel
 enable_flannel: true
 flannel_iface_can_reach: "123.123.123.123"
+
+# Metallb
+enable_metallb: true
+ip_address_pools:
+  - pool_name: "lb1"
+    ip_address: "123.123.123.123"
+    nodes:
+      - "node1"
+    interfaces:
+      - "eth0"

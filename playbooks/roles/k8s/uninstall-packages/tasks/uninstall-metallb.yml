@@ -1,0 +1,22 @@
+- block:
+    - name: Check whether metallb is installed
+      command: "helm get notes -n metallb metallb"
+      ignore_errors: true
+      register: helm_get_metallb
+
+    - block:
+        - name: Delete ip address pools in kubernetes
+          command: "kubectl delete -f {{ helm_chart_root }}/metallb/ip-pools"
+
+        - name: Uninstall metallb
+          command: "helm uninstall --namespace metallb metallb"
+
+        - name: Delete metallb namespace
+          command: "kubectl delete ns metallb"
+      when: helm_get_metallb.rc == 0
+  when: not skip_uninstall_from_cluster
+
+- name: Remove metallb directory
+  file:
+    path: "{{ helm_chart_root }}/metallb"
+    state: absent

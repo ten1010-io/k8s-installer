@@ -1,0 +1,70 @@
+- include_role:
+    name: k8s/create-node-name-to-k8s-hostname-map-fact
+
+- name: Run validate_ip_address_pools module
+  validate_ip_address_pools:
+    ip_address_pools: "{{ ip_address_pools }}"
+    node_name_to_k8s_hostname_map: "{{ node_name_to_k8s_hostname_map }}"
+
+- name: Create metallb directory
+  file:
+    path: "{{ helm_chart_root }}/metallb"
+    state: directory
+
+- name: Copy metallb.tgz
+  copy:
+    src: ../../../../bin/k8s-node/packages/metallb.tgz
+    dest: "{{ helm_chart_root }}/metallb"
+
+- name: Set values.yml
+  template:
+    dest: "{{ helm_chart_root }}/metallb/values.yml"
+    src: metallb/metallb-values.yml.j2
+    owner: root
+    mode: 0644
+
+- name: Create metallb namespace
+  command: "kubectl create ns metallb"
+
+- name: Install metallb
+  command: "helm install --namespace metallb metallb {{ helm_chart_root }}/metallb/metallb.tgz -f {{ helm_chart_root }}/metallb/values.yml"
+
+- name: Create ip-pools directory
+  file:
+    path: "{{ helm_chart_root }}/metallb/ip-pools"
+    state: directory
+
+- name: "Set ip-address-pool.yml"
+  template:
+    dest: "{{ helm_chart_root }}/metallb/ip-pools/{{ pool_name }}-ip-address-pool.yml"
+    src: metallb/ip-address-pool.yml.j2
+    owner: root
+    mode: 0644
+  vars:
+    pool_name: "{{ item.pool_name }}"
+    ip_address: "{{ item.ip_address }}"
+  with_items:
+    - "{{ ip_address_pools }}"
+
+- name: "Set l2-advertisement.yml"
+  template:
+    dest: "{{ helm_chart_root }}/metallb/ip-pools/{{ pool_name }}-l2-advertisement.yml"
+    src: metallb/l2-advertisement.yml.j2
+    owner: root
+    mode: 0644
+  vars:
+    pool_name: "{{ item.pool_name }}"
+    nodes: "{{ item.nodes }}"
+    interfaces: "{{ item.interfaces }}"
+  with_items:
+    - "{{ ip_address_pools }}"
+
+- name: Wait for metallb controller to be ready
+  command: "kubectl get deploy -n metallb metallb-controller -o jsonpath={.status.readyReplicas}"
+  register: metallb_controller_ready_replicas
+  until: "metallb_controller_ready_replicas.stdout | int >= 1"
+  retries: 30
+  delay: 10
+
+- name: Create ip address pools in kubernetes
+  command: "kubectl apply -f {{ helm_chart_root }}/metallb/ip-pools"
