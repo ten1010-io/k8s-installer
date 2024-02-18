@@ -8,24 +8,54 @@
     msg: "Directory \"{{ docker_compose_root }}/keepalived\" already exist"
   when: keepalived_directory.stat.exists
 
-- name: Fail if keepalived_ip is invalid
+- name: Fail if enable_keepalived_vip1 is false and enable_keepalived_vip2 is false
   fail:
-    msg: "'{{ keepalived_ip | default('undefined') }}' is invalid ip"
-  when: (keepalived_ip | default('undefined')) is not ansible.utils.ipv4
-
-- name: Parse keepalived_interface
-  set_fact:
-    keepalived_interface: "{{ item }}"
+    msg: "Either enable_keepalived_vip1 or enable_keepalived_vip2 must be true"
   when:
-    - ansible_facts[item]['ipv4'] | default({'address':''})| community.general.json_query('address') == keepalived_ip
-  with_items:
-    - "{{ ansible_interfaces }}"
+    - not enable_keepalived_vip1
+    - not enable_keepalived_vip2
 
-- name: Fail if keepalived_interface is invalid
-  fail:
-    msg: "'{{ keepalived_interface | default('undefined') }}' is invalid interface"
-  when: keepalived_interface is undefined or
-    keepalived_interface | length <= 0
+- block:
+    - name: Fail if keepalived_fixed_if_ip_for_vip1 is invalid
+      fail:
+        msg: "'{{ keepalived_fixed_if_ip_for_vip1 | default('undefined') }}' is invalid ip"
+      when: (keepalived_fixed_if_ip_for_vip1 | default('undefined')) is not ansible.utils.ipv4
+
+    - name: Parse keepalived_interface_for_vip1
+      set_fact:
+        keepalived_interface_for_vip1: "{{ item }}"
+      when:
+        - ansible_facts[item]['ipv4'] | default({'address':''})| community.general.json_query('address') == keepalived_fixed_if_ip_for_vip1
+      with_items:
+        - "{{ ansible_interfaces }}"
+
+    - name: Fail if keepalived_interface_for_vip1 is invalid
+      fail:
+        msg: "'{{ keepalived_interface_for_vip1 | default('undefined') }}' is invalid interface"
+      when: keepalived_interface_for_vip1 is undefined or
+        keepalived_interface_for_vip1 | length <= 0
+  when: enable_keepalived_vip1
+
+- block:
+    - name: Fail if keepalived_fixed_if_ip_for_vip2 is invalid
+      fail:
+        msg: "'{{ keepalived_fixed_if_ip_for_vip2 | default('undefined') }}' is invalid ip"
+      when: (keepalived_fixed_if_ip_for_vip2 | default('undefined')) is not ansible.utils.ipv4
+
+    - name: Parse keepalived_interface_for_vip2
+      set_fact:
+        keepalived_interface_for_vip2: "{{ item }}"
+      when:
+        - ansible_facts[item]['ipv4'] | default({'address':''})| community.general.json_query('address') == keepalived_fixed_if_ip_for_vip2
+      with_items:
+        - "{{ ansible_interfaces }}"
+
+    - name: Fail if keepalived_interface_for_vip2 is invalid
+      fail:
+        msg: "'{{ keepalived_interface_for_vip2 | default('undefined') }}' is invalid interface"
+      when: keepalived_interface_for_vip2 is undefined or
+        keepalived_interface_for_vip2 | length <= 0
+  when: enable_keepalived_vip2
 
 - name: Set first_keepalived
   set_fact:
@@ -36,5 +66,5 @@
     peer_keepaliveds: "{{ groups['keepalived'] | difference(inventory_hostname) }}"
 
 - name: Set priority variable
-  ansible.builtin.set_fact:
+  set_fact:
     priority: "{{ (101 - (lookup('ansible.utils.index_of', groups['keepalived'], 'eq', inventory_hostname) | int)) | int }}"

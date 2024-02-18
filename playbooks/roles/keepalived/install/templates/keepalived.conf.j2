@@ -9,29 +9,60 @@ vrrp_script check_node {
   rise 2
 }
 
+{% if enable_keepalived_vip1 %}
 vrrp_instance VI_1 {
 {% if inventory_hostname == first_keepalived %}
     state MASTER
 {% else %}
     state BACKUP
 {% endif %}
-    interface {{ keepalived_interface }}
+    interface {{ keepalived_interface_for_vip1 }}
     virtual_router_id 51
     priority {{ priority }}
     authentication {
         auth_type PASS
         auth_pass 42
     }
-    unicast_src_ip {{ keepalived_ip }}
+    unicast_src_ip {{ keepalived_fixed_if_ip_for_vip1 }}
     unicast_peer {
 {% for peer in peer_keepaliveds %}
-        {{ hostvars[peer]['keepalived_ip'] }}
+        {{ hostvars[peer]['keepalived_fixed_if_ip_for_vip1'] }}
 {% endfor %}
     }
     virtual_ipaddress {
-        {{ keepalived_vip }}
+        {{ keepalived_vip1 }}
     }
     track_script {
         check_node
     }
 }
+{% endif %}
+
+{% if enable_keepalived_vip2 %}
+vrrp_instance VI_2 {
+{% if inventory_hostname == first_keepalived %}
+    state MASTER
+{% else %}
+    state BACKUP
+{% endif %}
+    interface {{ keepalived_interface_for_vip2 }}
+    virtual_router_id 52
+    priority {{ priority }}
+    authentication {
+        auth_type PASS
+        auth_pass 42
+    }
+    unicast_src_ip {{ keepalived_fixed_if_ip_for_vip2 }}
+    unicast_peer {
+{% for peer in peer_keepaliveds %}
+        {{ hostvars[peer]['keepalived_fixed_if_ip_for_vip2'] }}
+{% endfor %}
+    }
+    virtual_ipaddress {
+        {{ keepalived_vip2 }}
+    }
+    track_script {
+        check_node
+    }
+}
+{% endif %}
