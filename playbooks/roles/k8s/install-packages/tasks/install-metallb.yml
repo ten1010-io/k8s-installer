@@ -20,3 +20,20 @@
 
 - name: Install metallb
   command: "helm install --namespace metallb metallb {{ helm_chart_root }}/metallb/metallb.tgz -f {{ helm_chart_root }}/metallb/values.yml"
+
+- name: Create ip-pools directory
+  file:
+    path: "{{ helm_chart_root }}/metallb/ip-pools"
+    state: directory
+
+- name: Set values.yml
+  template:
+    dest: "{{ helm_chart_root }}/metallb/ip-pools/values.yml"
+    src: metallb/ip-address-pool.yml.j2
+    owner: root
+    mode: 0644
+  vars:
+    pool_name: "{{ item.ip_address_pool_name }}"
+    ip_address: "{{ item.ip_address_pool_name }}"
+  with_items:
+    - "{{ load_balancers }}"
