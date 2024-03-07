@@ -2,7 +2,7 @@
   fail:
     msg: "{{ distribution }}{{ major_version }}.{{ minor_version }} is not supported"
   when:
-    - minor_version | int > 3
+    - minor_version | int > 4
 
 - name: Set fact install_k8s_supported from ubuntu2204
   set_fact:
@@ -35,7 +35,7 @@
       shell: dpkg -i /tmp/k8s-installer/bin/k8s-node/ubuntu2204/from0/*.deb
   when:
     - minor_version | int >= 0
-    - minor_version | int <= 3
+    - minor_version | int <= 4
 
 - name: Set kubelet 10-kubeadm.conf
   template:
