@@ -18,5 +18,5 @@
 
 - name: Fail if distribution is not supported
   fail:
-    msg: "{{ ansible_distribution }}{{ ansible_distribution_version }} is not supported"
+    msg: "{{ distribution }}{{ major_version }}.{{ minor_version }} is not supported"
   when: set_ntp_client_conf_supported | default(False) | bool == false

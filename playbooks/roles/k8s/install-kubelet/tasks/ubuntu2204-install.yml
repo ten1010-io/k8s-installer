@@ -1,6 +1,6 @@
 - name: Fail if distribution is not supported
   fail:
-    msg: "{{ ansible_distribution }}{{ ansible_distribution_version }} is not supported"
+    msg: "{{ distribution }}{{ major_version }}.{{ minor_version }} is not supported"
   when:
     - minor_version | int > 3
 

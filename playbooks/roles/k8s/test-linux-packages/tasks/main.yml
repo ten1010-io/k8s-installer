@@ -22,7 +22,7 @@
 
     - name: Fail if distribution is not supported
       fail:
-        msg: "{{ ansible_distribution }}{{ ansible_distribution_version }} is not supported"
+        msg: "{{ distribution }}{{ major_version }}.{{ minor_version }} is not supported"
       when: install_docker_supported | default(False) | bool == false
   always:
     - name: Remove k8s packages on debian os family
