@@ -26,14 +26,37 @@
     path: "{{ helm_chart_root }}/metallb/ip-pools"
     state: directory
 
-- name: Set values.yml
+- name: "Set {{ pool_name }}-ip-address-pool.yml"
   template:
-    dest: "{{ helm_chart_root }}/metallb/ip-pools/values.yml"
+    dest: "{{ helm_chart_root }}/metallb/ip-pools/{{ pool_name }}-ip-address-pool.yml"
     src: metallb/ip-address-pool.yml.j2
     owner: root
     mode: 0644
   vars:
     pool_name: "{{ item.ip_address_pool_name }}"
-    ip_address: "{{ item.ip_address_pool_name }}"
+    ip_address: "{{ item.ip_address }}"
+  with_items:
+    - "{{ load_balancers }}"
+
+- name: "Set {{ pool_name }}-ip-address-pool.yml"
+  template:
+    dest: "{{ helm_chart_root }}/metallb/ip-pools/{{ pool_name }}-ip-address-pool.yml"
+    src: metallb/ip-address-pool.yml.j2
+    owner: root
+    mode: 0644
+  vars:
+    pool_name: "{{ item.ip_address_pool_name }}"
+    ip_address: "{{ item.ip_address }}"
+  with_items:
+    - "{{ load_balancers }}"
+
+- name: "Set {{ pool_name }}-l2-advertisement.yml"
+  template:
+    dest: "{{ helm_chart_root }}/metallb/ip-pools/{{ pool_name }}-l2-advertisement.yml"
+    src: metallb/l2-advertisement.yml.j2
+    owner: root
+    mode: 0644
+  vars:
+    pool_name: "{{ item.ip_address_pool_name }}"
   with_items:
     - "{{ load_balancers }}"

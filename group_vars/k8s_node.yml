@@ -15,7 +15,7 @@ flannel_iface_can_reach: "123.123.123.123"
 enable_metallb: true
 load_balancers:
   - ip_address_pool_name: "lb1"
-    ip_address: "123.123.123.123/32"
+    ip_address: "123.123.123.123"
     nodes:
       - "node1"
     interfaces:
