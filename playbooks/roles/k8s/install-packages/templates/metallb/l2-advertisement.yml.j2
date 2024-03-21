@@ -6,3 +6,12 @@ metadata:
 spec:
   ipAddressPools:
   - {{ pool_name }}
+  nodeSelectors:
+{% for host_name in host_names %}
+  - matchLabels:
+      kubernetes.io/hostname: {{ host_name }}
+{% endfor %}
+  interfaces:
+{% for interface in interfaces %}
+  - {{ interface }}
+{% endfor %}

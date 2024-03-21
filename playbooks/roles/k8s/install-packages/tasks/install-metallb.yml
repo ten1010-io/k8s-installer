@@ -38,18 +38,6 @@
   with_items:
     - "{{ load_balancers }}"
 
-- name: "Set {{ pool_name }}-ip-address-pool.yml"
-  template:
-    dest: "{{ helm_chart_root }}/metallb/ip-pools/{{ pool_name }}-ip-address-pool.yml"
-    src: metallb/ip-address-pool.yml.j2
-    owner: root
-    mode: 0644
-  vars:
-    pool_name: "{{ item.ip_address_pool_name }}"
-    ip_address: "{{ item.ip_address }}"
-  with_items:
-    - "{{ load_balancers }}"
-
 - name: "Set {{ pool_name }}-l2-advertisement.yml"
   template:
     dest: "{{ helm_chart_root }}/metallb/ip-pools/{{ pool_name }}-l2-advertisement.yml"
@@ -58,5 +46,7 @@
     mode: 0644
   vars:
     pool_name: "{{ item.ip_address_pool_name }}"
+    hostnames: "{{ item.nodes | to_k8s_hostname }}"
+    interfaces: "{{ item.interfaces }}"
   with_items:
     - "{{ load_balancers }}"
