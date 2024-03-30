@@ -9,16 +9,14 @@
   when:
     - target_node in (groups['control_plane_k8s_node'])
 
-- name: Set target_node_k8s_ip variable
-  set_fact:
-    target_node_k8s_ip: "{{ hostvars[target_node]['k8s_ip'] }}"
-
-- name: Fail if target_node_k8s_ip variable is invalid
-  fail:
-    msg: "target_node_k8s_ip variable '{{ target_node_k8s_ip | default('undefined') }}' is invalid ip"
-  when: (target_node_k8s_ip | default('undefined')) is not ansible.utils.ipv4
-
 - name: Fail if host is not first_control_plane_k8s_node
   fail:
     msg: "host is not first_control_plane_k8s_node"
   when: inventory_hostname != first_control_plane_k8s_node
+
+- include_role:
+    name: k8s/create-node-name-to-k8s-hostname-map-fact
+
+- name: Fail if node_name_to_k8s_hostname_map[target_node] is undefined
+  fail: {}
+  when: node_name_to_k8s_hostname_map[target_node] is undefined
