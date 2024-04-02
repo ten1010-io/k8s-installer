@@ -13,4 +13,4 @@
     mode: '0755'
 
 - name: Create ca certificate
-  shell: "{{ k8s_installer_etc_root }}/tls-certificate-issue-tool/create-ca-crt.sh --common-name k8s-installer --days 3650"
+  command: "{{ k8s_installer_etc_root }}/tls-certificate-issue-tool/create-ca-crt.sh --common-name k8s-installer --days 3650"

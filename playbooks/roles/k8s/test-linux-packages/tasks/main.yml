@@ -26,7 +26,7 @@
       when: install_docker_supported | default(False) | bool == false
   always:
     - name: Remove k8s packages on debian os family
-      shell: |-
+      command: |-
         apt remove -y --purge --allow-change-held-packages \
         kubeadm \
         kubectl \
@@ -37,7 +37,7 @@
       when: ansible_os_family == "Debian"
 
     - name: Remove k8s packages on redhat os family
-      shell: |-
+      command: |-
         yum erase -y \
         kubeadm \
         kubectl \

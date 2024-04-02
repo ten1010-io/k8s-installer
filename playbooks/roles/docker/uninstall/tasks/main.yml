@@ -1,18 +1,18 @@
 - name: Remove nvidia-container-toolkit packages on debian os family
-  shell: apt remove -y --purge --allow-change-held-packages nvidia-container-toolkit nvidia-container-toolkit-base libnvidia-container1 libnvidia-container-tools
+  command: apt remove -y --purge --allow-change-held-packages nvidia-container-toolkit nvidia-container-toolkit-base libnvidia-container1 libnvidia-container-tools
   ignore_errors: true
   when:
     - ansible_os_family == "Debian"
     - nvidia_gpu_node | default(False) | bool == true
 
 - name: Remove nvidia-container-toolkit packages on redhat os family
-  shell: yum erase -y nvidia-container-toolkit libnvidia-container1 libnvidia-container-tools nvidia-container-toolkit-base
+  command: yum erase -y nvidia-container-toolkit libnvidia-container1 libnvidia-container-tools nvidia-container-toolkit-base
   when:
     - ansible_os_family == "RedHat"
     - nvidia_gpu_node | default(False) | bool == true
 
 - name: Remove docker packages on debian os family
-  shell: |-
+  command: |-
     apt remove -y --purge --allow-change-held-packages \
     docker-ce \
     docker-ce-cli \
@@ -23,7 +23,7 @@
   when: ansible_os_family == "Debian"
 
 - name: Remove docker packages on redhat os family
-  shell: |-
+  command: |-
     yum erase -y \
     docker-ce \
     docker-ce-cli \
