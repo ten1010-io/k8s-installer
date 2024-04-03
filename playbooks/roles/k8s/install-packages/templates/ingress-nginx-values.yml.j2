@@ -1,0 +1,64 @@
+controller:
+  image:
+    registry: {{ cluster_boot_registry_domain_name }}:{{ cluster_boot_registry_port }}
+    image: ingress-nginx/controller
+    tag: "v1.10.0"
+    digest: null
+    digestChroot: null
+  containerPort:
+    http: {{ container_ports['http'] }}
+    https: {{ container_ports['https'] }}
+  config:
+    log-format-upstream: $remote_addr $host $namespace $ingress_name $remote_user
+      [$time_local] $request $status $body_bytes_sent $http_referer $http_user_agent
+      $request_length $request_time [$proxy_upstream_name] [$proxy_alternative_upstream_name]
+      $upstream_addr $upstream_response_length $upstream_response_time $upstream_status
+      $req_id
+  hostPort:
+{% if enable_host_port %}
+    enabled: true
+{% else %}
+    enabled: false
+{% endif %}
+    ports:
+      http: {{ container_ports['http'] }}
+      https: {{ container_ports['https'] }}
+  electionID: {{ ingress_class_name }}-leader
+  ingressClassResource:
+    name: {{ ingress_class_name }}
+    controllerValue: k8s.io/ingress-nginx/{{ ingress_class_name }}
+  ingressClass: {{ ingress_class_name }}
+  kind: DaemonSet
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+{% for node in controller_nodes %}
+                  - {{ node_name_to_k8s_hostname_map[node] }}
+{% endfor %}
+  service:
+{% if service['enabled'] %}
+    enabled: true
+    annotations:
+      metallb.universe.tf/address-pool: {{ service['ip_address_pool_name'] }}
+    externalTrafficPolicy: "Local"
+    ports:
+      http: {{ service['ports']['http'] }}
+      https: {{ service['ports']['https'] }}
+    targetPorts:
+      http: {{ container_ports['http'] }}
+      https: {{ container_ports['https'] }}
+  admissionWebhooks:
+    patch:
+      image:
+        registry: {{ cluster_boot_registry_domain_name }}:{{ cluster_boot_registry_port }}
+        image: ingress-nginx/kube-webhook-certgen
+        tag: v1.4.0
+        digest: null
+{% else %}
+    enabled: false
+{% endif %}

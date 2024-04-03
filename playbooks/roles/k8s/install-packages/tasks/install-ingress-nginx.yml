@@ -1,0 +1,46 @@
+- include_role:
+    name: k8s/create-node-name-to-k8s-hostname-map-fact
+
+- name: Run validate_ingresses module
+  validate_ingresses:
+    ingresses: "{{ ingresses }}"
+    node_name_to_k8s_hostname_map: "{{ node_name_to_k8s_hostname_map }}"
+
+- name: Create ingress-nginx directory
+  file:
+    path: "{{ helm_chart_root }}/ingress-nginx"
+    state: directory
+
+- name: Copy ingress-nginx.tgz
+  copy:
+    src: ../../../../bin/k8s-node/packages/ingress-nginx.tgz
+    dest: "{{ helm_chart_root }}/ingress-nginx"
+
+- name: Set ingress-nginx-values.yml
+  template:
+    dest: "{{ helm_chart_root }}/ingress-nginx/{{ ingress_class_name }}-values.yml"
+    src: ingress-nginx-values.yml.j2
+    owner: root
+    mode: 0644
+  vars:
+    ingress_class_name: "{{ item.ingress_class_name }}"
+    container_ports: "{{ item.container_ports }}"
+    enable_host_port: "{{ item.enable_host_port }}"
+    controller_nodes: "{{ item.controller_nodes }}"
+    service: "{{ item.service }}"
+  with_items:
+    - "{{ ingresses }}"
+
+- name: Create ingress-nginx namespace
+  command: "kubectl create ns ingress-nginx"
+
+- name: Install ingress-nginx package
+  command: |-
+    helm install --namespace ingress-nginx \
+    {{ ingress_class_name }}-ingress-nginx \
+    {{ helm_chart_root }}/ingress-nginx/ingress-nginx.tgz \
+    -f {{ helm_chart_root }}/ingress-nginx/{{ ingress_class_name }}-values.yml
+  vars:
+    ingress_class_name: "{{ item.ingress_class_name }}"
+  with_items:
+    - "{{ ingresses }}"

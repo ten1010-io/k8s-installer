@@ -20,3 +20,20 @@ ip_address_pools:
       - "node1"
     interfaces:
       - "eth0"
+
+# Ingress nginx
+enable_ingress_nginx: true
+ingresses:
+  - ingress_class_name: lb1
+    container_ports:
+      http: 80
+      https: 443
+    enable_host_port: false
+    controller_nodes:
+      - "node1"
+    service:
+      enabled: true
+      ip_address_pool_name: lb1
+      ports:
+        http: 80
+        https: 443

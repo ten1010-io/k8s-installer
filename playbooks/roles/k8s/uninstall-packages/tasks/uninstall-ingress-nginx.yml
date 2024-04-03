@@ -1,0 +1,25 @@
+- block:
+    - name: Check whether ingress-nginx is installed
+      command: "helm list -n ingress-nginx -o json"
+      ignore_errors: true
+      register: helm_list_ingress_nginx
+
+    - name: Set ingress_nginx_list variable
+      set_fact:
+        ingress_nginx_list: "{{ helm_list_ingress_nginx.stdout | from_json }}"
+
+    - block:
+        - name: "Uninstall ingress-nginx package"
+          command: "helm uninstall --namespace ingress-nginx {{ item.name }}"
+          with_items:
+            - "{{ ingress_nginx_list }}"
+
+        - name: Delete ingress-nginx namespace
+          command: "kubectl delete ns ingress-nginx"
+      when: ingress_nginx_list | length > 0
+  when: not skip_uninstall_from_cluster
+
+- name: Remove ingress-nginx directory
+  file:
+    path: "{{ helm_chart_root }}/ingress-nginx"
+    state: absent

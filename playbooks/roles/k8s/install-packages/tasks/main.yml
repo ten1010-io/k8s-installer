@@ -8,3 +8,7 @@
 - name: Include tasks install-metallb.yml
   include_tasks: install-metallb.yml
   when: enable_metallb
+
+- name: Include tasks install-ingress-nginx.yml
+  include_tasks: install-ingress-nginx.yml
+  when: enable_ingress_nginx

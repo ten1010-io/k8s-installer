@@ -6,3 +6,6 @@
 
 - name: Include tasks uninstall-metallb.yml
   include_tasks: uninstall-metallb.yml
+
+- name: Include tasks uninstall-ingress-nginx.yml
+  include_tasks: uninstall-ingress-nginx.yml
