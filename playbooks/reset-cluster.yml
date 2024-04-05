@@ -21,21 +21,20 @@
     - include_role:
         name: k8s/uninstall-kubelet
 
-- hosts: ntp_server_client
+- hosts: ntp_client
   gather_facts: false
   any_errors_fatal: true
   tasks:
     - include_role:
-        name: ntp-server/set-ntp-client-conf
-      vars:
-        enable_ntp_server: false
+        name: ntp/client/uninstall
+      when: enable_ntp_server
 
 - hosts: ntp_server
   gather_facts: false
   any_errors_fatal: true
   tasks:
     - include_role:
-        name: ntp-server/uninstall
+        name: ntp/server/uninstall
       when: enable_ntp_server
 
 - hosts: k8s_haproxy

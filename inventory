@@ -46,7 +46,7 @@ k8s_haproxy
 ntp_server
 k8s_node
 
-[ntp_server_client:children]
+[ntp_client:children]
 cluster_boot_registry
 keepalived
 nameserver

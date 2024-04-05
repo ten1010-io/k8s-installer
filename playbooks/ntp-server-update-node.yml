@@ -29,8 +29,12 @@
         ca_cert: "{{ hostvars[groups['tls_cert_issuer'] | first]['ca_cert'] }}"
     - include_role:
         name: nameserver/set-resolv-conf
-    - include_role:
-        name: ntp-server/set-ntp-client-conf
+    - block:
+      - include_role:
+          name: ntp/client/uninstall
+      - include_role:
+          name: ntp/client/install
+      when: enable_ntp_server
     - name: Get docker service status
       ansible.builtin.systemd:
         name: "docker"
@@ -40,7 +44,7 @@
       when:
         - service_status.status.LoadState == "not-found"
     - include_role:
-        name: ntp-server/uninstall
+        name: ntp/server/uninstall
     - include_role:
-        name: ntp-server/install
+        name: ntp/server/install
       when: enable_ntp_server

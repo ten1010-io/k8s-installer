@@ -1,2 +1,3 @@
 # NTP server
+enable_ntp_server: true
 ntp_server_offline_mode: false

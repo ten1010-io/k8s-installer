@@ -34,10 +34,9 @@
         - "'k8s_haproxy' not in group_names"
         - "'ntp_server' not in group_names"
     - include_role:
-        name: ntp-server/set-ntp-client-conf
-      vars:
-        enable_ntp_server: false
+        name: ntp/client/uninstall
       when:
+        - "enable_ntp_server"
         - "'cluster_boot_registry' not in group_names"
         - "'keepalived' not in group_names"
         - "'nameserver' not in group_names"

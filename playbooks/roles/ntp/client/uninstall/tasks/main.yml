@@ -1,0 +1,13 @@
+- name: Remove ntp client packages on debian os family
+  command: |-
+    apt remove -y --purge --allow-change-held-packages \
+    systemd-timesyncd
+  ignore_errors: true
+  when: ansible_os_family == "Debian"
+
+- name: Remove ntp client packages on redhat os family
+  command: |-
+    yum erase -y \
+    chrony \
+    timedatex
+  when: ansible_os_family == "RedHat"

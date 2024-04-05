@@ -96,15 +96,16 @@
   any_errors_fatal: true
   tasks:
     - include_role:
-        name: ntp-server/install
+        name: ntp/server/install
       when: enable_ntp_server
 
-- hosts: ntp_server_client
+- hosts: ntp_client
   gather_facts: false
   any_errors_fatal: true
   tasks:
     - include_role:
-        name: ntp-server/set-ntp-client-conf
+        name: ntp/client/install
+      when: enable_ntp_server
 
 - hosts: k8s_node
   gather_facts: false

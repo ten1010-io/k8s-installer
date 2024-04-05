@@ -19,4 +19,4 @@
 - name: Fail if distribution is not supported
   fail:
     msg: "{{ distribution }}{{ major_version }}.{{ minor_version }} is not supported"
-  when: set_ntp_client_conf_supported | default(False) | bool == false
+  when: install_ntp_client_supported | default(False) | bool == false
