@@ -1,4 +1,5 @@
 # Nameserver
+enable_nameserver: true
 nameserver_zone: "example.com"
 nameserver_a_records:
   - host: "@"
