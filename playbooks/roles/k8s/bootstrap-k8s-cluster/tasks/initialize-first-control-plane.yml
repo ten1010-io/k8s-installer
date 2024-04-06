@@ -1,5 +1,13 @@
 - name: Initialize first control plane
-  command: "kubeadm init --apiserver-advertise-address '{{ k8s_ip }}' --control-plane-endpoint '{{ k8s_control_plane_endpoint_address }}:{{ k8s_control_plane_endpoint_port }}' --upload-certs --pod-network-cidr=10.244.0.0/16 --image-repository {{ cluster_boot_registry_domain_name }}:{{ cluster_boot_registry_port }} --kubernetes-version {{ kubernetes_version }}"
+  command: |-
+    kubeadm init \
+    --apiserver-advertise-address '{{ k8s_ip }}' \
+    --control-plane-endpoint '{{ k8s_control_plane_endpoint_address }}:{{ k8s_control_plane_endpoint_port }}' \
+    --upload-certs \
+    --service-cidr {{ service_cluster_ip_range }} \
+    --pod-network-cidr 10.244.0.0/16 \
+    --image-repository {{ cluster_boot_registry_domain_name }}:{{ cluster_boot_registry_port }} \
+    --kubernetes-version {{ kubernetes_version }}
   register: kubeadm_init
 
 - name: Set kubectl config

@@ -51,7 +51,7 @@
     mode: 0644
 
 - name: Add route for kubernetes service
-  command: "ip route add 10.96.0.0/12 via {{ k8s_ip }} dev {{ k8s_interface }}"
+  command: "ip route add {{ service_cluster_ip_range }} via {{ k8s_ip }} dev {{ k8s_interface }}"
 
 - name: Set crictl configuration
   template:

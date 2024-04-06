@@ -6,6 +6,6 @@ network:
 {% endif %}
     {{ k8s_interface }}:
       routes:
-        - to: 10.96.0.0/12
+        - to: {{ service_cluster_ip_range }}
           via: {{ k8s_ip }}
   version: 2
