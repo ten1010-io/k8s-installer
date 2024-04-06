@@ -1,16 +1,6 @@
 - name: Include tasks preflight.yml
   include_tasks: preflight.yml
 
-- include_role:
-    name: host-configuration/disable-resolved
-
-- name: Set resolv.conf for forwarder
-  template:
-    dest: "/etc/resolv.conf"
-    src: forwarder-resolv.conf.j2
-    owner: root
-    mode: 0644
-
 - name: Delete nameserver tmp bin directory
   file:
     path: /tmp/k8s-installer/bin/nameserver
