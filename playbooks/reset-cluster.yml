@@ -1,4 +1,5 @@
 - hosts: all:localhost
+  become: true
   gather_facts: true
   any_errors_fatal: true
   tasks:
@@ -6,6 +7,7 @@
         name: gather-facts
 
 - hosts: k8s_node
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -22,6 +24,7 @@
         name: k8s/uninstall-kubelet
 
 - hosts: ntp_client
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -30,6 +33,7 @@
       when: enable_ntp_server
 
 - hosts: ntp_server
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -38,6 +42,7 @@
       when: enable_ntp_server
 
 - hosts: k8s_haproxy
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -46,6 +51,7 @@
       when: enable_k8s_haproxy
 
 - hosts: nameserver_client
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -55,6 +61,7 @@
         enable_nameserver: false
 
 - hosts: nameserver
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -63,6 +70,7 @@
       when: enable_nameserver
 
 - hosts: cluster_boot_registry
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -70,6 +78,7 @@
         name: cluster-boot-registry/uninstall
 
 - hosts: keepalived
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -78,6 +87,7 @@
       when: enable_keepalived
 
 - hosts: docker_node
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -85,6 +95,7 @@
         name: docker/uninstall
 
 - hosts: ca_client
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -92,6 +103,7 @@
         name: certificate/uninstall-ca-cert
 
 - hosts: tls_cert_issuer
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:

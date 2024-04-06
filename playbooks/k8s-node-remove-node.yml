@@ -1,4 +1,5 @@
 - hosts: localhost
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -13,6 +14,7 @@
       when: node not in groups['k8s_node']
 
 - hosts: all:localhost
+  become: true
   gather_facts: true
   any_errors_fatal: true
   tasks:
@@ -20,6 +22,7 @@
         name: gather-facts
 
 - hosts: "{{ node }}"
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -27,6 +30,7 @@
         name: k8s/preflight
 
 - hosts: k8s_node
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -42,6 +46,7 @@
         - not (skip_delete_node_from_cluster | default(False) | bool)
 
 - hosts: "{{ node }}"
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -86,6 +91,7 @@
         - "'ntp_server' not in group_names"
 
 - hosts: k8s_haproxy
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:

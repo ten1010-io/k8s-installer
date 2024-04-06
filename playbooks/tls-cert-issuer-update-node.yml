@@ -1,4 +1,5 @@
 - hosts: localhost
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -6,6 +7,7 @@
         name: preflight/ensure-bin-directory-exist
 
 - hosts: all:localhost
+  become: true
   gather_facts: true
   any_errors_fatal: true
   tasks:
@@ -13,6 +15,7 @@
         name: gather-facts
 
 - hosts: tls_cert_issuer
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -24,6 +27,7 @@
         name: certificate/set-ca-cert-variable
 
 - hosts: ca_client
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -35,6 +39,7 @@
         ca_cert: "{{ hostvars[groups['tls_cert_issuer'] | first]['ca_cert'] }}"
 
 - hosts: tls_cert_issuer
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -48,6 +53,7 @@
         tls_domain_name: "{{ cluster_boot_registry_domain_name }}"
 
 - hosts: cluster_boot_registry
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -60,6 +66,7 @@
         tls_key: "{{ hostvars[groups['tls_cert_issuer'] | first]['tls_key'] }}"
 
 - hosts: docker_node
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:

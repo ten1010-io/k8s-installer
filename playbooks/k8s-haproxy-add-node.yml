@@ -1,4 +1,5 @@
 - hosts: localhost
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -15,6 +16,7 @@
       when: node not in groups['k8s_haproxy']
 
 - hosts: all:localhost
+  become: true
   gather_facts: true
   any_errors_fatal: true
   tasks:
@@ -22,6 +24,7 @@
         name: gather-facts
 
 - hosts: tls_cert_issuer
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -29,6 +32,7 @@
         name: certificate/set-ca-cert-variable
 
 - hosts: "{{ node }}"
+  become: true
   gather_facts: false
   any_errors_fatal: true
   tasks:
