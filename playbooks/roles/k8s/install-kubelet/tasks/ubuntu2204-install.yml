@@ -43,10 +43,3 @@
     src: ubuntu2204-10-kubeadm.conf.j2
     owner: root
     mode: 0644
-
-- name: Set netplan for kubernetes service
-  template:
-    dest: "/etc/netplan/99-k8s.yaml"
-    src: 99-k8s.yaml.j2
-    owner: root
-    mode: 0644

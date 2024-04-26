@@ -43,10 +43,3 @@
     src: rhel8-10-kubeadm.conf.j2
     owner: root
     mode: 0644
-
-- name: Set route network script for kubernetes service
-  template:
-    dest: "/etc/sysconfig/network-scripts/route-{{ k8s_interface }}"
-    src: route.j2
-    owner: root
-    mode: 0644

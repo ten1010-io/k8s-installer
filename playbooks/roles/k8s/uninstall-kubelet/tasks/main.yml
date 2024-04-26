@@ -11,26 +11,10 @@
     path: "/etc/crictl.yaml"
     state: absent
 
-- name: Delete route for kubernetes service
-  command: "ip route del {{ service_cluster_ip_range }} via {{ k8s_ip }} dev {{ k8s_interface }}"
-  ignore_errors: true
-
 - name: Remove k8s-resolv.conf
   file:
     path: "/etc/k8s-resolv.conf"
     state: absent
-
-- name: Remove netplan for kubernetes service
-  file:
-    path: "/etc/netplan/99-k8s.yaml"
-    state: absent
-  when: ansible_os_family == "Debian"
-
-- name: Remove route network script for kubernetes service
-  file:
-    path: "/etc/sysconfig/network-scripts/route-{{ k8s_interface }}"
-    state: absent
-  when: ansible_os_family == "RedHat"
 
 - name: Remove k8s packages on debian os family
   command: |-
