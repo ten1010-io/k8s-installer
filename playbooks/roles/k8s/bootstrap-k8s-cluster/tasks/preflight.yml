@@ -9,8 +9,8 @@
   when: k8s_interface is undefined or
     k8s_interface | length <= 0
 
-- name: Fail if k8s_control_plane_endpoint_address is invalid
+- name: Fail if k8s_control_plane_endpoint_address_internal is invalid
   fail:
-    msg: "'{{ k8s_control_plane_endpoint_address | default('undefined') }}' is invalid"
-  when: k8s_control_plane_endpoint_address is undefined or
-    k8s_control_plane_endpoint_address | length <= 0
+    msg: "'{{ k8s_control_plane_endpoint_address_internal | default('undefined') }}' is invalid"
+  when: k8s_control_plane_endpoint_address_internal is undefined or
+    k8s_control_plane_endpoint_address_internal | length <= 0
