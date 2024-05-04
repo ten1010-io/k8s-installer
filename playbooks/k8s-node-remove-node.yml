@@ -100,5 +100,5 @@
     - include_role:
         name: k8s-haproxy/install
       vars:
-        backend_servers: "{{ groups['control_plane_k8s_node'] | difference(node) }}"
+        backend_servers: "{{ groups['control_plane_k8s_node'] | difference([node]) }}"
       when: enable_k8s_haproxy

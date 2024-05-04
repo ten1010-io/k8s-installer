@@ -7,7 +7,7 @@
 
 - include_role:
     name: k8s/attach-node
-  when: "inventory_hostname in (groups['k8s_node'] | difference(first_control_plane_k8s_node))"
+  when: "inventory_hostname in (groups['k8s_node'] | difference([first_control_plane_k8s_node]))"
   vars:
     kubeadm_init_stdout_lines: "{{ hostvars[first_control_plane_k8s_node]['kubeadm_init'].stdout_lines | default([]) }}"
     kubeadm_token: "{{ kubeadm_init_stdout_lines | regex_search('--token ([^ ]+)', '\\1') | first}}"

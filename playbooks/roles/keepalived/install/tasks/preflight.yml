@@ -63,7 +63,7 @@
 
 - name: Set peer_keepaliveds
   set_fact:
-    peer_keepaliveds: "{{ groups['keepalived'] | difference(inventory_hostname) }}"
+    peer_keepaliveds: "{{ groups['keepalived'] | difference([inventory_hostname]) }}"
 
 - name: Set priority variable
   set_fact:
