@@ -8,17 +8,17 @@
 
 - name: Create ingress-nginx directory
   file:
-    path: "{{ helm_chart_root }}/ingress-nginx"
+    path: "{{ k8s_installer_chart_root }}/ingress-nginx"
     state: directory
 
 - name: Copy ingress-nginx.tgz
   copy:
     src: ../../../../bin/k8s-node/packages/ingress-nginx.tgz
-    dest: "{{ helm_chart_root }}/ingress-nginx"
+    dest: "{{ k8s_installer_chart_root }}/ingress-nginx"
 
 - name: Set ingress-nginx-values.yml
   template:
-    dest: "{{ helm_chart_root }}/ingress-nginx/{{ ingress_class_name }}-values.yml"
+    dest: "{{ k8s_installer_chart_root }}/ingress-nginx/{{ ingress_class_name }}-values.yml"
     src: ingress-nginx-values.yml.j2
     owner: root
     mode: 0644
@@ -38,8 +38,8 @@
   command: |-
     helm install --namespace ingress-nginx \
     {{ ingress_class_name }}-ingress-nginx \
-    {{ helm_chart_root }}/ingress-nginx/ingress-nginx.tgz \
-    -f {{ helm_chart_root }}/ingress-nginx/{{ ingress_class_name }}-values.yml
+    {{ k8s_installer_chart_root }}/ingress-nginx/ingress-nginx.tgz \
+    -f {{ k8s_installer_chart_root }}/ingress-nginx/{{ ingress_class_name }}-values.yml
   vars:
     ingress_class_name: "{{ item.ingress_class_name }}"
   with_items:

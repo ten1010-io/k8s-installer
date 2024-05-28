@@ -82,6 +82,6 @@
 
 - name: Create docker compose root directory
   file:
-    path: "{{ docker_compose_root }}"
+    path: "{{ k8s_installer_service_root }}"
     state: directory
     recurse: yes

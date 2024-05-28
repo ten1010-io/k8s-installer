@@ -1,3 +1,0 @@
-# K8S haproxy
-enable_k8s_haproxy: true
-k8s_haproxy_port: 16443

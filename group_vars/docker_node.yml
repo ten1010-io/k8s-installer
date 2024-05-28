@@ -1,9 +1,0 @@
-containerd_root: "/var/lib/containerd"
-docker_root: "/var/lib/docker"
-k8s_installer_etc_root: "/etc/k8s-installer"
-docker_compose_root: "{{ k8s_installer_etc_root }}/services"
-k8s_installer_var_root: "/var/lib/k8s-installer"
-
-# Cluster boot registry
-cluster_boot_registry_domain_name: "cluster-boot-registry.example.com"
-cluster_boot_registry_port: "5000"

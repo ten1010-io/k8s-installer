@@ -1,11 +1,11 @@
 - name: Stat keepalived directory
   stat:
-    path: "{{ docker_compose_root }}/keepalived"
+    path: "{{ k8s_installer_service_root }}/keepalived"
   register: keepalived_directory
 
 - name: Fail if keepalived directory already exist
   fail:
-    msg: "Directory \"{{ docker_compose_root }}/keepalived\" already exist"
+    msg: "Directory \"{{ k8s_installer_service_root }}/keepalived\" already exist"
   when: keepalived_directory.stat.exists
 
 - name: Fail if enable_keepalived_vip1 is false and enable_keepalived_vip2 is false

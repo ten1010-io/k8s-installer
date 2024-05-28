@@ -6,7 +6,7 @@
 
     - block:
         - name: Delete ip address pools in kubernetes
-          command: "kubectl delete -f {{ helm_chart_root }}/metallb/ip-pools"
+          command: "kubectl delete -f {{ k8s_installer_chart_root }}/metallb/ip-pools"
 
         - name: Uninstall metallb
           command: "helm uninstall --namespace metallb metallb"
@@ -18,5 +18,5 @@
 
 - name: Remove metallb directory
   file:
-    path: "{{ helm_chart_root }}/metallb"
+    path: "{{ k8s_installer_chart_root }}/metallb"
     state: absent

@@ -8,17 +8,17 @@
 
 - name: Create metallb directory
   file:
-    path: "{{ helm_chart_root }}/metallb"
+    path: "{{ k8s_installer_chart_root }}/metallb"
     state: directory
 
 - name: Copy metallb.tgz
   copy:
     src: ../../../../bin/k8s-node/packages/metallb.tgz
-    dest: "{{ helm_chart_root }}/metallb"
+    dest: "{{ k8s_installer_chart_root }}/metallb"
 
 - name: Set values.yml
   template:
-    dest: "{{ helm_chart_root }}/metallb/values.yml"
+    dest: "{{ k8s_installer_chart_root }}/metallb/values.yml"
     src: metallb/metallb-values.yml.j2
     owner: root
     mode: 0644
@@ -27,16 +27,16 @@
   command: "kubectl create ns metallb"
 
 - name: Install metallb
-  command: "helm install --namespace metallb metallb {{ helm_chart_root }}/metallb/metallb.tgz -f {{ helm_chart_root }}/metallb/values.yml"
+  command: "helm install --namespace metallb metallb {{ k8s_installer_chart_root }}/metallb/metallb.tgz -f {{ k8s_installer_chart_root }}/metallb/values.yml"
 
 - name: Create ip-pools directory
   file:
-    path: "{{ helm_chart_root }}/metallb/ip-pools"
+    path: "{{ k8s_installer_chart_root }}/metallb/ip-pools"
     state: directory
 
 - name: "Set ip-address-pool.yml"
   template:
-    dest: "{{ helm_chart_root }}/metallb/ip-pools/{{ pool_name }}-ip-address-pool.yml"
+    dest: "{{ k8s_installer_chart_root }}/metallb/ip-pools/{{ pool_name }}-ip-address-pool.yml"
     src: metallb/ip-address-pool.yml.j2
     owner: root
     mode: 0644
@@ -48,7 +48,7 @@
 
 - name: "Set l2-advertisement.yml"
   template:
-    dest: "{{ helm_chart_root }}/metallb/ip-pools/{{ pool_name }}-l2-advertisement.yml"
+    dest: "{{ k8s_installer_chart_root }}/metallb/ip-pools/{{ pool_name }}-l2-advertisement.yml"
     src: metallb/l2-advertisement.yml.j2
     owner: root
     mode: 0644
@@ -67,4 +67,4 @@
   delay: 10
 
 - name: Create ip address pools in kubernetes
-  command: "kubectl apply -f {{ helm_chart_root }}/metallb/ip-pools"
+  command: "kubectl apply -f {{ k8s_installer_chart_root }}/metallb/ip-pools"

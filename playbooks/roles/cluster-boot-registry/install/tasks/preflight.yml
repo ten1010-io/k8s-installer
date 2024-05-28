@@ -1,11 +1,11 @@
 - name: Stat cluster-boot-registry directory
   stat:
-    path: "{{ docker_compose_root }}/cluster-boot-registry"
+    path: "{{ k8s_installer_service_root }}/cluster-boot-registry"
   register: cluster_boot_registry_directory
 
 - name: Fail if cluster-boot-registry directory already exist
   fail:
-    msg: "Directory \"{{ docker_compose_root }}/cluster-boot-registry\" already exist"
+    msg: "Directory \"{{ k8s_installer_service_root }}/cluster-boot-registry\" already exist"
   when: cluster_boot_registry_directory.stat.exists
 
 

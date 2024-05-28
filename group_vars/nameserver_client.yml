@@ -1,5 +1,0 @@
-# Nameserver client
-enable_nameserver: true
-nameserver_forwarders:
-  - "8.8.8.8"
-nameserver_ip_for_clients: "123.123.123.123"

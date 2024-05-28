@@ -1,16 +1,16 @@
 - name: Create flannel directory
   file:
-    path: "{{ helm_chart_root }}/flannel"
+    path: "{{ k8s_installer_chart_root }}/flannel"
     state: directory
 
 - name: Copy flannel.tgz
   copy:
     src: ../../../../bin/k8s-node/packages/flannel.tgz
-    dest: "{{ helm_chart_root }}/flannel"
+    dest: "{{ k8s_installer_chart_root }}/flannel"
 
 - name: Set values.yml
   template:
-    dest: "{{ helm_chart_root }}/flannel/values.yml"
+    dest: "{{ k8s_installer_chart_root }}/flannel/values.yml"
     src: flannel-values.yml.j2
     owner: root
     mode: 0644
@@ -22,4 +22,4 @@
   command: "kubectl label --overwrite ns kube-flannel pod-security.kubernetes.io/enforce=privileged"
 
 - name: Install flannel
-  command: "helm install --namespace kube-flannel flannel {{ helm_chart_root }}/flannel/flannel.tgz -f {{ helm_chart_root }}/flannel/values.yml"
+  command: "helm install --namespace kube-flannel flannel {{ k8s_installer_chart_root }}/flannel/flannel.tgz -f {{ k8s_installer_chart_root }}/flannel/values.yml"

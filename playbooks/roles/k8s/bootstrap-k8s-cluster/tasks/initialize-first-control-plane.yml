@@ -2,14 +2,17 @@
   command: |-
     kubeadm init \
     --apiserver-advertise-address '{{ k8s_ip }}' \
+    --apiserver-bind-port '{{ k8s_apiserver_port }}' \
     --control-plane-endpoint '{{ k8s_control_plane_endpoint_address_internal }}:{{ k8s_control_plane_endpoint_port }}' \
     --apiserver-cert-extra-sans '{{ k8s_control_plane_endpoint_address_external }}' \
     --upload-certs \
-    --service-cidr {{ service_cluster_ip_range }} \
+    --service-cidr {{ k8s_service_cluster_ip_range }} \
     --pod-network-cidr 10.244.0.0/16 \
     --image-repository {{ cluster_boot_registry_domain_name }}:{{ cluster_boot_registry_port }} \
-    --kubernetes-version {{ kubernetes_version }}
+    --kubernetes-version {{ k8s_version }}
   register: kubeadm_init
+  vars:
+    k8s_control_plane_endpoint_port: "{{ k8s_haproxy_port if enable_k8s_haproxy else k8s_apiserver_port }}"
 
 - name: Set kubectl config
   shell: "mkdir -p $HOME/.kube && \\cp /etc/kubernetes/admin.conf $HOME/.kube/config && sudo chown $(id -u):$(id -g) $HOME/.kube/config"
@@ -40,5 +43,5 @@
 
 - name: Create charts directory
   file:
-    path: "{{ helm_chart_root }}"
+    path: "{{ k8s_installer_chart_root }}"
     state: directory

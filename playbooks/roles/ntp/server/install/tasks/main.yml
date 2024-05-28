@@ -23,15 +23,15 @@
 
 - name: Create ntp-server directory
   file:
-    path: "{{ docker_compose_root }}/ntp-server"
+    path: "{{ k8s_installer_service_root }}/ntp-server"
     state: directory
 
 - name: Set compose.yml
   template:
-    dest: "{{ docker_compose_root }}/ntp-server/compose.yml"
+    dest: "{{ k8s_installer_service_root }}/ntp-server/compose.yml"
     src: compose.yml.j2
     owner: root
     mode: 0644
 
 - name: Run the ntp-server service
-  command: "docker compose -f {{ docker_compose_root }}/ntp-server/compose.yml up -d"
+  command: "docker compose -f {{ k8s_installer_service_root }}/ntp-server/compose.yml up -d"

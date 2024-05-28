@@ -38,25 +38,25 @@
 
 - name: Create cluster-boot-registry directory
   file:
-    path: "{{ docker_compose_root }}/cluster-boot-registry"
+    path: "{{ k8s_installer_service_root }}/cluster-boot-registry"
     state: directory
 
 - name: Write tls_cert variable to tls.crt
   copy:
     content: "{{ tls_cert }}"
-    dest: "{{ docker_compose_root }}/cluster-boot-registry/tls.crt"
+    dest: "{{ k8s_installer_service_root }}/cluster-boot-registry/tls.crt"
 
 - name: Write tls_key variable to tls.key
   copy:
     content: "{{ tls_key }}"
-    dest: "{{ docker_compose_root }}/cluster-boot-registry/tls.key"
+    dest: "{{ k8s_installer_service_root }}/cluster-boot-registry/tls.key"
 
 - name: Set compose.yml
   template:
-    dest: "{{ docker_compose_root }}/cluster-boot-registry/compose.yml"
+    dest: "{{ k8s_installer_service_root }}/cluster-boot-registry/compose.yml"
     src: compose.yml.j2
     owner: root
     mode: 0644
 
 - name: Run the cluster-boot-registry service
-  command: "docker compose -f {{ docker_compose_root }}/cluster-boot-registry/compose.yml up -d"
+  command: "docker compose -f {{ k8s_installer_service_root }}/cluster-boot-registry/compose.yml up -d"

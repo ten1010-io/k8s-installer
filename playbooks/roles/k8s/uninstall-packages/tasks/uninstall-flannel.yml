@@ -15,5 +15,5 @@
 
 - name: Remove flannel directory
   file:
-    path: "{{ helm_chart_root }}/flannel"
+    path: "{{ k8s_installer_chart_root }}/flannel"
     state: absent

@@ -25,22 +25,22 @@
 
 - name: Create k8s-haproxy directory
   file:
-    path: "{{ docker_compose_root }}/k8s-haproxy"
+    path: "{{ k8s_installer_service_root }}/k8s-haproxy"
     state: directory
 
 - name: Set compose.yml
   template:
-    dest: "{{ docker_compose_root }}/k8s-haproxy/compose.yml"
+    dest: "{{ k8s_installer_service_root }}/k8s-haproxy/compose.yml"
     src: haproxy-compose.yml.j2
     owner: root
     mode: 0644
 
 - name: Set haproxy.cfg
   template:
-    dest: "{{ docker_compose_root }}/k8s-haproxy/haproxy.cfg"
+    dest: "{{ k8s_installer_service_root }}/k8s-haproxy/haproxy.cfg"
     src: haproxy.cfg.j2
     owner: root
     mode: 0644
 
 - name: Run the haproxy service
-  command: "docker compose -f {{ docker_compose_root }}/k8s-haproxy/compose.yml up -d"
+  command: "docker compose -f {{ k8s_installer_service_root }}/k8s-haproxy/compose.yml up -d"

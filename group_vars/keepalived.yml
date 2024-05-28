@@ -1,6 +1,0 @@
-# Keepalived
-enable_keepalived: true
-enable_keepalived_vip1: true
-keepalived_vip1: "123.123.123.123"
-enable_keepalived_vip2: false
-keepalived_vip2: "123.123.123.123"

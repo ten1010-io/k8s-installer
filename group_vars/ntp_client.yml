@@ -1,3 +1,0 @@
-# NTP client
-enable_ntp_server: true
-ntp_server_address_for_clients: "time.example.com"

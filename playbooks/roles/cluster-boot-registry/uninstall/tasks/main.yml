@@ -1,15 +1,15 @@
 - name: Stat cluster-boot-registry directory
   stat:
-    path: "{{ docker_compose_root }}/cluster-boot-registry"
+    path: "{{ k8s_installer_service_root }}/cluster-boot-registry"
   register: cluster_boot_registry_directory
 
 - block:
   - name: Remove cluster-boot-registry service
-    command: "docker compose -f {{ docker_compose_root }}/cluster-boot-registry/compose.yml down"
+    command: "docker compose -f {{ k8s_installer_service_root }}/cluster-boot-registry/compose.yml down"
 
   - name: Remove cluster-boot-registry directory
     file:
-      path: "{{ docker_compose_root }}/cluster-boot-registry"
+      path: "{{ k8s_installer_service_root }}/cluster-boot-registry"
       state: absent
 
   - name: Remove cluster-boot-registry var directory

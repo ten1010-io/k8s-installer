@@ -23,39 +23,39 @@
 
 - name: Create nameserver directory
   file:
-    path: "{{ docker_compose_root }}/nameserver"
+    path: "{{ k8s_installer_service_root }}/nameserver"
     state: directory
 
 - name: Set compose.yml
   template:
-    dest: "{{ docker_compose_root }}/nameserver/compose.yml"
+    dest: "{{ k8s_installer_service_root }}/nameserver/compose.yml"
     src: compose.yml.j2
     owner: root
     mode: 0644
 
 - name: Set named.conf.options
   template:
-    dest: "{{ docker_compose_root }}/nameserver/named.conf.options"
+    dest: "{{ k8s_installer_service_root }}/nameserver/named.conf.options"
     src: named.conf.options.j2
     owner: root
     mode: 0644
 
 - name: Set named.conf.local
   template:
-    dest: "{{ docker_compose_root }}/nameserver/named.conf.local"
+    dest: "{{ k8s_installer_service_root }}/nameserver/named.conf.local"
     src: named.conf.local.j2
     owner: root
     mode: 0644
 
 - name: Set db
   template:
-    dest: "{{ docker_compose_root }}/nameserver/db"
+    dest: "{{ k8s_installer_service_root }}/nameserver/db"
     src: db.j2
     owner: root
     mode: 0644
 
 - name: Run the nameserver service
-  command: "docker compose -f {{ docker_compose_root }}/nameserver/compose.yml up -d"
+  command: "docker compose -f {{ k8s_installer_service_root }}/nameserver/compose.yml up -d"
 
 - name: Include tasks add-dns-to-daemon-json.yml
   include_tasks: add-dns-to-daemon-json.yml
