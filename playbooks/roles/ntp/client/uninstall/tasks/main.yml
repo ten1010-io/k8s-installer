@@ -1,7 +1,8 @@
 - name: Remove ntp client packages on debian os family
   command: |-
     apt remove -y --purge --allow-change-held-packages \
-    systemd-timesyncd
+    systemd-timesyncd \
+    ntp
   ignore_errors: true
   when: ansible_os_family == "Debian"
 
