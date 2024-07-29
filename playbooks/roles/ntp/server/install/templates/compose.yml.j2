@@ -8,7 +8,7 @@ services:
 {% if ntp_server_offline_mode %}
       NTP_SERVERS: 127.127.1.1
 {% else %}
-      NTP_SERVERS: time1.google.com,time2.google.com,time3.google.com,time4.google.com
+      NTP_SERVERS: {{ upstream_ntp_servers }}
 {% endif %}
     network_mode: bridge
     restart: always

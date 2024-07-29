@@ -46,6 +46,7 @@ nameserver_a_records:
 # NTP server
 enable_ntp_server: true
 ntp_server_offline_mode: false
+upstream_ntp_servers: time1.google.com,time2.google.com,time3.google.com,time4.google.com
 
 # NTP client
 ntp_server_address_for_client: "time.example.com"
