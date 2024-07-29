@@ -65,7 +65,6 @@
     - include_role:
         name: ntp/client/uninstall
       when:
-        - "enable_ntp_server"
         - "'cluster_boot_registry' not in group_names"
         - "'keepalived' not in group_names"
         - "'nameserver' not in group_names"
