@@ -30,7 +30,6 @@
   tasks:
     - include_role:
         name: ntp/client/uninstall
-      when: enable_ntp_server
 
 - hosts: ntp_server
   become: true

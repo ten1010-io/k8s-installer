@@ -48,7 +48,6 @@
         name: nameserver/set-resolv-conf
     - include_role:
         name: ntp/client/install
-      when: enable_ntp_server
     - name: Get docker service status
       ansible.builtin.systemd:
         name: "docker"

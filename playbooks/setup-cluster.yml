@@ -118,7 +118,6 @@
   tasks:
     - include_role:
         name: ntp/client/install
-      when: enable_ntp_server
 
 - hosts: k8s_node
   become: true
