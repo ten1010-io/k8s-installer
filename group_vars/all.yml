@@ -43,10 +43,12 @@ nameserver_a_records:
   - host: "time"
     ip: "123.123.123.123"
 
-# NTP
+# NTP server
 enable_ntp_server: true
 ntp_server_offline_mode: false
-ntp_server_address_for_clients: "time.example.com"
+
+# NTP client
+ntp_server_address_for_client: "time.example.com"
 
 # K8S control plane
 enable_k8s_haproxy: true
