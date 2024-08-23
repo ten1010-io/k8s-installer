@@ -8,6 +8,12 @@
   set_fact:
     install_docker_supported: true
 
+- name: Remove podman and runc packages
+  command: |-
+    yum erase -y \
+    podman \
+    runc
+
 - name: Delete docker rhel8 directory
   file:
     path: /tmp/k8s-installer/bin/docker-node/docker/rhel8
