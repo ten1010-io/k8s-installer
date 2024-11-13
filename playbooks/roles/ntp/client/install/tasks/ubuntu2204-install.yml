@@ -40,7 +40,7 @@
       shell: dpkg -i /tmp/k8s-installer/bin/ntp/client/ubuntu2204/from0/*.deb
   when:
     - minor_version | int >= 0
-    - minor_version | int <= 4
+    - minor_version | int <= 5
 
 - name: Set timesyncd.conf for k8s-installer ntp-server
   template:

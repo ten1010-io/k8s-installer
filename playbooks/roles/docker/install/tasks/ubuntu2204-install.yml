@@ -2,7 +2,7 @@
   fail:
     msg: "{{ distribution }}{{ major_version }}.{{ minor_version }} is not supported"
   when:
-    - minor_version | int > 4
+    - minor_version | int > 5
 
 - name: Set fact install_docker_supported from ubuntu2204
   set_fact:
@@ -35,7 +35,7 @@
       shell: dpkg -i /tmp/k8s-installer/bin/docker-node/docker/ubuntu2204/from0/*.deb
   when:
     - minor_version | int >= 0
-    - minor_version | int <= 4
+    - minor_version | int <= 5
 
 - name: Install nvidia-container-toolkit
   block:
@@ -62,6 +62,6 @@
           shell: dpkg -i /tmp/k8s-installer/bin/docker-node/nvidia-container-toolkit/ubuntu2204/from0/*.deb
       when:
         - minor_version | int >= 0
-        - minor_version | int <= 4
+        - minor_version | int <= 5
   when:
     - nvidia_gpu_node | default(False) | bool == true
