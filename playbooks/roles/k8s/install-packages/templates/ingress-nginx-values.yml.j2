@@ -52,6 +52,9 @@ controller:
     targetPorts:
       http: {{ container_ports['http'] }}
       https: {{ container_ports['https'] }}
+{% else %}
+    enabled: false
+{% endif %}
   admissionWebhooks:
     patch:
       image:
@@ -59,6 +62,3 @@ controller:
         image: ingress-nginx/kube-webhook-certgen
         tag: v1.4.0
         digest: null
-{% else %}
-    enabled: false
-{% endif %}
