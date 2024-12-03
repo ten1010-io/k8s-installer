@@ -2,7 +2,8 @@
   command: |-
     apt remove -y --purge --allow-change-held-packages \
     systemd-timesyncd \
-    ntp
+    ntp \
+    chrony
   ignore_errors: true
   when: ansible_os_family == "Debian"
 
