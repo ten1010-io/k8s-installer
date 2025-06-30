@@ -2,6 +2,10 @@ controller:
   image:
     repository: {{ cluster_boot_registry_domain_name }}:{{ cluster_boot_registry_port }}/metallb/controller
     tag: v0.14.4
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
 speaker:
   image:
     repository: {{ cluster_boot_registry_domain_name }}:{{ cluster_boot_registry_port }}/metallb/speaker
