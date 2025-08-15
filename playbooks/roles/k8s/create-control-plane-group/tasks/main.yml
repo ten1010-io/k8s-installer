@@ -1,9 +1,0 @@
-- name: Create groups based on the control_plane option
-  group_by:
-    key: "{{ 'control_plane_k8s_node' if (control_plane | default(False) | bool) else 'non_control_plane_k8s_node' }}"
-  throttle: 1
-
-- name: Fail if control plane k8s node group is empty
-  fail:
-    msg: "At least 1 control plane k8s nodes are needed"
-  when: (groups['control_plane_k8s_node'] | default([]) | length) <= 0

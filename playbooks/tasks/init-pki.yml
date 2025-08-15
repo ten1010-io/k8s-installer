@@ -1,0 +1,27 @@
+- hosts: ki_cp_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Create pki directory
+      shell: "sudo mkdir -p {{ ki_etc_pki_path }}"
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_localhost_vars_path }}"
+  tasks:
+    - name: Execute create-pki.sh
+      shell: "sudo {{ ki_env_scripts_path }}/localhost-node/create-pki.sh {{ vars_path_arg }}"
+
+    - name: Copy pki to nodes of ki_cp_node group
+      shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
+      vars:
+        ssh_opt: "-o StrictHostKeyChecking=no"
+        port_opt: "-P {{ hostvars[item]['ansible_port'] }}"
+        src_arg: "{{ ki_tmp_pki_path }}/*"
+        dst_arg: "{{ hostvars[item]['ansible_ssh_user'] }}@{{ hostvars[item]['ansible_host'] }}:{{ ki_etc_pki_path }}/"
+      with_items: "{{ groups['ki_cp_node'] }}"
+
+    - name: Delete temporary pki directory
+      shell: "sudo rm -rf {{ ki_tmp_pki_path }}"

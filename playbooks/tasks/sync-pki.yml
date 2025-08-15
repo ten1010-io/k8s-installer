@@ -1,0 +1,49 @@
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: "Create directory[\"{{ ki_tmp_pki_path }}\"]"
+      shell: "sudo mkdir -p {{ ki_tmp_pki_path }}"
+
+    - name: Copy pki to ansible control node
+      shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
+      vars:
+        src_ih: "{{ groups['ki_cp_node'] | community.general.lists_difference([target_node]) | first }}"
+        ssh_opt: "-o StrictHostKeyChecking=no"
+        port_opt: "-P {{ hostvars[src_ih]['ansible_port'] }}"
+        src_arg: "{{ hostvars[src_ih]['ansible_ssh_user'] }}@{{ hostvars[src_ih]['ansible_host'] }}:{{ ki_etc_pki_path }}/*"
+        dst_arg: "{{ ki_tmp_pki_path }}/"
+
+- hosts: ki_cp_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - when: inventory_hostname == target_node
+      block:
+        - name: Create pki directory
+          shell: "sudo mkdir -p {{ ki_etc_pki_path }}"
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: "Copy pki to the node[\"{{ target_node }}\"]"
+      shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
+      vars:
+        ssh_opt: "-o StrictHostKeyChecking=no"
+        port_opt: "-P {{ hostvars[target_node]['ansible_port'] }}"
+        src_arg: "{{ ki_tmp_pki_path }}/*"
+        dst_arg: "{{ hostvars[target_node]['ansible_ssh_user'] }}@{{ hostvars[target_node]['ansible_host'] }}:{{ ki_etc_pki_path }}/"
+
+- hosts: all
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Delete temporary pki directory
+      shell: "sudo rm -rf {{ ki_tmp_pki_path }}"

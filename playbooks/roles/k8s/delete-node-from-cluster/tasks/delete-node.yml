@@ -1,5 +1,0 @@
-- name: Drain node
-  command: "kubectl drain --ignore-daemonsets --delete-emptydir-data --force {{ node_name_to_k8s_hostname_map[target_node] }}"
-
-- name: Delete node
-  command: "kubectl delete node {{ node_name_to_k8s_hostname_map[target_node] }}"

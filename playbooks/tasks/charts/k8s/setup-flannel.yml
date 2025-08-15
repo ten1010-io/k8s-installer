@@ -1,0 +1,16 @@
+- hosts: k8s_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute setup-flannel.sh
+      shell: "sudo {{ ki_env_scripts_path }}/k8s-node/charts/k8s/flannel/setup-flannel.sh {{ vars_path_arg }}"
+      when: inventory_hostname == k8s_cp_nodes | first
+
+    - name: Execute restart-container-runtime.sh
+      shell: "sudo {{ ki_env_scripts_path }}/k8s-node/charts/k8s/flannel/restart-container-runtime.sh {{ vars_path_arg }}"
+
+    - name: Execute delete-all-pods.sh
+      shell: "sudo {{ ki_env_scripts_path }}/k8s-node/delete-all-pods.sh {{ vars_path_arg }}"
+      when: inventory_hostname == k8s_cp_nodes | first

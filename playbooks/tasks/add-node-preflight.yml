@@ -1,0 +1,34 @@
+- hosts: all
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Set_fact variable[\"playbook\"]
+      set_fact:
+        playbook: "add-node"
+
+    - name: Set_fact variable[\"skip_resetting_vars_file\"]
+      set_fact:
+        skip_resetting_vars_file: ""
+      when: srvf is defined
+
+    - name: Validate variable[\"node\"]
+      fail:
+        msg: "Variable[\"node\"] is not defined"
+      when: node is not defined
+
+    - name: Validate variable[\"node\"]
+      fail:
+        msg: "Node[\"{{ node }}\"] not belong to all group"
+      when: node not in groups['all']
+
+    - name: Validate variable[\"node\"]
+      fail:
+        msg: "Node[\"{{ node }}\"] must belong to ki_cp_node or k8s_node group"
+      when:
+        - node not in groups['ki_cp_node']
+        - node not in groups['k8s_node']
+
+    - name: Set_fact variable[\"target_node\"] and variable[\"target_node_op\"]
+      set_fact:
+        target_node: "{{ node }}"
+        target_node_op: add

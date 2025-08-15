@@ -1,0 +1,46 @@
+ansible_python_interpreter: "{{ ki_env_ki_venv_path }}/bin/python3"
+ansible_port: 22
+ansible_ssh_user: root
+
+# Jinja2 template can not be used for ki_env_path. since it is used without jinja2 engine
+ki_env_path: "/var/lib/ki-env"
+# Don't modify ki_env_scripts_path. since it is hardcoded in setup-ki-env.sh, setup-ki-venv.sh
+ki_env_scripts_path: "{{ ki_env_path }}/scripts"
+# Don't modify ki_env_bin_path. since it is hardcoded in setup-ki-env.sh, setup-ki-venv.sh
+ki_env_bin_path: "{{ ki_env_path }}/bin"
+# Don't modify ki_env_ki_venv_path. since it is hardcoded in setup-ki-env.sh, setup-ki-venv.sh
+ki_env_ki_venv_path: "{{ ki_env_path }}/ki-venv"
+
+ki_tmp_root_path: "/tmp/k8s-installer"
+ki_tmp_localhost_vars_path: "{{ ki_tmp_root_path }}/localhost-vars.yml"
+ki_tmp_vars_path: "{{ ki_tmp_root_path }}/vars.yml"
+ki_tmp_pki_path: "{{ ki_tmp_root_path }}/pki"
+ki_tmp_ki_ca_crt_path: "{{ ki_tmp_root_path }}/ki-ca.crt"
+ki_tmp_join_credentials_path: "{{ ki_tmp_root_path }}/join-credentials.yml"
+ki_tmp_charts_path: "{{ ki_tmp_root_path }}/charts"
+
+ki_etc_root_path: "/etc/k8s-installer"
+ki_etc_pki_path: "{{ ki_etc_root_path }}/pki"
+ki_etc_services_path: "{{ ki_etc_root_path }}/services"
+ki_etc_kubeadm_path: "{{ ki_etc_root_path }}/kubeadm"
+ki_etc_charts_path: "{{ ki_etc_root_path }}/charts"
+
+ki_var_services_path: "{{ ki_var_root_path }}/services"
+
+internal_network_ip: null
+internal_network_zone: "ki.local"
+internal_network_ki_cp_dns_name: "ki-cp.{{ internal_network_zone }}"
+
+ki_cp_k8s_cp_lb_port: 16443
+ki_cp_k8s_cp_lb_stats_port: 18404
+ki_cp_k8s_registry_port: 5000
+
+k8s_version: "v1.27.9"
+k8s_apiserver_port: 6443
+k8s_service_subnet: "10.96.0.0/12"
+k8s_pod_subnet: "10.244.0.0/16"
+
+nvidia_gpu: false
+
+target_node: null
+target_node_op: null

@@ -1,0 +1,10 @@
+services:
+  ntp:
+    image: cturra/ntp:latest
+    ports:
+      - 123:123/udp
+    environment:
+      TZ: Asia/Seoul
+      NTP_SERVERS: {{ ntp_servers }}
+    network_mode: bridge
+    restart: always

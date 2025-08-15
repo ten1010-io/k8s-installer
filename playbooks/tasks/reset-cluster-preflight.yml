@@ -1,0 +1,17 @@
+- hosts: all
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Set_fact variable[\"playbook\"]
+      set_fact:
+        playbook: "reset-cluster"
+
+    - name: Set_fact variable[\"skip_resetting_vars_file\"]
+      set_fact:
+        skip_resetting_vars_file: ""
+      when: srvf is defined
+
+    - name: Set_fact variable[\"skip_deleting_from_cluster\"]
+      set_fact:
+        skip_deleting_from_cluster: ""
+      when: sdfc is defined

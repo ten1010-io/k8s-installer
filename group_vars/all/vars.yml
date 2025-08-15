@@ -1,0 +1,22 @@
+ki_var_root_path: "/var/lib/k8s-installer"
+containerd_root_path: "/var/lib/containerd"
+docker_root_path: "/var/lib/docker"
+
+internal_network_subnets:
+  - "192.168.0.0/24"
+
+#internal_network_extra_zone: "example.com"
+#internal_network_extra_zone_a_records:
+#  - name: "@"
+#    ip: "172.16.0.254"
+#  - name: "*"
+#    ip: "172.16.0.254"
+
+ki_cp_ha_mode: true
+ki_cp_ha_mode_vip: "192.168.0.254"
+ki_cp_dns_server_upstream_servers:
+  - "8.8.8.8"
+  - "8.8.4.4"
+ki_cp_ntp_server_upstream_servers:
+  - "time1.google.com"
+  - "time2.google.com"

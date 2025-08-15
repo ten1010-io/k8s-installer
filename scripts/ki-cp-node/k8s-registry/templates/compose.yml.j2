@@ -1,0 +1,20 @@
+services:
+  registry:
+    image: registry:2.8
+    ports:
+      - "{{ ki_cp_k8s_registry_port }}:5000"
+    volumes:
+      - "{{ var_svc_root_path }}/registry:/var/lib/registry"
+      - "{{ ki_etc_pki_path }}/ki-cp-tls.crt:/etc/registry/tls.crt"
+      - "{{ ki_etc_pki_path }}/ki-cp-tls.key:/etc/registry/tls.key"
+    environment:
+      TZ: "Asia/Seoul"
+      REGISTRY_STORAGE_MAINTENANCE: |-
+        uploadpurging:
+          enabled: false
+        readonly:
+          enabled: true
+      REGISTRY_HTTP_TLS_CERTIFICATE: "/etc/registry/tls.crt"
+      REGISTRY_HTTP_TLS_KEY: "/etc/registry/tls.key"
+    network_mode: bridge
+    restart: always

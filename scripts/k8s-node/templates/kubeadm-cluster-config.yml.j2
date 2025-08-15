@@ -1,0 +1,8 @@
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+imageRepository: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}
+networking:
+  serviceSubnet: {{ k8s_service_subnet }}
+  podSubnet: {{ k8s_pod_subnet }}
+kubernetesVersion: {{ k8s_version }}
+controlPlaneEndpoint: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_cp_lb_port }}

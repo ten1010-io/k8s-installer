@@ -1,0 +1,11 @@
+- hosts: all
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - when: skip_resetting_vars_file is undefined
+      block:
+        - name: Remove localhost vars file
+          shell: "sudo rm -f {{ ki_tmp_localhost_vars_path }}"
+
+        - name: Remove vars file
+          shell: "sudo rm -f {{ ki_tmp_vars_path }}"

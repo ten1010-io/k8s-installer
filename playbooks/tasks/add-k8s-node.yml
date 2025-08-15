@@ -1,0 +1,70 @@
+- hosts: k8s_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - when: inventory_hostname == k8s_cp_nodes | community.general.lists_difference([target_node]) | first
+      name: Execute create-join-credentials-file.sh
+      shell: "sudo {{ ki_env_scripts_path }}/k8s-node/create-join-credentials-file.sh {{ vars_path_arg }}"
+
+    - when: inventory_hostname == target_node
+      block:
+        - name: Execute configure-linux.sh
+          shell: "sudo {{ ki_env_scripts_path }}/k8s-node/configure-linux.sh {{ vars_path_arg }}"
+
+        - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
+          shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
+      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+    - name: Copy join-credentials.yml to ansible control node
+      shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
+      vars:
+        src_ih: "{{ k8s_cp_nodes | community.general.lists_difference([target_node]) | first }}"
+        ssh_opt: "-o StrictHostKeyChecking=no"
+        port_opt: "-P {{ hostvars[src_ih]['ansible_port'] }}"
+        src_arg: "{{ hostvars[src_ih]['ansible_ssh_user'] }}@{{ hostvars[src_ih]['ansible_host'] }}:{{ ki_tmp_join_credentials_path }}"
+        dst_arg: "{{ ki_tmp_join_credentials_path }}"
+
+    - name: "Copy join-credentials.yml to the node[\"{{ target_node }}\"]"
+      shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
+      vars:
+        ssh_opt: "-o StrictHostKeyChecking=no"
+        port_opt: "-P {{ hostvars[target_node]['ansible_port'] }}"
+        src_arg: "{{ ki_tmp_join_credentials_path }}"
+        dst_arg: "{{ hostvars[target_node]['ansible_ssh_user'] }}@{{ hostvars[target_node]['ansible_host'] }}:{{ ki_tmp_join_credentials_path }}"
+
+- hosts: k8s_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute join-k8s-cluster.sh
+      shell: "sudo {{ ki_env_scripts_path }}/k8s-node/join-k8s-cluster.sh {{ vars_path_arg }}"
+      when: inventory_hostname == target_node
+
+- hosts: ki_cp_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute setup-k8s-cp-lb.sh --update
+      shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh {{ vars_path_arg }} --update"
+      when: hostvars[target_node]['k8s_cp']
+
+- hosts: all
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Delete temporary join-credentials.yml file
+      shell: "sudo rm -f {{ ki_tmp_join_credentials_path }}"

@@ -1,0 +1,61 @@
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
+      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+    - name: Copy ki-ca.crt to ansible control node
+      shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
+      vars:
+        src_ih: "{{ groups['ki_cp_node'] | first }}"
+        ssh_opt: "-o StrictHostKeyChecking=no"
+        port_opt: "-P {{ hostvars[src_ih]['ansible_port'] }}"
+        src_arg: "{{ hostvars[src_ih]['ansible_ssh_user'] }}@{{ hostvars[src_ih]['ansible_host'] }}:{{ ki_etc_pki_path }}/ki-ca.crt"
+        dst_arg: "{{ ki_tmp_ki_ca_crt_path }}"
+
+- hosts: all:!localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - when: target_node is none or inventory_hostname == target_node
+      block:
+        - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
+          shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Copy ki-ca.crt file to nodes of all group
+      shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
+      vars:
+        ssh_opt: "-o StrictHostKeyChecking=no"
+        port_opt: "-P {{ hostvars[item]['ansible_port'] }}"
+        src_arg: "{{ ki_tmp_ki_ca_crt_path }}"
+        dst_arg: "{{ hostvars[item]['ansible_ssh_user'] }}@{{ hostvars[item]['ansible_host'] }}:{{ ki_tmp_ki_ca_crt_path }}"
+      with_items: "{{ groups['all'] | community.general.lists_difference(['localhost']) }}"
+
+- hosts: all:!localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - when: target_node is none or inventory_hostname == target_node
+      block:
+        - name: Execute setup-ki-ca-crt.sh
+          shell: "sudo {{ ki_env_scripts_path }}/all-node/ki-ca-crt/setup-ki-ca-crt.sh {{ vars_path_arg }}"
+
+- hosts: all
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Delete temporary ki-ca.crt file
+      shell: "sudo rm -f {{ ki_tmp_ki_ca_crt_path }}"

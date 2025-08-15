@@ -1,0 +1,8 @@
+- hosts: ki_cp_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - when: target_node is none or inventory_hostname == target_node
+      block:
+        - name: Remove pki directory
+          shell: "sudo rm -rf {{ ki_etc_pki_path }}"

@@ -1,0 +1,4 @@
+{% for server in dns_servers -%}
+nameserver {{ server }}
+{% endfor -%}
+options edns0 trust-ad

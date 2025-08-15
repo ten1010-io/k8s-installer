@@ -1,0 +1,25 @@
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
+      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+    - name: Create localhost vars file
+      copy:
+        content: "{{ hostvars[inventory_hostname] | to_yaml }}"
+        dest: "{{ ki_tmp_localhost_vars_path }}"
+      become: yes
+
+- hosts: all:!localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
+      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+    - name: Create vars file
+      copy:
+        content: "{{ hostvars[inventory_hostname] | to_yaml }}"
+        dest: "{{ ki_tmp_vars_path }}"
+      become: yes

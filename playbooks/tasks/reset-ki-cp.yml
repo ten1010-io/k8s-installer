@@ -1,0 +1,20 @@
+- hosts: ki_cp_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute reset-k8s-registry.sh
+      shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/k8s-registry/reset-k8s-registry.sh {{ vars_path_arg }}"
+
+    - name: Execute reset-k8s-cp-lb.sh
+      shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/k8s-cp-lb/reset-k8s-cp-lb.sh {{ vars_path_arg }}"
+
+    - name: Execute reset-ntp-server.sh
+      shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/ntp-server/reset-ntp-server.sh {{ vars_path_arg }}"
+
+    - name: Execute reset-dns-server.sh
+      shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/dns-server/reset-dns-server.sh {{ vars_path_arg }}"
+
+    - name: Execute reset-keepalived.sh
+      shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/keepalived/reset-keepalived.sh {{ vars_path_arg }}"

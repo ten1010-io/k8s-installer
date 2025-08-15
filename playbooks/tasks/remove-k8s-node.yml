@@ -1,0 +1,31 @@
+- hosts: k8s_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute delete-node.sh
+      shell: "sudo {{ ki_env_scripts_path }}/k8s-node/delete-node.sh {{ vars_path_arg }}"
+      when:
+        - inventory_hostname == k8s_cp_nodes | community.general.lists_difference([target_node]) | first
+        - skip_deleting_from_cluster is undefined
+
+    - name: Execute reset-k8s-node-kubelet.sh
+      shell: "sudo {{ ki_env_scripts_path }}/k8s-node/reset-k8s-node-kubelet.sh {{ vars_path_arg }}"
+      when: inventory_hostname == target_node
+
+    - name: Execute reset-k8s-node-cni.sh
+      shell: "sudo {{ ki_env_scripts_path }}/k8s-node/reset-k8s-node-cni.sh {{ vars_path_arg }}"
+      when: inventory_hostname == target_node
+
+- hosts: ki_cp_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute setup-k8s-cp-lb.sh --update
+      shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh {{ vars_path_arg }} --update"
+      when:
+        - hostvars[target_node]['k8s_cp']
+        - inventory_hostname != target_node

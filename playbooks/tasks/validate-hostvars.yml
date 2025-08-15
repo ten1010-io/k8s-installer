@@ -1,0 +1,20 @@
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    tmp_input_path: "{{ ki_tmp_root_path }}/tmp-input.yml"
+  tasks:
+    - name: "Create output directory[\"{{ ki_tmp_root_path }}\"]"
+      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+    - name: Write temporary file for cli input
+      copy:
+        content: "{{ hostvars | to_yaml }}"
+        dest: "{{ tmp_input_path }}"
+      become: yes
+
+    - name: Execute validate-hostvars.py
+      shell: "sudo {{ ansible_python_interpreter }} {{ ki_env_scripts_path }}/preflight/validate-hostvars.py < {{ tmp_input_path }}"
+
+    - name: Remove temporary file for cli input
+      shell: "sudo rm {{ tmp_input_path }}"

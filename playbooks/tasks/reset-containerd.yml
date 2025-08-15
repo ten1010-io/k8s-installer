@@ -1,0 +1,10 @@
+- hosts: all:!localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - when: target_node is none or inventory_hostname == target_node
+      block:
+        - name: Execute reset-containerd.sh
+          shell: "sudo {{ ki_env_scripts_path }}/all-node/containerd/reset-containerd.sh {{ vars_path_arg }}"

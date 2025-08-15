@@ -1,0 +1,38 @@
+global
+    maxconn 5000
+    log stdout format raw local0
+
+defaults
+    log                     global
+    option                  dontlognull
+    timeout queue           20s
+    timeout connect         5s
+    timeout client          35s
+    timeout server          35s
+    timeout check           10s
+
+frontend frontend
+    mode tcp
+    bind 0.0.0.0:{{ ki_cp_k8s_cp_lb_port }}
+    default_backend backend
+    option tcplog
+
+backend backend
+    mode tcp
+    balance roundrobin
+    option httpchk
+    http-check connect ssl
+    http-check send meth GET uri /healthz
+    http-check expect status 200
+
+{% for ih in backend_server_ih_list -%}
+{{"    "}}server server{{ loop.index }} {{ internal_network_hosts[ih]["interfaces"][0]["ip"] }}:{{ k8s_apiserver_port }} check verify none
+{% endfor %}
+frontend stats
+    mode http
+    bind 0.0.0.0:{{ ki_cp_k8s_cp_lb_stats_port }}
+    stats enable
+    stats uri /
+    stats refresh 10s
+    stats auth admin:"$STATS_ADMIN_PW"
+    stats admin if TRUE

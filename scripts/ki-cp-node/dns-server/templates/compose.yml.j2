@@ -1,0 +1,16 @@
+services:
+  bind9:
+    image: ubuntu/bind9:9.18-22.04_beta
+    ports:
+      - 53:53/udp
+    volumes:
+      - ./named.conf.options:/etc/bind/named.conf.options
+      - ./named.conf.local:/etc/bind/named.conf.local
+      - ./internal-network-zone-db:/etc/bind/internal-network-zone-db
+{%- if internal_network_extra_zone %}
+      - ./internal-network-extra-zone-db:/etc/bind/internal-network-extra-zone-db
+{%- endif %}
+    environment:
+      TZ: Asia/Seoul
+    network_mode: bridge
+    restart: always

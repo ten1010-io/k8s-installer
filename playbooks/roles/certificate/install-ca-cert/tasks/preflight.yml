@@ -1,5 +1,0 @@
-- name: Fail if ca_cert is invalid
-  fail:
-    msg: "'{{ ca_cert | default('undefined') }}' is invalid certificate"
-  when: ca_cert is undefined or
-    ca_cert | length <= 0

@@ -1,0 +1,6 @@
+- hosts: k8s_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Remove charts directory
+      shell: "sudo rm -rf {{ ki_etc_charts_path }}"

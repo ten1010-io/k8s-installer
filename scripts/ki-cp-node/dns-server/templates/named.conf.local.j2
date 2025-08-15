@@ -1,0 +1,18 @@
+//
+// Do any local configuration here
+//
+
+// Consider adding the 1918 zones here, if they are not used in your
+// organization
+//include "/etc/bind/zones.rfc1918";
+
+zone "{{ internal_network_zone }}" {
+        type master;
+        file "/etc/bind/internal-network-zone-db";
+};
+{% if internal_network_extra_zone %}
+zone "{{ internal_network_extra_zone }}" {
+        type master;
+        file "/etc/bind/internal-network-extra-zone-db";
+};
+{%- endif %}

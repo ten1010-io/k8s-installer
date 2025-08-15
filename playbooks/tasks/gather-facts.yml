@@ -1,0 +1,165 @@
+- hosts: all:!localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    tmp_input_path: "{{ ki_tmp_root_path }}/tmp-input.yml"
+  tasks:
+    - name: "Create output directory[\"{{ ki_tmp_root_path }}\"]"
+      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+    - name: Setup variable[\"hostname\"]
+      block:
+        - name: Execute hostname
+          shell: "sudo hostname"
+          register: shell_result
+
+        - name: Set_fact variable[\"hostname\"]
+          set_fact:
+            hostname: "{{ shell_result.stdout }}"
+
+        - name: Remove temporary variable[\"shell_result\"]
+          set_fact:
+            shell_result: null
+
+    - name: Setup variable[\"internal_network_interfaces\"]
+      block:
+        - name: Write temporary file for cli input
+          copy:
+            content: "{{ hostvars | to_yaml }}"
+            dest: "{{ tmp_input_path }}"
+          become: yes
+
+        - name: Execute create-internal-network-interfaces.py
+          shell: "sudo {{ ansible_python_interpreter }} {{ ki_env_scripts_path }}/preflight/create-internal-network-interfaces.py {{ inventory_hostname }} < {{ tmp_input_path }}"
+          register: shell_result
+
+        - name: Set_fact variable[\"internal_network_interfaces\"]
+          set_fact:
+            internal_network_interfaces: "{{ shell_result.stdout | from_yaml | community.general.json_query('internal_network_interfaces') }}"
+
+        - name: Remove temporary file for cli input
+          shell: "sudo rm {{ tmp_input_path }}"
+
+        - name: Remove temporary variable[\"shell_result\"]
+          set_fact:
+            shell_result: null
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    tmp_input_path: "{{ ki_tmp_root_path }}/tmp-input.yml"
+  tasks:
+    - name: "Create output directory[\"{{ ki_tmp_root_path }}\"]"
+      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+    - name: Setup variable[\"ih_to_hostname_dict\"]
+      block:
+        - name: Write temporary file for cli input
+          copy:
+            content: "{{ hostvars | to_yaml }}"
+            dest: "{{ tmp_input_path }}"
+          become: yes
+
+        - name: Execute create_ih_to_hostname_dict.py
+          shell: "sudo {{ ansible_python_interpreter }} {{ ki_env_scripts_path }}/preflight/create_ih_to_hostname_dict.py < {{ tmp_input_path }}"
+          register: shell_result
+
+        - name: Set_fact variable[\"ih_to_hostname_dict\"]
+          set_fact:
+            ih_to_hostname_dict: "{{ shell_result.stdout | from_yaml | community.general.json_query('ih_to_hostname_dict') }}"
+
+        - name: Set_fact variable[\"hostname_to_ih_dict\"]
+          set_fact:
+            hostname_to_ih_dict: "{{ shell_result.stdout | from_yaml | community.general.json_query('hostname_to_ih_dict') }}"
+
+        - name: Remove temporary file for cli input
+          shell: "sudo rm {{ tmp_input_path }}"
+
+        - name: Remove temporary variable[\"shell_result\"]
+          set_fact:
+            shell_result: null
+
+    - name: Setup variable[\"internal_network_hosts\"]
+      block:
+        - name: Write temporary file for cli input
+          copy:
+            content: "{{ hostvars | to_yaml }}"
+            dest: "{{ tmp_input_path }}"
+          become: yes
+
+        - name: Execute create-internal-network-hosts.py
+          shell: "sudo {{ ansible_python_interpreter }} {{ ki_env_scripts_path }}/preflight/create-internal-network-hosts.py < {{ tmp_input_path }}"
+          register: shell_result
+
+        - name: Set_fact variable[\"internal_network_hosts\"]
+          set_fact:
+            internal_network_hosts: "{{ shell_result.stdout | from_yaml | community.general.json_query('internal_network_hosts') }}"
+
+        - name: Remove temporary file for cli input
+          shell: "sudo rm {{ tmp_input_path }}"
+
+        - name: Remove temporary variable[\"shell_result\"]
+          set_fact:
+            shell_result: null
+
+    - name: Setup variable[\"k8s_cp_nodes\"]
+      block:
+        - name: Write temporary file for cli input
+          copy:
+            content: "{{ hostvars | to_yaml }}"
+            dest: "{{ tmp_input_path }}"
+          become: yes
+
+        - name: Execute create-k8s-cp-nodes.py
+          shell: "sudo {{ ansible_python_interpreter }} {{ ki_env_scripts_path }}/preflight/create-k8s-cp-nodes.py < {{ tmp_input_path }}"
+          register: shell_result
+
+        - name: Set_fact variable[\"k8s_cp_nodes\"]
+          set_fact:
+            k8s_cp_nodes: "{{ shell_result.stdout | from_yaml | community.general.json_query('k8s_cp_nodes') }}"
+
+        - name: Remove temporary file for cli input
+          shell: "sudo rm {{ tmp_input_path }}"
+
+        - name: Remove temporary variable[\"shell_result\"]
+          set_fact:
+            shell_result: null
+
+    - name: Setup variable[\"ki_cp_k8s_cp_lb_stats_admin_pw\"]
+      block:
+        - name: Execute generate-password.sh
+          shell: "sudo {{ ki_env_scripts_path }}/preflight/generate-password.sh"
+          register: shell_result
+
+        - name: Set_fact variable[\"ki_cp_k8s_cp_lb_stats_admin_pw\"]
+          set_fact:
+            ki_cp_k8s_cp_lb_stats_admin_pw: "{{ shell_result.stdout }}"
+
+        - name: Remove temporary variable[\"shell_result\"]
+          set_fact:
+            shell_result: null
+
+- hosts: all:!localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Set_fact variable[\"ih_to_hostname_dict\"]
+      set_fact:
+        ih_to_hostname_dict: "{{ hostvars['localhost']['ih_to_hostname_dict'] }}"
+
+    - name: Set_fact variable[\"hostname_to_ih_dict\"]
+      set_fact:
+        hostname_to_ih_dict: "{{ hostvars['localhost']['hostname_to_ih_dict'] }}"
+
+    - name: Set_fact variable[\"internal_network_hosts\"]
+      set_fact:
+        internal_network_hosts: "{{ hostvars['localhost']['internal_network_hosts'] }}"
+
+    - name: Set_fact variable[\"k8s_cp_nodes\"]
+      set_fact:
+        k8s_cp_nodes: "{{ hostvars['localhost']['k8s_cp_nodes'] }}"
+
+    - name: Set_fact variable[\"ki_cp_k8s_cp_lb_stats_admin_pw\"]
+      set_fact:
+        ki_cp_k8s_cp_lb_stats_admin_pw: "{{ hostvars['localhost']['ki_cp_k8s_cp_lb_stats_admin_pw'] }}"

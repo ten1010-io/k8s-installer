@@ -1,4 +1,0 @@
-- name: Fail if host is not in tls_cert_issuer group
-  fail:
-    msg: "host is not in tls_cert_issuer group"
-  when: inventory_hostname not in groups['tls_cert_issuer']

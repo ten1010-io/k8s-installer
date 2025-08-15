@@ -1,0 +1,8 @@
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: InitConfiguration
+nodeRegistration:
+  kubeletExtraArgs:
+    node-ip: {{ internal_network_interfaces[0]['ip'] }}
+localAPIEndpoint:
+  advertiseAddress: {{ internal_network_interfaces[0]['ip'] }}
+  bindPort: {{ k8s_apiserver_port }}

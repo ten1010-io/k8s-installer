@@ -1,0 +1,13 @@
+services:
+  haproxy:
+    image: haproxy:2.6
+    ports:
+      - {{ ki_cp_k8s_cp_lb_port }}:{{ ki_cp_k8s_cp_lb_port }}
+      - {{ ki_cp_k8s_cp_lb_stats_port }}:{{ ki_cp_k8s_cp_lb_stats_port }}
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg
+    environment:
+      TZ: Asia/Seoul
+      STATS_ADMIN_PW: {{ ki_cp_k8s_cp_lb_stats_admin_pw }}
+    network_mode: bridge
+    restart: always

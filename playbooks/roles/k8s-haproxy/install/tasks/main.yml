@@ -1,5 +1,0 @@
-- name: Include tasks preflight.yml
-  include_tasks: preflight.yml
-
-- name: Include tasks install-haproxy.yml
-  include_tasks: install-haproxy.yml

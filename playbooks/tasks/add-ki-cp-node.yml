@@ -1,0 +1,39 @@
+- hosts: ki_cp_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - when: inventory_hostname == target_node
+      block:
+        - name: Execute setup-keepalived.sh
+          shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/keepalived/setup-keepalived.sh {{ vars_path_arg }}"
+
+        - name: Execute setup-dns-server.sh
+          shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/dns-server/setup-dns-server.sh {{ vars_path_arg }}"
+
+        - name: Execute setup-ntp-server.sh
+          shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/ntp-server/setup-ntp-server.sh {{ vars_path_arg }}"
+
+        - name: Execute setup-k8s-cp-lb.sh
+          shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh {{ vars_path_arg }}"
+
+        - name: Execute setup-k8s-registry.sh
+          shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/k8s-registry/setup-k8s-registry.sh {{ vars_path_arg }}"
+
+    - when: inventory_hostname != target_node
+      block:
+        - name: Execute setup-keepalived.sh --update
+          shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/keepalived/setup-keepalived.sh {{ vars_path_arg }} --update"
+
+        - name: Execute setup-dns-server.sh --update
+          shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/dns-server/setup-dns-server.sh {{ vars_path_arg }} --update"
+
+        - name: Execute setup-ntp-server.sh --update
+          shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/ntp-server/setup-ntp-server.sh {{ vars_path_arg }} --update"
+
+        - name: Execute setup-k8s-cp-lb.sh --update
+          shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh {{ vars_path_arg }} --update"
+
+        - name: Execute setup-k8s-registry.sh --update
+          shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/k8s-registry/setup-k8s-registry.sh {{ vars_path_arg }} --update"

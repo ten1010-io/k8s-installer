@@ -1,0 +1,16 @@
+$TTL 1D
+@                 IN  SOA     ns1.{{ internal_network_extra_zone }}. hostmaster.{{ internal_network_extra_zone }}. (
+                                                0       ; Serial
+                                                1D      ; Refresh
+                                                15M     ; Retry
+                                                1W      ; Expire
+                                                3H )    ; Minimum TTL
+
+;NS Records
+@                 IN  NS      ns1.{{ internal_network_extra_zone }}.
+
+;A Records
+ns1 IN A {{ ns1_a_record_ip }}
+{% for record in a_records -%}
+{{ record['name'] }} IN A {{ record['ip'] }}
+{% endfor %}

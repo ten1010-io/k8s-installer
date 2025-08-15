@@ -1,0 +1,99 @@
+- hosts: localhost:k8s_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - when: target_node is none
+      block:
+        - name: Set_fact variable[\"charts_src_node\"]
+          set_fact:
+            charts_src_node: "{{ k8s_cp_nodes[0] }}"
+
+        - name: Set_fact variable[\"charts_dst_nodes\"]
+          set_fact:
+            charts_dst_nodes: "{{ k8s_cp_nodes[1:] }}"
+
+    - when: target_node is not none
+      block:
+        - name: Set_fact variable[\"charts_src_node\"]
+          set_fact:
+            charts_src_node: "{{ k8s_cp_nodes | community.general.lists_difference([target_node]) | first }}"
+
+        - name: Set_fact variable[\"charts_dst_nodes\"]
+          set_fact:
+            charts_dst_nodes: "{{ k8s_cp_nodes | community.general.lists_difference([charts_src_node]) }}"
+          when: target_node_op == "add"
+
+        - name: Set_fact variable[\"charts_dst_nodes\"]
+          set_fact:
+            charts_dst_nodes: "{{ k8s_cp_nodes | community.general.lists_difference([charts_src_node, target_node]) }}"
+          when: target_node_op == "remove"
+
+    - name: Check variable["charts_src_node"] and variable["charts_dst_nodes"]
+      fail:
+        msg: "Failed to setup variable[\"charts_src_node\"] and variable[\"charts_dst_nodes\"]"
+      when: charts_src_node is none or charts_dst_nodes is none
+
+- hosts: k8s_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - when: inventory_hostname == charts_src_node
+      block:
+        - name: Create charts directory
+          shell: "sudo mkdir -p {{ ki_etc_charts_path }}"
+
+        - name: Create dummy file in charts directory
+          shell: "sudo touch {{ ki_etc_charts_path }}/dummy"
+
+    - when: inventory_hostname in charts_dst_nodes
+      block:
+        - name: Remove charts directory
+          shell: "sudo rm -rf {{ ki_etc_charts_path }}"
+
+        - name: Create charts directory
+          shell: "sudo mkdir -p {{ ki_etc_charts_path }}"
+
+    - name: Remove charts directory from removed node
+      shell: "sudo rm -rf {{ ki_etc_charts_path }}"
+      when:
+        - inventory_hostname == target_node
+        - target_node_op == "remove"
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: "Create directory[\"{{ ki_tmp_charts_path }}\"]"
+      shell: "sudo mkdir -p {{ ki_tmp_charts_path }}"
+
+    - name: Copy charts to ansible control node
+      shell: "sudo scp -r {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
+      vars:
+        src_ih: "{{ charts_src_node }}"
+        ssh_opt: "-o StrictHostKeyChecking=no"
+        port_opt: "-P {{ hostvars[src_ih]['ansible_port'] }}"
+        src_arg: "{{ hostvars[src_ih]['ansible_ssh_user'] }}@{{ hostvars[src_ih]['ansible_host'] }}:{{ ki_etc_charts_path }}/*"
+        dst_arg: "{{ ki_tmp_charts_path }}/"
+
+    - name: "Copy charts to the node[\"{{ item }}\"]"
+      shell: "sudo scp -r {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
+      vars:
+        ssh_opt: "-o StrictHostKeyChecking=no"
+        port_opt: "-P {{ hostvars[item]['ansible_port'] }}"
+        src_arg: "{{ ki_tmp_charts_path }}/*"
+        dst_arg: "{{ hostvars[item]['ansible_ssh_user'] }}@{{ hostvars[item]['ansible_host'] }}:{{ ki_etc_charts_path }}/"
+      with_items: "{{ charts_dst_nodes }}"
+
+    - name: Delete temporary charts directory
+      shell: "sudo rm -rf {{ ki_tmp_charts_path }}"
+
+- hosts: k8s_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Remove dummy file in charts directory
+      shell: "sudo rm -f {{ ki_etc_charts_path }}/dummy"

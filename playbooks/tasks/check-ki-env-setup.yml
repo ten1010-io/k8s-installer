@@ -1,0 +1,15 @@
+- hosts: all
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: "Check ki-env directory exists"
+      shell: "sudo ls {{ ki_env_path }}"
+
+    - name: "Check ki-env scripts directory exists"
+      shell: "sudo ls {{ ki_env_scripts_path }}"
+
+    - name: "Check ki-env bin directory exists"
+      shell: "sudo ls {{ ki_env_bin_path }}"
+
+    - name: "Check ki-env ki-venv directory exists"
+      shell: "sudo ls {{ ki_env_ki_venv_path }}"

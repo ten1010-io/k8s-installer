@@ -1,0 +1,32 @@
+- hosts: all
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Set_fact variable[\"playbook\"]
+      set_fact:
+        playbook: "remove-node"
+
+    - name: Set_fact variable[\"skip_resetting_vars_file\"]
+      set_fact:
+        skip_resetting_vars_file: ""
+      when: srvf is defined
+
+    - name: Validate variable[\"node\"]
+      fail:
+        msg: "Variable[\"node\"] is not defined"
+      when: node is not defined
+
+    - name: Validate variable[\"node\"]
+      fail:
+        msg: "Node[\"{{ node }}\"] not belong to all group"
+      when: node not in groups['all']
+
+    - name: Set_fact variable[\"target_node\"] and variable[\"target_node_op\"]
+      set_fact:
+        target_node: "{{ node }}"
+        target_node_op: remove
+
+    - name: Set_fact variable[\"skip_deleting_from_cluster\"]
+      set_fact:
+        skip_deleting_from_cluster: ""
+      when: sdfc is defined

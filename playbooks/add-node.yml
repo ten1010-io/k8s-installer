@@ -1,6 +1,6 @@
 - import_playbook: tasks/check-ki-env-setup.yml
 
-- import_playbook: tasks/setup-cluster-preflight.yml
+- import_playbook: tasks/add-node-preflight.yml
 
 - import_playbook: tasks/validate-hostvars.yml
 
@@ -10,7 +10,8 @@
 
 - import_playbook: tasks/check-node-state.yml
 
-- import_playbook: tasks/init-pki.yml
+- import_playbook: tasks/sync-pki.yml
+  when: target_node in groups['ki_cp_node']
 
 - import_playbook: tasks/setup-ki-ca-crt.yml
 
@@ -22,12 +23,17 @@
 
 - import_playbook: tasks/setup-docker.yml
 
-- import_playbook: tasks/init-ki-cp.yml
+- import_playbook: tasks/add-ki-cp-node.yml
+  when: target_node in groups['ki_cp_node']
 
 - import_playbook: tasks/setup-all-node-resolv-conf.yml
 
 - import_playbook: tasks/setup-ntp-client.yml
 
-- import_playbook: tasks/init-k8s-cluster.yml
+- import_playbook: tasks/add-k8s-node.yml
+  when: target_node in groups['k8s_node']
+
+- import_playbook: tasks/charts/sync-charts.yml
+  when: target_node in k8s_cp_nodes
 
 - import_playbook: tasks/reset-vars-file.yml

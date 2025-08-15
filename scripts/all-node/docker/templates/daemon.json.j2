@@ -1,0 +1,17 @@
+{
+  "data-root": "{{ docker_root_path }}",
+  "exec-opts": [
+    "native.cgroupdriver=systemd"
+  ],
+  "dns": [],
+{%- if nvidia_gpu | lower == "true" %}
+  "runtimes": {
+    "nvidia": {
+      "args": [],
+      "path": "nvidia-container-runtime"
+    }
+  }
+{%- else %}
+  "runtimes": {}
+{%- endif %}
+}

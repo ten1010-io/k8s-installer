@@ -1,0 +1,14 @@
+$TTL 1D
+@                 IN  SOA     ns1.{{ internal_network_zone }}. hostmaster.{{ internal_network_zone }}. (
+                                                0       ; Serial
+                                                1D      ; Refresh
+                                                15M     ; Retry
+                                                1W      ; Expire
+                                                3H )    ; Minimum TTL
+
+;NS Records
+@                 IN  NS      ns1.{{ internal_network_zone }}.
+
+;A Records
+ns1               IN  A       {{ ns1_a_record_ip }}
+ki-cp             IN  A       {{ ki_cp_a_record_ip }}

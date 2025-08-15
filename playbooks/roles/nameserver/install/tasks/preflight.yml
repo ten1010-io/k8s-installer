@@ -1,9 +1,0 @@
-- name: Stat nameserver directory
-  stat:
-    path: "{{ k8s_installer_service_root }}/nameserver"
-  register: nameserver_directory
-
-- name: Fail if nameserver directory already exist
-  fail:
-    msg: "Directory \"{{ k8s_installer_service_root }}/nameserver\" already exist"
-  when: nameserver_directory.stat.exists
