@@ -69,6 +69,8 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
+CHART_NAME=metallb
+
 ki_env_path=""
 ki_env_scripts_path=""
 ki_env_bin_path=""
@@ -76,8 +78,11 @@ ki_env_ki_venv_path=""
 
 yq_cmd=""
 jinja2_cmd=""
+python3_cmd=""
 
-playbook=""
+ki_etc_charts_path=""
+
+chart_root_path=""
 
 main() {
   require_file_exists "$vars_path"
@@ -86,14 +91,14 @@ main() {
   require_directory_exists "$ki_env_path"
   validate_ki_env_directory
 
-  playbook=$($yq_cmd '.playbook' < "$vars_path")
+  ki_etc_charts_path=$($yq_cmd '.ki_etc_charts_path' < "$vars_path")
+  chart_root_path=$ki_etc_charts_path/k8s/$CHART_NAME
 
-  if [[ $playbook = "setup-k8s-charts" ]]; then
-    [[ $(chart_exists kube-flannel flannel) = "true" ]] && die "[ERROR] Chart[\"flannel\"] has already benn set up"
-    [[ $(chart_exists metallb metallb) = "true" ]] && die "[ERROR] Chart[\"metallb\"] has already benn set up"
-
-    return 0
+  if [[ $(chart_exists metallb metallb) = "true" ]]; then
+    helm uninstall -n metallb metallb
+    kubectl delete ns metallb
   fi
+  rm -rf "$chart_root_path"
 
   return 0
 }
@@ -121,6 +126,7 @@ import_ki_env_vars() {
 setup_cmd_vars() {
   yq_cmd="$ki_env_bin_path/bin/yq"
   jinja2_cmd="$ki_env_ki_venv_path/bin/jinja2"
+  python3_cmd="$ki_env_ki_venv_path/bin/python3"
 }
 
 validate_ki_env_directory() {

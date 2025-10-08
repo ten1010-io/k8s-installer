@@ -69,6 +69,8 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
+CHART_NAME=metallb
+
 ki_env_path=""
 ki_env_scripts_path=""
 ki_env_bin_path=""
@@ -76,8 +78,12 @@ ki_env_ki_venv_path=""
 
 yq_cmd=""
 jinja2_cmd=""
+python3_cmd=""
 
-playbook=""
+ki_etc_charts_path=""
+ki_tmp_root_path=""
+
+chart_root_path=""
 
 main() {
   require_file_exists "$vars_path"
@@ -86,27 +92,57 @@ main() {
   require_directory_exists "$ki_env_path"
   validate_ki_env_directory
 
-  playbook=$($yq_cmd '.playbook' < "$vars_path")
+  ki_etc_charts_path=$($yq_cmd '.ki_etc_charts_path' < "$vars_path")
+  ki_tmp_root_path=$($yq_cmd '.ki_tmp_root_path' < "$vars_path")
 
-  if [[ $playbook = "setup-k8s-charts" ]]; then
-    [[ $(chart_exists kube-flannel flannel) = "true" ]] && die "[ERROR] Chart[\"flannel\"] has already benn set up"
-    [[ $(chart_exists metallb metallb) = "true" ]] && die "[ERROR] Chart[\"metallb\"] has already benn set up"
+  chart_root_path=$ki_etc_charts_path/k8s/$CHART_NAME
 
-    return 0
-  fi
+  mkdir -p "$chart_root_path"
+  cp -f "$ki_env_bin_path/charts/k8s/metallb.tgz" "$chart_root_path/chart.tgz"
+  create_values_yml_file
+
+  kubectl create ns metallb
+  helm install -n metallb metallb "$chart_root_path/chart.tgz" -f "$chart_root_path/values.yml"
+  msg "[INFO] Started to wait for controller being ready"
+  wait_controller_ready 300
+  kubectl label node --all node.kubernetes.io/exclude-from-external-load-balancers-
 
   return 0
 }
 
-chart_exists() {
-  local namespace
-  local name
-  namespace=$1
-  name=$2
+create_values_yml_file() {
+  local tmp_file_path
+  tmp_file_path="$ki_tmp_root_path/tmp-templates-vars.yml"
+  touch "$tmp_file_path"
+  $yq_cmd -i ".internal_network_ki_cp_dns_name = load(\"$vars_path\").internal_network_ki_cp_dns_name" "$tmp_file_path"
+  $yq_cmd -i ".ki_cp_k8s_registry_port = load(\"$vars_path\").ki_cp_k8s_registry_port" "$tmp_file_path"
+  $jinja2_cmd --format yaml -o "$chart_root_path/values.yml" "$SCRIPT_DIR_PATH"/templates/values.yml.j2 "$tmp_file_path"
+  rm "$tmp_file_path"
+}
 
-  local exit_code=0
-  helm get notes -n "$namespace" "$name" > /dev/null 2>&1 || exit_code=$?
-  if [[ $exit_code = 0 ]]; then echo "true"; else echo "false"; fi
+wait_controller_ready() {
+  local timeout=$1
+
+  local elapsed=0
+  elapsed=0
+
+  while true; do
+    local is_ready
+    is_ready=$(is_controller_ready)
+    [[ $is_ready = "true" ]] && break
+    [[ $elapsed -ge $timeout ]] && die "[ERROR] Failed to wait for controller being ready. timeout occurred"
+
+    sleep 3s
+    elapsed=$(("$elapsed" + 3))
+  done
+
+  return 0
+}
+
+is_controller_ready() {
+  local ready_replicas_num
+  ready_replicas_num=$(kubectl get deploy -n metallb metallb-controller -o jsonpath="{.status.readyReplicas}")
+  if [[ $ready_replicas_num -gt 0 ]]; then echo "true"; else echo "false"; fi
 
   return 0
 }
@@ -121,6 +157,7 @@ import_ki_env_vars() {
 setup_cmd_vars() {
   yq_cmd="$ki_env_bin_path/bin/yq"
   jinja2_cmd="$ki_env_ki_venv_path/bin/jinja2"
+  python3_cmd="$ki_env_ki_venv_path/bin/python3"
 }
 
 validate_ki_env_directory() {

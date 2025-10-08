@@ -12,6 +12,8 @@
 
 - import_playbook: tasks/charts/k8s/setup-flannel.yml
 
+- import_playbook: tasks/charts/k8s/setup-metallb.yml
+
 - import_playbook: tasks/charts/sync-charts.yml
 
 - import_playbook: tasks/reset-vars-file.yml

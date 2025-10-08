@@ -1,0 +1,16 @@
+controller:
+  image:
+    repository: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}/metallb/controller
+    tag: v0.14.4
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+speaker:
+  image:
+    repository: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}/metallb/speaker
+    tag: v0.14.4
+  frr:
+    image:
+      repository: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}/frrouting/frr
+      tag: 9.0.2
