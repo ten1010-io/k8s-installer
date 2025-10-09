@@ -94,11 +94,19 @@ main() {
   ki_etc_charts_path=$($yq_cmd '.ki_etc_charts_path' < "$vars_path")
   chart_root_path=$ki_etc_charts_path/k8s/$CHART_NAME
 
-  if [[ $(chart_exists metallb metallb) = "true" ]]; then
-    helm uninstall -n metallb metallb
-    kubectl delete ns metallb
-  fi
+  [[ $(chart_exists metallb metallb) = "true" ]] && helm uninstall -n metallb metallb
+  [[ $(namespace_exists metallb) = "true" ]] && kubectl delete namespace metallb
   rm -rf "$chart_root_path"
+
+  return 0
+}
+
+namespace_exists() {
+  local namespace=$1
+
+  local exit_code=0
+  kubectl get namespace "$namespace" > /dev/null 2>&1 || exit_code=$?
+  if [[ $exit_code = 0 ]]; then echo "true"; else echo "false"; fi
 
   return 0
 }

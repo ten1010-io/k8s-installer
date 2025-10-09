@@ -94,11 +94,19 @@ main() {
   ki_etc_charts_path=$($yq_cmd '.ki_etc_charts_path' < "$vars_path")
   chart_root_path=$ki_etc_charts_path/k8s/$CHART_NAME
 
-  if [[ $(chart_exists kube-flannel flannel) = "true" ]]; then
-    helm uninstall -n kube-flannel flannel
-    kubectl delete ns kube-flannel
-  fi
+  [[ $(chart_exists kube-flannel flannel) = "true" ]] && helm uninstall -n kube-flannel flannel
+  [[ $(namespace_exists kube-flannel) = "true" ]] && kubectl delete namespace kube-flannel
   rm -rf "$chart_root_path"
+
+  return 0
+}
+
+namespace_exists() {
+  local namespace=$1
+
+  local exit_code=0
+  kubectl get namespace "$namespace" > /dev/null 2>&1 || exit_code=$?
+  if [[ $exit_code = 0 ]]; then echo "true"; else echo "false"; fi
 
   return 0
 }
