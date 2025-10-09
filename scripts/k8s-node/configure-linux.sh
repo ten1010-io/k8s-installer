@@ -93,7 +93,7 @@ main() {
 
 disable_swap() {
   swapoff -a
-  sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+  sed -i '/[ \t]swap[ \t]/ s/^\(.*\)$/#\1/g' /etc/fstab
 }
 
 setup_modules() {
