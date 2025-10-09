@@ -1,0 +1,58 @@
+controller:
+  image:
+    registry: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}
+    image: ingress-nginx/controller
+    tag: "v1.10.0"
+    digest: null
+    digestChroot: null
+  allowSnippetAnnotations: true
+  config:
+    log-format-upstream: |-
+      [$time_local] $remote_addr $host $request
+      status: $status    body_bytes_sent: $body_bytes_sent
+      request_length: $request_length    request_time: $request_time    remote_user: $remote_user    referer: $http_referer    user_agent: $http_user_agent
+      upstream_addr: $upstream_addr    upstream_status: $upstream_status    upstream_response_length: $upstream_response_length    upstream_response_time: $upstream_response_time
+  hostPort:
+    enabled: {{ hostport }}
+    ports:
+      http: {{ http_hostport }}
+      https: {{ https_hostport }}
+  ingressClassResource:
+    name: {{ ingress_class_name }}
+    controllerValue: k8s.io/ingress-nginx/{{ ingress_class_name }}
+  ingressClass: {{ ingress_class_name }}
+  kind: DaemonSet
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+{%- for knn in knn_list %}
+                  - {{ knn }}
+{%- endfor %}
+  service:
+    enabled: true
+{%- if pool_name %}
+    annotations:
+      metallb.universe.tf/address-pool: {{ pool_name }}
+{%- endif %}
+    externalTrafficPolicy: "Local"
+    allocateLoadBalancerNodePorts: false
+  admissionWebhooks:
+    patch:
+      image:
+        registry: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}
+        image: ingress-nginx/kube-webhook-certgen
+        tag: v1.4.0
+        digest: null
+      tolerations:
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"

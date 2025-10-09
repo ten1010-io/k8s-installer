@@ -10,6 +10,8 @@
 
 - import_playbook: tasks/charts/check-k8s-cluster-state.yml
 
+- import_playbook: tasks/charts/k8s/reset-ingress-nginx.yml
+
 - import_playbook: tasks/charts/k8s/reset-metallb.yml
 
 - import_playbook: tasks/charts/k8s/reset-flannel.yml

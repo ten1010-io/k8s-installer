@@ -20,3 +20,12 @@ ki_cp_dns_server_upstream_servers:
 ki_cp_ntp_server_upstream_servers:
   - "time1.google.com"
   - "time2.google.com"
+
+k8s_ingress_classes:
+  - name: "lb1"
+    controller_nodes:
+      - "node1"
+    ha_mode: true
+    ha_mode_vip: "172.16.0.254"
+    http_hostport: 80
+    https_hostport: 443

@@ -69,7 +69,7 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
-CHART_NAME=metallb
+CHART_NAME=ingress-nginx
 
 ki_env_path=""
 ki_env_scripts_path=""
@@ -86,7 +86,6 @@ k8s_ingress_classes=""
 ih_to_hostname_dict=""
 
 chart_root_path=""
-resources_root_path=""
 
 main() {
   require_file_exists "$vars_path"
@@ -101,46 +100,15 @@ main() {
   ih_to_hostname_dict=$($yq_cmd -o json '.ih_to_hostname_dict' < "$vars_path")
 
   chart_root_path=$ki_etc_charts_path/k8s/$CHART_NAME
-  resources_root_path=$chart_root_path/resources
 
-  install_chart
-  create_api_resources
+  install_charts
 
   return 0
 }
 
-install_chart() {
+install_charts() {
   mkdir -p "$chart_root_path"
-  cp -f "$ki_env_bin_path/charts/k8s/metallb.tgz" "$chart_root_path/chart.tgz"
-  create_values_yml_file
-  kubectl create ns metallb
-  helm install -n metallb metallb "$chart_root_path/chart.tgz" -f "$chart_root_path/values.yml"
-  msg "[INFO] Started to wait for controller being ready"
-  wait_controller_ready 300
-  kubectl label node --all node.kubernetes.io/exclude-from-external-load-balancers-
-}
-
-create_api_resources() {
-  create_resource_files
-  [[ $(has_files "$resources_root_path") = "true" ]] && kubectl apply -f "$resources_root_path"
-
-  return 0
-}
-
-create_values_yml_file() {
-  local tmp_file_path
-  tmp_file_path="$ki_tmp_root_path/tmp-templates-vars.yml"
-  touch "$tmp_file_path"
-  $yq_cmd -i ".internal_network_ki_cp_dns_name = load(\"$vars_path\").internal_network_ki_cp_dns_name" "$tmp_file_path"
-  $yq_cmd -i ".ki_cp_k8s_registry_port = load(\"$vars_path\").ki_cp_k8s_registry_port" "$tmp_file_path"
-  $jinja2_cmd --format yaml -o "$chart_root_path/values.yml" "$SCRIPT_DIR_PATH"/templates/values.yml.j2 "$tmp_file_path"
-  rm "$tmp_file_path"
-
-  return 0
-}
-
-create_resource_files() {
-  mkdir -p "$resources_root_path"
+  cp -f "$ki_env_bin_path/charts/k8s/ingress-nginx.tgz" "$chart_root_path/chart.tgz"
 
   local classes_len
   classes_len=$($yq_cmd --null-input "$k8s_ingress_classes | length")
@@ -149,55 +117,63 @@ create_resource_files() {
   local controller_nodes
   local ha_mode
   local ha_mode_vip
+  local http_hostport
+  local https_hostport
   for (( i=0; i<"$classes_len"; i++ )); do
     name=$($yq_cmd --null-input "$k8s_ingress_classes | .[$i][\"name\"]")
     controller_nodes=$($yq_cmd -o json --null-input "$k8s_ingress_classes | .[$i][\"controller_nodes\"]")
     ha_mode=$($yq_cmd --null-input "$k8s_ingress_classes | .[$i][\"ha_mode\"]")
     ha_mode_vip=$($yq_cmd --null-input "$k8s_ingress_classes | .[$i][\"ha_mode_vip\"]")
+    http_hostport=$($yq_cmd --null-input "$k8s_ingress_classes | .[$i][\"http_hostport\"]")
+    https_hostport=$($yq_cmd --null-input "$k8s_ingress_classes | .[$i][\"https_hostport\"]")
 
-    [[ $ha_mode != "true" ]] && continue
-
-    create_pool_yml_file "$name" "$ha_mode_vip"
-    create_advertisement_yml_file "$name" "$controller_nodes"
+    install_chart "$name" "$controller_nodes" "$ha_mode" "$ha_mode_vip" "$http_hostport" "$https_hostport"
   done
 
   return 0
 }
 
-create_pool_yml_file() {
-  local name=$1
-  local ha_mode_vip=$2
-
-  local resource_name="ingress-class-$name"
-
-  local tmp_file_path
-  tmp_file_path="$ki_tmp_root_path/tmp-templates-vars.yml"
-  touch "$tmp_file_path"
-  $yq_cmd -i ".name = \"$resource_name\"" "$tmp_file_path"
-  $yq_cmd -i ".address = \"$ha_mode_vip\"" "$tmp_file_path"
-  $jinja2_cmd --format yaml -o "$resources_root_path/$resource_name-pool.yml" "$SCRIPT_DIR_PATH"/templates/resources/ip-address-pool.yml.j2 "$tmp_file_path"
-  rm "$tmp_file_path"
-
-  return 0
-}
-
-create_advertisement_yml_file() {
+install_chart() {
   local name=$1
   local controller_nodes=$2
+  local ha_mode=$3
+  local ha_mode_vip=$4
+  local http_hostport=$5
+  local https_hostport=$6
 
-  local resource_name="ingress-class-$name"
-
+  local release_name="ingress-class-$name"
+  local hostport
   local knn_list
+  local pool_name
+  if [[ $ha_mode = "true" ]]; then
+    hostport="false";
+    pool_name="ingress-class-$name"
+  else
+    hostport="true";
+    pool_name=""
+  fi
   knn_list=$(get_knn_list "$controller_nodes")
 
   local tmp_file_path
   tmp_file_path="$ki_tmp_root_path/tmp-templates-vars.yml"
   touch "$tmp_file_path"
-  $yq_cmd -i ".name = \"$resource_name\"" "$tmp_file_path"
-  $yq_cmd -i ".pool_name = \"$resource_name\"" "$tmp_file_path"
+  $yq_cmd -i ".internal_network_ki_cp_dns_name = load(\"$vars_path\").internal_network_ki_cp_dns_name" "$tmp_file_path"
+  $yq_cmd -i ".ki_cp_k8s_registry_port = load(\"$vars_path\").ki_cp_k8s_registry_port" "$tmp_file_path"
+  $yq_cmd -i ".hostport = \"$hostport\"" "$tmp_file_path"
+  $yq_cmd -i ".http_hostport = $http_hostport" "$tmp_file_path"
+  $yq_cmd -i ".https_hostport = $https_hostport" "$tmp_file_path"
+  $yq_cmd -i ".ingress_class_name = \"$name\"" "$tmp_file_path"
   $yq_cmd -o json -i ".knn_list = $knn_list" "$tmp_file_path"
-  $jinja2_cmd --format yaml -o "$resources_root_path/$resource_name-advertisement.yml" "$SCRIPT_DIR_PATH"/templates/resources/l2-advertisement.yml.j2 "$tmp_file_path"
+  if [[ -n $pool_name ]]; then
+    $yq_cmd -o json -i ".pool_name = \"$pool_name\"" "$tmp_file_path"
+  else
+    $yq_cmd -o json -i ".pool_name = null" "$tmp_file_path"
+  fi
+  $jinja2_cmd --format yaml -o "$chart_root_path/$release_name-values.yml" "$SCRIPT_DIR_PATH"/templates/values.yml.j2 "$tmp_file_path"
   rm "$tmp_file_path"
+
+  kubectl create ns ingress-nginx
+  helm install -n ingress-nginx "$release_name" "$chart_root_path/chart.tgz" -f "$chart_root_path/$release_name-values.yml"
 
   return 0
 }
@@ -232,41 +208,6 @@ get_hostname() {
   [[ -z $hostname || $hostname = "null" ]] && die "[ERROR] Fail to get hostname for ih[\"$ih\"]"
 
   echo "$hostname"
-}
-
-wait_controller_ready() {
-  local timeout=$1
-
-  local elapsed=0
-  elapsed=0
-
-  while true; do
-    local is_ready
-    is_ready=$(is_controller_ready)
-    [[ $is_ready = "true" ]] && break
-    [[ $elapsed -ge $timeout ]] && die "[ERROR] Failed to wait for controller being ready. timeout occurred"
-
-    sleep 3s
-    elapsed=$(("$elapsed" + 3))
-  done
-
-  return 0
-}
-
-is_controller_ready() {
-  local ready_replicas_num
-  ready_replicas_num=$(kubectl get deploy -n metallb metallb-controller -o jsonpath="{.status.readyReplicas}")
-  if [[ $ready_replicas_num -gt 0 ]]; then echo "true"; else echo "false"; fi
-
-  return 0
-}
-
-has_files() {
-  local dir_path=$1
-
-  if [[ -n "$(ls -A "$dir_path" 2>/dev/null)" ]]; then echo "true"; else echo "false"; fi
-
-  return 0
 }
 
 import_ki_env_vars() {
