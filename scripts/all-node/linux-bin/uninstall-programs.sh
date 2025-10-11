@@ -84,6 +84,8 @@ main() {
   require_directory_exists "$ki_env_path"
   validate_ki_env_directory
 
+  rm -f /etc/sudoers.d/z-k8s-installer
+
   uninstall_program helm
   uninstall_program etcdctl
   uninstall_program etcdutl

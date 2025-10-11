@@ -69,6 +69,9 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
+UBUNTU2204_SUPPORTED_MINOR_VERSION=5
+RHEL8_SUPPORTED_MINOR_VERSION=10
+
 ki_env_path=""
 ki_env_scripts_path=""
 ki_env_bin_path=""
@@ -77,12 +80,43 @@ ki_env_ki_venv_path=""
 yq_cmd=""
 jinja2_cmd=""
 
+os_info=""
+os_distribution=""
+os_major_version=""
+os_minor_version=""
+
 main() {
   require_file_exists "$vars_path"
   import_ki_env_vars
   setup_cmd_vars
   require_directory_exists "$ki_env_path"
   validate_ki_env_directory
+  get_os_version
+
+  if [[ $os_distribution = "ubuntu" && $os_major_version = "22.04" && $os_minor_version -le "$UBUNTU2204_SUPPORTED_MINOR_VERSION" ]]; then
+    ubuntu2204_configure
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel8_configure
+    exit 0
+  fi
+
+  die "[ERROR] OS not supported\n$os_info"
+}
+
+ubuntu2204_configure() {
+  disable_swap
+  setup_modules
+  setup_kernel_parameters
+
+  return 0
+}
+
+rhel8_configure() {
+  setenforce 0
+  sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
 
   disable_swap
   setup_modules
@@ -94,6 +128,8 @@ main() {
 disable_swap() {
   swapoff -a
   sed -i '/[ \t]swap[ \t]/ s/^\(.*\)$/#\1/g' /etc/fstab
+
+  return 0
 }
 
 setup_modules() {
@@ -101,14 +137,18 @@ setup_modules() {
   modprobe br_netfilter
 
   mkdir -p /etc/modules-load.d
-  cp "$SCRIPT_DIR_PATH"/templates/modules-k8s.conf /etc/modules-load.d/k8s.conf
+  cp -f "$SCRIPT_DIR_PATH"/templates/modules-k8s.conf /etc/modules-load.d/k8s.conf
+
+  return 0
 }
 
 setup_kernel_parameters() {
   mkdir -p /etc/sysctl.d
-  cp "$SCRIPT_DIR_PATH"/templates/sysctl-k8s.conf /etc/sysctl.d/k8s.conf
+  cp -f "$SCRIPT_DIR_PATH"/templates/sysctl-k8s.conf /etc/sysctl.d/k8s.conf
 
   sysctl --system
+
+  return 0
 }
 
 import_ki_env_vars() {
@@ -116,6 +156,14 @@ import_ki_env_vars() {
   ki_env_scripts_path=$(grep -oP  "^ki_env_scripts_path: \K(.+)" < "$vars_path")
   ki_env_bin_path=$(grep -oP  "^ki_env_bin_path: \K(.+)" < "$vars_path")
   ki_env_ki_venv_path=$(grep -oP  "^ki_env_ki_venv_path: \K(.+)" < "$vars_path")
+}
+
+get_os_version() {
+  os_info=$("$ki_env_scripts_path"/preflight/get-os-info.sh)
+
+  os_distribution=$($yq_cmd .distribution <<< "$os_info")
+  os_major_version=$($yq_cmd .major_version <<< "$os_info")
+  os_minor_version=$($yq_cmd .minor_version <<< "$os_info")
 }
 
 setup_cmd_vars() {

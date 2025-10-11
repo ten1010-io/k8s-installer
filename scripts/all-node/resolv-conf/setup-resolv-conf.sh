@@ -70,6 +70,7 @@ parse_params "$@"
 # --- End of CLI template ---
 
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
+RHEL8_SUPPORTED_MINOR_VERSION=10
 
 ki_env_path=""
 ki_env_scripts_path=""
@@ -109,11 +110,21 @@ main() {
     exit 0
   fi
 
+  if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel8_setup
+    exit 0
+  fi
+
   die "[ERROR] OS not supported\n$os_info"
 }
 
 ubuntu2204_setup() {
   disable_resolved
+  create_resolv_conf_file
+}
+
+rhel8_setup() {
+  disable_nm_dns
   create_resolv_conf_file
 }
 
@@ -156,6 +167,14 @@ disable_resolved() {
   local result
   result=$("$ki_env_scripts_path"/systemctl.sh exists systemd-resolved)
   [[ $result = true ]] && "$ki_env_scripts_path"/systemctl.sh disable systemd-resolved
+
+  return 0
+}
+
+disable_nm_dns() {
+  mkdir -p /etc/NetworkManager/conf.d
+  cp -f "$SCRIPT_DIR_PATH/templates/90-dns-none.conf" /etc/NetworkManager/conf.d/
+  systemctl reload NetworkManager
 
   return 0
 }

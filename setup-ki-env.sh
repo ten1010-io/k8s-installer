@@ -98,8 +98,8 @@ constant_vars=""
 main() {
   import_hostvars
   validate_hostvars
-  setup_all_group_nodes
   setup_localhost
+  setup_all_group_nodes
 
   msg ""
   msg "[INFO] Localhost and all group nodes has been set up successfully"
@@ -155,7 +155,13 @@ setup_all_group_nodes() {
   msg ""
   create_ki_env_directory_with_ssh
   msg ""
-  copy_scripts_directory_with_rsync
+  copy_yq_with_scp
+  msg ""
+  copy_scripts_directory_with_scp
+  msg ""
+  copy_rsync_directory_with_scp
+  msg ""
+  execute_install_rsync_sh_with_ssh
   msg ""
   copy_bin_directory_with_rsync
   msg ""
@@ -166,9 +172,12 @@ setup_localhost() {
   msg "[INFO] Started to setup localhost"
 
   mkdir -p "$localhost_hostvars_ki_env_path"
-  rsync --ignore-existing -r "$SCRIPTS_PATH" "$localhost_hostvars_ki_env_path"/
-  rsync --ignore-existing -r "$BIN_PATH" "$localhost_hostvars_ki_env_path"/
+  cp -rn "$SCRIPTS_PATH" "$localhost_hostvars_ki_env_path"/
+  cp -rn "$BIN_PATH" "$localhost_hostvars_ki_env_path"/
+  "$SCRIPTS_PATH"/install-rsync.sh --ki-env-path "$localhost_hostvars_ki_env_path"
   "$SCRIPTS_PATH"/setup-ki-venv.sh --ki-env-path "$localhost_hostvars_ki_env_path"
+
+  return 0
 }
 
 check_ssh_connection_with_ssh() {
@@ -205,7 +214,10 @@ create_ki_env_directory_with_ssh() {
       "${all_group_hostvars_ansible_ports[$i]}" \
       "${all_group_hostvars_ansible_ssh_users[$i]}" \
       "handle_ssh" \
-      "mkdir -p ""${all_group_hostvars_ki_env_paths[$i]}"
+      "mkdir -p ${all_group_hostvars_ki_env_paths[$i]};
+       mkdir -p ${all_group_hostvars_ki_env_paths[$i]}/bin/bin;
+       mkdir -p ${all_group_hostvars_ki_env_paths[$i]}/bin/linux-packages/ubuntu22.04;
+       mkdir -p ${all_group_hostvars_ki_env_paths[$i]}/bin/linux-packages/rhel8"
   done
 
   print_result
@@ -215,20 +227,107 @@ create_ki_env_directory_with_ssh() {
   return 0
 }
 
-copy_scripts_directory_with_rsync() {
+copy_yq_with_scp() {
+  msg "[INFO] Started to copy yq for all group nodes"
+  msg ""
+
+  for i in "${!all_group_hostvars_ih_list[@]}"; do
+    msg "[INFO] Copying to the node[\"${all_group_hostvars_ih_list[$i]}\"]..."
+    execute_scp \
+      "${all_group_hostvars_ih_list[$i]}" \
+      "${all_group_hostvars_ansible_hosts[$i]}" \
+      "${all_group_hostvars_ansible_ports[$i]}" \
+      "${all_group_hostvars_ansible_ssh_users[$i]}" \
+      "handle_scp" \
+      "$BIN_PATH/bin/yq" \
+      "${all_group_hostvars_ki_env_paths[$i]}/bin/bin/yq"
+  done
+
+  print_result
+  [[ ${#failed_result_ih_list[@]} -gt 0 ]] && exit 1
+  clear_result
+
+  return 0
+}
+
+copy_scripts_directory_with_scp() {
   msg "[INFO] Started to copy scripts directory for all group nodes"
   msg ""
 
   for i in "${!all_group_hostvars_ih_list[@]}"; do
     msg "[INFO] Copying to the node[\"${all_group_hostvars_ih_list[$i]}\"]..."
-    execute_rsync \
+    execute_scp \
       "${all_group_hostvars_ih_list[$i]}" \
       "${all_group_hostvars_ansible_hosts[$i]}" \
       "${all_group_hostvars_ansible_ports[$i]}" \
       "${all_group_hostvars_ansible_ssh_users[$i]}" \
-      "handle_rsync" \
+      "handle_scp" \
       "$SCRIPTS_PATH" \
       "${all_group_hostvars_ki_env_paths[$i]}/"
+  done
+
+  print_result
+  [[ ${#failed_result_ih_list[@]} -gt 0 ]] && exit 1
+  clear_result
+
+  return 0
+}
+
+copy_rsync_directory_with_scp() {
+  msg "[INFO] Started to copy ubuntu22.04 rsync directory for all group nodes"
+  msg ""
+
+  for i in "${!all_group_hostvars_ih_list[@]}"; do
+    msg "[INFO] Copying to the node[\"${all_group_hostvars_ih_list[$i]}\"]..."
+    execute_scp \
+      "${all_group_hostvars_ih_list[$i]}" \
+      "${all_group_hostvars_ansible_hosts[$i]}" \
+      "${all_group_hostvars_ansible_ports[$i]}" \
+      "${all_group_hostvars_ansible_ssh_users[$i]}" \
+      "handle_scp" \
+      "$BIN_PATH/linux-packages/ubuntu22.04/rsync" \
+      "${all_group_hostvars_ki_env_paths[$i]}/bin/linux-packages/ubuntu22.04/"
+  done
+
+  print_result
+  [[ ${#failed_result_ih_list[@]} -gt 0 ]] && exit 1
+  clear_result
+
+  msg "[INFO] Started to copy rhel8 rsync directory for all group nodes"
+  msg ""
+
+  for i in "${!all_group_hostvars_ih_list[@]}"; do
+    msg "[INFO] Copying to the node[\"${all_group_hostvars_ih_list[$i]}\"]..."
+    execute_scp \
+      "${all_group_hostvars_ih_list[$i]}" \
+      "${all_group_hostvars_ansible_hosts[$i]}" \
+      "${all_group_hostvars_ansible_ports[$i]}" \
+      "${all_group_hostvars_ansible_ssh_users[$i]}" \
+      "handle_scp" \
+      "$BIN_PATH/linux-packages/rhel8/rsync" \
+      "${all_group_hostvars_ki_env_paths[$i]}/bin/linux-packages/rhel8/"
+  done
+
+  print_result
+  [[ ${#failed_result_ih_list[@]} -gt 0 ]] && exit 1
+  clear_result
+
+  return 0
+}
+
+execute_install_rsync_sh_with_ssh() {
+  msg "[INFO] Started to execute install-rsync.sh for all group nodes"
+  msg ""
+
+  for i in "${!all_group_hostvars_ih_list[@]}"; do
+    msg "[INFO] Executing in the node[\"${all_group_hostvars_ih_list[$i]}\"]..."
+    execute_ssh \
+      "${all_group_hostvars_ih_list[$i]}" \
+      "${all_group_hostvars_ansible_hosts[$i]}" \
+      "${all_group_hostvars_ansible_ports[$i]}" \
+      "${all_group_hostvars_ansible_ssh_users[$i]}" \
+      "handle_ssh" \
+      "${all_group_hostvars_ki_env_paths[$i]}/scripts/install-rsync.sh --ki-env-path ${all_group_hostvars_ki_env_paths[$i]}"
   done
 
   print_result
@@ -306,6 +405,30 @@ execute_ssh() {
   return 0
 }
 
+execute_scp() {
+  local ih=$1
+  local host=$2
+  local port=$3
+  local user=$4
+  local handler=$5
+  local src=$6
+  local dest=$7
+
+  local exit_code=0
+  local stderr
+    stderr=$(scp -r -o ConnectTimeout=5 -o StrictHostKeyChecking=no -P "$port" "$src" "$user"@"$host":"$dest" 2>&1 > /dev/null) || exit_code=$?
+
+  $handler \
+    "${all_group_hostvars_ih_list[$i]}" \
+    "${all_group_hostvars_ansible_hosts[$i]}" \
+    "${all_group_hostvars_ansible_ports[$i]}" \
+    "${all_group_hostvars_ansible_ssh_users[$i]}" \
+    $exit_code \
+    "$stderr"
+
+  return 0
+}
+
 execute_rsync() {
   local ih=$1
   local host=$2
@@ -331,6 +454,28 @@ execute_rsync() {
 }
 
 handle_ssh() {
+  local ih=$1
+  local host=$2
+  local port=$3
+  local user=$4
+  local exit_code=$5
+  local stderr=$6
+
+  if [[ $exit_code = 0 ]]; then
+    if [[ -z $stderr ]]; then
+      add_host_to_ok_result "$ih" "$host" "$port" "$user"
+    else
+      add_host_to_warning_result "$ih" "$host" "$port" "$user" "$exit_code" "$stderr"
+    fi
+
+    return 0
+  fi
+
+  add_host_to_failed_result "$ih" "$host" "$port" "$user" "$exit_code" "$stderr"
+  return 0
+}
+
+handle_scp() {
   local ih=$1
   local host=$2
   local port=$3

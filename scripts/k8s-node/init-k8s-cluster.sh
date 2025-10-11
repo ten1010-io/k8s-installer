@@ -107,7 +107,7 @@ main() {
   rm -f "$ki_tmp_root_path/kubeadm-config.yml"
 
   mkdir -p $HOME/.kube
-  cp /etc/kubernetes/admin.conf $HOME/.kube/config
+  cp -f /etc/kubernetes/admin.conf $HOME/.kube/config
   chown $(id -u):$(id -g) $HOME/.kube/config
 
   return 0

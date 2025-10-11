@@ -70,6 +70,7 @@ parse_params "$@"
 # --- End of CLI template ---
 
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
+RHEL8_SUPPORTED_MINOR_VERSION=10
 
 ki_env_path=""
 ki_env_scripts_path=""
@@ -85,6 +86,7 @@ os_major_version=""
 os_minor_version=""
 
 ki_tmp_root_path=""
+ki_cp_ntp_server_upstream_servers=""
 
 main() {
   require_file_exists "$vars_path"
@@ -94,10 +96,16 @@ main() {
   validate_ki_env_directory
   get_os_version
 
-  ki_tmp_root_path=$($yq_cmd .ki_tmp_root_path < "$vars_path")
+  ki_tmp_root_path=$($yq_cmd ".ki_tmp_root_path" < "$vars_path")
+  ki_cp_ntp_server_upstream_servers=$($yq_cmd -o json ".ki_cp_ntp_server_upstream_servers" < "$vars_path")
 
   if [[ $os_distribution = "ubuntu" && $os_major_version = "22.04" && $os_minor_version -le "$UBUNTU2204_SUPPORTED_MINOR_VERSION" ]]; then
     ubuntu2204_reset
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel8_reset
     exit 0
   fi
 
@@ -112,12 +120,20 @@ ubuntu2204_reset() {
   fi
 }
 
+rhel8_reset() {
+  if [[ $("$ki_env_scripts_path/systemctl.sh" exists chronyd) = "true" ]]; then
+    create_chrony_conf_file
+    systemctl enable chronyd
+    systemctl restart chronyd
+  fi
+}
+
 create_timesyncd_conf_file() {
   local servers_len
   local ntp_servers
-  servers_len=$($yq_cmd '.ki_cp_ntp_server_upstream_servers | length' < "$vars_path")
+  servers_len=$($yq_cmd --null-input "$ki_cp_ntp_server_upstream_servers | length")
   if [[ $servers_len -gt 0 ]]; then
-    ntp_servers=$($yq_cmd '.ki_cp_ntp_server_upstream_servers | join(" ")' < "$vars_path")
+    ntp_servers=$($yq_cmd --null-input "$ki_cp_ntp_server_upstream_servers | join(\" \")")
   else
     ntp_servers="time1.google.com time2.google.com"
   fi
@@ -127,6 +143,24 @@ create_timesyncd_conf_file() {
   touch "$tmp_file_path"
   $yq_cmd -i ".ntp_servers = \"$ntp_servers\"" "$tmp_file_path"
   $jinja2_cmd --format yaml -o "/etc/systemd/timesyncd.conf" "$SCRIPT_DIR_PATH"/templates/timesyncd.conf.j2 "$tmp_file_path"
+  rm "$tmp_file_path"
+}
+
+create_chrony_conf_file() {
+  local servers_len
+  local ntp_servers
+  servers_len=$($yq_cmd --null-input "$ki_cp_ntp_server_upstream_servers | length")
+  if [[ $servers_len -gt 0 ]]; then
+    ntp_servers=$ki_cp_ntp_server_upstream_servers
+  else
+    ntp_servers="[\"time1.google.com\", \"time2.google.com\"]"
+  fi
+
+  local tmp_file_path
+  tmp_file_path="$ki_tmp_root_path"/tmp-templates-vars.yml
+  touch "$tmp_file_path"
+  $yq_cmd -o json -i ".ntp_servers = $ntp_servers" "$tmp_file_path"
+  $jinja2_cmd --format yaml -o "/etc/chrony.conf" "$SCRIPT_DIR_PATH"/templates/chrony.conf.j2 "$tmp_file_path"
   rm "$tmp_file_path"
 }
 

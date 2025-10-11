@@ -91,7 +91,7 @@ main() {
 
   [[ -e "$output_path"/ca.crt ]] && die "[ERROR] File[\"$output_path/ca.crt\"] already exists"
 
-  cp "$TEMPLATES_PATH"/ca.conf "$output_path"
+  cp -f "$TEMPLATES_PATH"/ca.conf "$output_path"
   sed -i 's/CN =/CN = '"$common_name"'/g' "$output_path/ca.conf"
   openssl req -x509 -out "$output_path/ca.crt" -keyout "$output_path/ca.key" -config "$output_path/ca.conf" -newkey rsa -days "$days"
 }

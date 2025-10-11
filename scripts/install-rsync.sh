@@ -102,57 +102,19 @@ main() {
 }
 
 ubuntu2204_setup() {
-  if [[ $(ubuntu2204_is_installed python3\.10-venv) = "false" ]]; then
+  if [[ $(ubuntu2204_is_installed rsync) = "false" ]]; then
     export DEBIAN_FRONTEND=noninteractive
-    dpkg -i "$KI_ENV_BIN_PATH"/linux-packages/ubuntu22.04/python3.10/*.deb
-    dpkg -i "$KI_ENV_BIN_PATH"/linux-packages/ubuntu22.04/python3.10-venv/*.deb
+    dpkg -i "$KI_ENV_BIN_PATH"/linux-packages/ubuntu22.04/rsync/*.deb
     export DEBIAN_FRONTEND=""
   fi
-
-  if [[ -e $KI_ENV_KI_VENV_PATH ]]; then
-    msg "[INFO] K8s installer will use existing ki-venv"
-  else
-    msg "[INFO] K8s installer will create virtual environment[\"ki-venv\"]"
-
-    python3.10 -m venv "$KI_ENV_KI_VENV_PATH"
-    "$KI_ENV_KI_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_ENV_BIN_PATH"/python-packages/python3.10/netifaces netifaces
-    "$KI_ENV_KI_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_ENV_BIN_PATH"/python-packages/python3.10/jinja2-cli jinja2-cli PyYAML
-    "$KI_ENV_KI_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_ENV_BIN_PATH"/python-packages/python3.10/ansible ansible jmespath
-    "$KI_ENV_KI_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_ENV_BIN_PATH"/python-packages/python3.10/pydantic pydantic
-  fi
-
-  validate_ki_venv_directory
-
-  msg ""
-  msg "[INFO] To activate ki-venv, run the following"
-  msg "source $KI_ENV_KI_VENV_PATH/bin/activate"
 
   return 0
 }
 
 rhel8_setup() {
-  if [[ $(rhel8_is_installed python3\.12) = "false" ]]; then
-    rpm -Uvh --oldpackage --replacepkgs "$KI_ENV_BIN_PATH/linux-packages/rhel8/chkconfig/*.rpm"
-    rpm -Uvh --oldpackage --replacepkgs "$KI_ENV_BIN_PATH/linux-packages/rhel8/python3.12/*.rpm"
+  if [[ $(rhel8_is_installed rsync) = "false" ]]; then
+    rpm -Uvh --oldpackage --replacepkgs "$KI_ENV_BIN_PATH/linux-packages/rhel8/rsync/*.rpm"
   fi
-
-  if [[ -e $KI_ENV_KI_VENV_PATH ]]; then
-    msg "[INFO] K8s installer will use existing ki-venv"
-  else
-    msg "[INFO] K8s installer will create virtual environment[\"ki-venv\"]"
-
-    python3.12 -m venv "$KI_ENV_KI_VENV_PATH"
-    "$KI_ENV_KI_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_ENV_BIN_PATH"/python-packages/python3.12/netifaces netifaces
-    "$KI_ENV_KI_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_ENV_BIN_PATH"/python-packages/python3.12/jinja2-cli jinja2-cli PyYAML
-    "$KI_ENV_KI_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_ENV_BIN_PATH"/python-packages/python3.12/ansible ansible jmespath
-    "$KI_ENV_KI_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_ENV_BIN_PATH"/python-packages/python3.12/pydantic pydantic
-  fi
-
-  validate_ki_venv_directory
-
-  msg ""
-  msg "[INFO] To activate ki-venv, run the following"
-  msg "source $KI_ENV_KI_VENV_PATH/bin/activate"
 
   return 0
 }
