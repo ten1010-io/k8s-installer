@@ -113,7 +113,7 @@ main() {
 
 ubuntu2204_setup() {
   mkdir -p /usr/local/share/ca-certificates
-  cp "$ki_tmp_ki_ca_crt_path" /usr/local/share/ca-certificates/
+  cp -f "$ki_tmp_ki_ca_crt_path" /usr/local/share/ca-certificates/
   update-ca-certificates
 
   restart_if_running docker
@@ -122,7 +122,7 @@ ubuntu2204_setup() {
 
 rhel8_setup() {
   mkdir -p /etc/pki/ca-trust/source/anchors
-  cp "$ki_tmp_ki_ca_crt_path" /etc/pki/ca-trust/source/anchors/
+  cp -f "$ki_tmp_ki_ca_crt_path" /etc/pki/ca-trust/source/anchors/
   update-ca-trust
 
   restart_if_running docker

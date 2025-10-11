@@ -70,6 +70,7 @@ parse_params "$@"
 # --- End of CLI template ---
 
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
+RHEL8_SUPPORTED_MINOR_VERSION=10
 
 ki_env_path=""
 ki_env_scripts_path=""
@@ -85,6 +86,7 @@ os_major_version=""
 os_minor_version=""
 
 ki_tmp_root_path=""
+internal_network_ki_cp_dns_name=""
 
 main() {
   require_file_exists "$vars_path"
@@ -94,10 +96,16 @@ main() {
   validate_ki_env_directory
   get_os_version
 
-  ki_tmp_root_path=$($yq_cmd .ki_tmp_root_path < "$vars_path")
+  ki_tmp_root_path=$($yq_cmd ".ki_tmp_root_path" < "$vars_path")
+  internal_network_ki_cp_dns_name=$($yq_cmd ".internal_network_ki_cp_dns_name" < "$vars_path")
 
   if [[ $os_distribution = "ubuntu" && $os_major_version = "22.04" && $os_minor_version -le "$UBUNTU2204_SUPPORTED_MINOR_VERSION" ]]; then
     ubuntu2204_setup
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel8_setup
     exit 0
   fi
 
@@ -110,15 +118,31 @@ ubuntu2204_setup() {
   systemctl restart systemd-timesyncd
 }
 
+rhel8_setup() {
+  create_chrony_conf_file
+  systemctl enable chronyd
+  systemctl restart chronyd
+}
+
 create_timesyncd_conf_file() {
-  local ntp_servers
-  ntp_servers=$($yq_cmd '.internal_network_ki_cp_dns_name' < "$vars_path")
+  local ntp_servers=$internal_network_ki_cp_dns_name
 
   local tmp_file_path
   tmp_file_path="$ki_tmp_root_path"/tmp-templates-vars.yml
   touch "$tmp_file_path"
   $yq_cmd -i ".ntp_servers = \"$ntp_servers\"" "$tmp_file_path"
   $jinja2_cmd --format yaml -o "/etc/systemd/timesyncd.conf" "$SCRIPT_DIR_PATH"/templates/timesyncd.conf.j2 "$tmp_file_path"
+  rm "$tmp_file_path"
+}
+
+create_chrony_conf_file() {
+  local ntp_servers="[\"$internal_network_ki_cp_dns_name\"]"
+
+  local tmp_file_path
+  tmp_file_path="$ki_tmp_root_path"/tmp-templates-vars.yml
+  touch "$tmp_file_path"
+  $yq_cmd -o json -i ".ntp_servers = $ntp_servers" "$tmp_file_path"
+  $jinja2_cmd --format yaml -o "/etc/chrony.conf" "$SCRIPT_DIR_PATH"/templates/chrony.conf.j2 "$tmp_file_path"
   rm "$tmp_file_path"
 }
 

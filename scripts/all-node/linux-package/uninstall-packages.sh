@@ -70,6 +70,7 @@ parse_params "$@"
 # --- End of CLI template ---
 
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
+RHEL8_SUPPORTED_MINOR_VERSION=10
 
 ki_env_path=""
 ki_env_scripts_path=""
@@ -102,13 +103,18 @@ main() {
     exit 0
   fi
 
+  if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel8_uninstall
+    exit 0
+  fi
+
   die "[ERROR] OS not supported\n$os_info"
 }
 
 ubuntu2204_uninstall() {
   rm -f /etc/crictl.yaml
 
-  if [[ $("$ki_env_scripts_path"/systemctl.sh exists kubelet) = "true" ]]; then
+  if [[ $("$ki_env_scripts_path/systemctl.sh" exists kubelet) = "true" ]]; then
     apt remove -y --purge --allow-change-held-packages \
       kubeadm \
       kubectl \
@@ -117,7 +123,7 @@ ubuntu2204_uninstall() {
       kubernetes-cni
   fi
 
-  if [[ $("$ki_env_scripts_path"/systemctl.sh exists docker) = "true" ]]; then
+  if [[ $("$ki_env_scripts_path/systemctl.sh" exists docker) = "true" ]]; then
     apt remove -y --purge --allow-change-held-packages \
       nvidia-container-toolkit \
       nvidia-container-toolkit-base \
@@ -129,30 +135,54 @@ ubuntu2204_uninstall() {
       docker-ce-cli \
       docker-buildx-plugin \
       docker-compose-plugin
-    rm -f /etc/docker/daemon.json
-    rm -rf "$docker_root_path"
   fi
+  rm -f /etc/docker/daemon.json
+  rm -rf "$docker_root_path"
 
-  if [[ $("$ki_env_scripts_path"/systemctl.sh exists containerd) = "true" ]]; then
+  if [[ $("$ki_env_scripts_path/systemctl.sh" exists containerd) = "true" ]]; then
     apt remove -y --purge --allow-change-held-packages \
       containerd.io
-    rm -rf "$containerd_root_path"
+  fi
+  rm -rf "$containerd_root_path"
+
+  systemctl daemon-reload
+
+  return 0
+}
+
+rhel8_uninstall() {
+  rm -f /etc/crictl.yaml
+
+  if [[ $("$ki_env_scripts_path/systemctl.sh" exists kubelet) = "true" ]]; then
+    yum erase -y \
+      kubeadm \
+      kubectl \
+      kubelet \
+      cri-tools \
+      kubernetes-cni
   fi
 
-  if [[ $("$ki_env_scripts_path"/systemctl.sh exists systemd-timesyncd) = "true" ]]; then
-    apt remove -y --purge --allow-change-held-packages \
-      systemd-timesyncd
-  fi
+  if [[ $("$ki_env_scripts_path/systemctl.sh" exists docker) = "true" ]]; then
+    yum erase -y \
+      nvidia-container-toolkit \
+      nvidia-container-toolkit-base \
+      libnvidia-container1 \
+      libnvidia-container-tools
 
-  if [[ $("$ki_env_scripts_path"/systemctl.sh exists ntp) = "true" ]]; then
-    apt remove -y --purge --allow-change-held-packages \
-      ntp
+    yum erase -y \
+      docker-ce \
+      docker-ce-cli \
+      docker-buildx-plugin \
+      docker-compose-plugin
   fi
+  rm -f /etc/docker/daemon.json
+  rm -rf "$docker_root_path"
 
-  if [[ $("$ki_env_scripts_path"/systemctl.sh exists chrony) = "true" ]]; then
-    apt remove -y --purge --allow-change-held-packages \
-      chrony
+  if [[ $("$ki_env_scripts_path/systemctl.sh" exists containerd) = "true" ]]; then
+    yum erase -y \
+      containerd.io
   fi
+  rm -rf "$containerd_root_path"
 
   systemctl daemon-reload
 

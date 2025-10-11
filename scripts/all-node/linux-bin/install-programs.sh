@@ -95,7 +95,7 @@ main() {
 install_program() {
   local program=$1
 
-  cp "$ki_env_bin_path/bin/$program" "/usr/local/bin/$program"
+  cp -f "$ki_env_bin_path/bin/$program" "/usr/local/bin/$program"
   chown root:root "/usr/local/bin/$program"
   chmod 755 "/usr/local/bin/$program"
 }

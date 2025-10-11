@@ -94,8 +94,8 @@ main() {
   mkdir -p "$output_path"/"$domain_name"
   [[ -e "$output_path"/"$domain_name"/tls.crt ]] && die '[ERROR] File["'"$output_path"/"$domain_name"/tls.crt'"] already exists'
 
-  cp "$TEMPLATES_PATH/tls.conf" "$output_path/$domain_name"
-  cp "$TEMPLATES_PATH/tls.ext" "$output_path/$domain_name"
+  cp -f "$TEMPLATES_PATH/tls.conf" "$output_path/$domain_name"
+  cp -f "$TEMPLATES_PATH/tls.ext" "$output_path/$domain_name"
   sed -i 's/CN =/CN = '"$domain_name"'/g' "$output_path/$domain_name/tls.conf"
   sed -i 's/DNS.1 =/DNS.1 = '"$domain_name"'/g' "$output_path/$domain_name/tls.ext"
   openssl req -out "$output_path/$domain_name/tls.csr" \

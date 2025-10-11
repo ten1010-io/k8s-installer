@@ -101,12 +101,12 @@ setup_modules() {
   modprobe br_netfilter
 
   mkdir -p /etc/modules-load.d
-  cp "$SCRIPT_DIR_PATH"/templates/modules-k8s.conf /etc/modules-load.d/k8s.conf
+  cp -f "$SCRIPT_DIR_PATH"/templates/modules-k8s.conf /etc/modules-load.d/k8s.conf
 }
 
 setup_kernel_parameters() {
   mkdir -p /etc/sysctl.d
-  cp "$SCRIPT_DIR_PATH"/templates/sysctl-k8s.conf /etc/sysctl.d/k8s.conf
+  cp -f "$SCRIPT_DIR_PATH"/templates/sysctl-k8s.conf /etc/sysctl.d/k8s.conf
 
   sysctl --system
 }
