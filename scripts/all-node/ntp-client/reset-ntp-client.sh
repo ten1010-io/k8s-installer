@@ -133,7 +133,7 @@ create_timesyncd_conf_file() {
   local ntp_servers
   servers_len=$($yq_cmd --null-input "$ki_cp_ntp_server_upstream_servers | length")
   if [[ $servers_len -gt 0 ]]; then
-    ntp_servers=$($yq_cmd --null-input "$ki_cp_ntp_server_upstream_servers | join(" ")")
+    ntp_servers=$($yq_cmd --null-input "$ki_cp_ntp_server_upstream_servers | join(\" \")")
   else
     ntp_servers="time1.google.com time2.google.com"
   fi
