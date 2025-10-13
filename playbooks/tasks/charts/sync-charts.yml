@@ -79,7 +79,7 @@
         src_arg: "{{ hostvars[src_ih]['ansible_ssh_user'] }}@{{ hostvars[src_ih]['ansible_host'] }}:{{ ki_etc_charts_path }}/*"
         dst_arg: "{{ ki_tmp_charts_path }}/"
 
-    - name: "Copy charts to the node[\"{{ item }}\"]"
+    - name: "Copy charts to destination nodes"
       shell: "sudo scp -r {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
       vars:
         ssh_opt: "-o StrictHostKeyChecking=no"
