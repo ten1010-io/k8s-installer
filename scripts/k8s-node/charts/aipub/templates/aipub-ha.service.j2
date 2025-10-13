@@ -1,0 +1,11 @@
+[Unit]
+Description=Aipub HA Service
+
+[Service]
+Type=simple
+User=root
+ExecStart={{ exec_start }}
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

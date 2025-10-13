@@ -25,6 +25,8 @@ ki_etc_services_path: "{{ ki_etc_root_path }}/services"
 ki_etc_kubeadm_path: "{{ ki_etc_root_path }}/kubeadm"
 ki_etc_charts_path: "{{ ki_etc_root_path }}/charts"
 
+ki_var_aipub_local_pv_path: "{{ ki_var_root_path }}/aipub-local-pv"
+
 internal_network_ip: null
 internal_network_zone: "ki.local"
 internal_network_ki_cp_dns_name: "ki-cp.{{ internal_network_zone }}"
@@ -32,6 +34,7 @@ internal_network_ki_cp_dns_name: "ki-cp.{{ internal_network_zone }}"
 ki_cp_k8s_cp_lb_port: 16443
 ki_cp_k8s_cp_lb_stats_port: 18404
 ki_cp_k8s_registry_port: 5000
+ki_cp_aipub_registry_port: 5001
 
 k8s_version: "v1.34.1"
 k8s_apiserver_port: 6443

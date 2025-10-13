@@ -69,6 +69,8 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
+SVC_NAME=ki-cp-aipub-registry
+
 ki_env_path=""
 ki_env_scripts_path=""
 ki_env_bin_path=""
@@ -77,8 +79,11 @@ ki_env_ki_venv_path=""
 yq_cmd=""
 jinja2_cmd=""
 
-playbook=""
-k8s_ingress_classes=""
+ki_var_root_path=""
+ki_etc_services_path=""
+
+etc_svc_root_path=""
+var_svc_root_path=""
 
 main() {
   require_file_exists "$vars_path"
@@ -87,63 +92,27 @@ main() {
   require_directory_exists "$ki_env_path"
   validate_ki_env_directory
 
-  playbook=$($yq_cmd '.playbook' < "$vars_path")
-  k8s_ingress_classes=$($yq_cmd -o json '.k8s_ingress_classes' < "$vars_path")
+  [[ $("$ki_env_scripts_path/systemctl.sh" is-enabled docker) = "false" ]] && exit 0
 
-  if [[ $playbook = "setup-k8s-charts" ]]; then
-    [[ $(chart_exists kube-flannel flannel) = "true" ]] && die "[ERROR] Chart[\"flannel\"] has already benn set up"
-    [[ $(chart_exists metallb metallb) = "true" ]] && die "[ERROR] Chart[\"metallb\"] has already benn set up"
-    check_ingress_nginx_charts
+  ki_var_root_path=$($yq_cmd '.ki_var_root_path' < "$vars_path")
+  ki_etc_services_path=$($yq_cmd '.ki_etc_services_path' < "$vars_path")
 
-    return 0
-  fi
+  etc_svc_root_path="$ki_etc_services_path"/$SVC_NAME
+  var_svc_root_path="$ki_var_root_path"/$SVC_NAME
 
-  if [[ $playbook = "setup-aipub-charts" ]]; then
-    [[ $(k8s_namespace_exists aipub) = "true" ]] && die "[ERROR] Namespace[\"aipub\"] has already benn set up"
-    [[ $(chart_exists aipub keycloak) = "true" ]] && die "[ERROR] Chart[\"keycloak\"] has already benn set up"
-    [[ $(chart_exists aipub harbor) = "true" ]] && die "[ERROR] Chart[\"harbor\"] has already benn set up"
-
-    return 0
-  fi
+  [[ $(service_exists $SVC_NAME) = "true" ]] && docker compose --project-directory "$etc_svc_root_path" down
+  rm -rf "$etc_svc_root_path"
+  rm -rf "$var_svc_root_path"
 
   return 0
 }
 
-check_ingress_nginx_charts() {
-  local classes_len
-  classes_len=$($yq_cmd --null-input "$k8s_ingress_classes | length")
+service_exists() {
+  local svc_name=$1
 
-  local name
-  local release_name
-  for (( i=0; i<"$classes_len"; i++ )); do
-    name=$($yq_cmd --null-input "$k8s_ingress_classes | .[$i][\"name\"]")
-    release_name="ingress-class-$name"
-
-    [[ $(chart_exists ingress-nginx "$release_name") = "true" ]] && die "[ERROR] Chart[\"$release_name\"] has already benn set up"
-  done
-
-  return 0
-}
-
-chart_exists() {
-  local namespace
-  local name
-  namespace=$1
-  name=$2
-
-  local exit_code=0
-  helm get notes -n "$namespace" "$name" > /dev/null 2>&1 || exit_code=$?
-  if [[ $exit_code = 0 ]]; then echo "true"; else echo "false"; fi
-
-  return 0
-}
-
-k8s_namespace_exists() {
-  local name=$1
-
-  local exit_code=0
-  kubectl get namespace "$name" > /dev/null 2>&1 || exit_code=$?
-  if [[ $exit_code = 0 ]]; then echo "true"; else echo "false"; fi
+  local ls_lines_len
+  ls_lines_len=$(docker compose ls -a --filter name='^'"$svc_name"'$' | wc -l)
+  if [[ $ls_lines_len = 2 ]]; then echo "true"; else echo "false"; fi
 
   return 0
 }

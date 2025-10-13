@@ -21,6 +21,9 @@
         - name: Execute setup-k8s-registry.sh --update
           shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/k8s-registry/setup-k8s-registry.sh {{ vars_path_arg }} --update"
 
+        - name: Execute setup-aipub-registry.sh --update
+          shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/aipub-registry/setup-aipub-registry.sh {{ vars_path_arg }} --update"
+
     - when: inventory_hostname == target_node
       block:
         - name: Execute reset-keepalived.sh
@@ -37,3 +40,6 @@
 
         - name: Execute reset-k8s-registry.sh
           shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/k8s-registry/reset-k8s-registry.sh {{ vars_path_arg }}"
+
+        - name: Execute reset-aipub-registry.sh
+          shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/aipub-registry/reset-aipub-registry.sh {{ vars_path_arg }}"

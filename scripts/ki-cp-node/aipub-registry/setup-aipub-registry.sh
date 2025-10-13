@@ -4,17 +4,19 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path] [--update]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
 --vars-path     File path
+--update
 EOF
   exit
 }
 
 parse_params() {
   vars_path=""
+  update="false"
 
   while :; do
     case "${1-}" in
@@ -26,6 +28,7 @@ parse_params() {
       vars_path="${2-}"
       shift
       ;;
+    --update) update="true" ;;
     -?*) die "[ERROR] Unknown option: $1" ;;
     *) break ;;
     esac
@@ -69,6 +72,8 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
+SVC_NAME=ki-cp-aipub-registry
+
 ki_env_path=""
 ki_env_scripts_path=""
 ki_env_bin_path=""
@@ -77,8 +82,11 @@ ki_env_ki_venv_path=""
 yq_cmd=""
 jinja2_cmd=""
 
-playbook=""
-k8s_ingress_classes=""
+ki_var_root_path=""
+ki_etc_services_path=""
+
+etc_svc_root_path=""
+var_svc_root_path=""
 
 main() {
   require_file_exists "$vars_path"
@@ -87,63 +95,44 @@ main() {
   require_directory_exists "$ki_env_path"
   validate_ki_env_directory
 
-  playbook=$($yq_cmd '.playbook' < "$vars_path")
-  k8s_ingress_classes=$($yq_cmd -o json '.k8s_ingress_classes' < "$vars_path")
+  ki_var_root_path=$($yq_cmd '.ki_var_root_path' < "$vars_path")
+  ki_etc_services_path=$($yq_cmd '.ki_etc_services_path' < "$vars_path")
 
-  if [[ $playbook = "setup-k8s-charts" ]]; then
-    [[ $(chart_exists kube-flannel flannel) = "true" ]] && die "[ERROR] Chart[\"flannel\"] has already benn set up"
-    [[ $(chart_exists metallb metallb) = "true" ]] && die "[ERROR] Chart[\"metallb\"] has already benn set up"
-    check_ingress_nginx_charts
+  etc_svc_root_path="$ki_etc_services_path"/$SVC_NAME
+  var_svc_root_path="$ki_var_root_path"/$SVC_NAME
+  [[ $update = "false" ]] && require_not_setup $SVC_NAME
 
-    return 0
-  fi
+  docker load -i "$ki_env_bin_path"/images/registry/*.tar
 
-  if [[ $playbook = "setup-aipub-charts" ]]; then
-    [[ $(k8s_namespace_exists aipub) = "true" ]] && die "[ERROR] Namespace[\"aipub\"] has already benn set up"
-    [[ $(chart_exists aipub keycloak) = "true" ]] && die "[ERROR] Chart[\"keycloak\"] has already benn set up"
-    [[ $(chart_exists aipub harbor) = "true" ]] && die "[ERROR] Chart[\"harbor\"] has already benn set up"
+  mkdir -p "$var_svc_root_path"
+  tar xzf "$ki_env_bin_path/registry-data/$SVC_NAME.tgz" -C "$var_svc_root_path"
 
-    return 0
-  fi
+  mkdir -p "$etc_svc_root_path"
+  $jinja2_cmd -D var_svc_root_path="$var_svc_root_path" \
+              --format yaml \
+              -o "$etc_svc_root_path""/compose.yml" \
+              "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$vars_path"
 
-  return 0
-}
-
-check_ingress_nginx_charts() {
-  local classes_len
-  classes_len=$($yq_cmd --null-input "$k8s_ingress_classes | length")
-
-  local name
-  local release_name
-  for (( i=0; i<"$classes_len"; i++ )); do
-    name=$($yq_cmd --null-input "$k8s_ingress_classes | .[$i][\"name\"]")
-    release_name="ingress-class-$name"
-
-    [[ $(chart_exists ingress-nginx "$release_name") = "true" ]] && die "[ERROR] Chart[\"$release_name\"] has already benn set up"
-  done
+  [[ $update = "true" && $(service_exists $SVC_NAME) = "true" ]] && docker compose -f "$etc_svc_root_path/compose.yml" down
+  docker compose -f "$etc_svc_root_path/compose.yml" up -d
 
   return 0
 }
 
-chart_exists() {
-  local namespace
-  local name
-  namespace=$1
-  name=$2
+service_exists() {
+  local svc_name=$1
 
-  local exit_code=0
-  helm get notes -n "$namespace" "$name" > /dev/null 2>&1 || exit_code=$?
-  if [[ $exit_code = 0 ]]; then echo "true"; else echo "false"; fi
+  local ls_lines_len
+  ls_lines_len=$(docker compose ls -a --filter name='^'"$svc_name"'$' | wc -l)
+  if [[ $ls_lines_len = 2 ]]; then echo "true"; else echo "false"; fi
 
   return 0
 }
 
-k8s_namespace_exists() {
-  local name=$1
+require_not_setup() {
+  local svc_name=$1
 
-  local exit_code=0
-  kubectl get namespace "$name" > /dev/null 2>&1 || exit_code=$?
-  if [[ $exit_code = 0 ]]; then echo "true"; else echo "false"; fi
+  [[ $(service_exists "$svc_name") = "true" ]] && die "[ERROR] Service[\"$svc_name\"] already setup"
 
   return 0
 }

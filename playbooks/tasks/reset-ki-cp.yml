@@ -4,6 +4,9 @@
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
+    - name: Execute reset-aipub-registry.sh
+      shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/aipub-registry/reset-aipub-registry.sh {{ vars_path_arg }}"
+
     - name: Execute reset-k8s-registry.sh
       shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/k8s-registry/reset-k8s-registry.sh {{ vars_path_arg }}"
 

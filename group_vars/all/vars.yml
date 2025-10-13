@@ -32,3 +32,23 @@ k8s_ingress_classes:
     ha_mode_vip: "172.16.0.254"
     http_hostport: 80
     https_hostport: 443
+
+aipub_ingress_zone: "example.com"
+aipub_ha_mode: true
+aipub_ha_mode_storage_class: ""
+aipub_cp_nodes:
+  - "node1"
+  - "node2"
+  - "node3"
+
+aipub_keycloak_ingress_class: "lb1"
+aipub_keycloak_ingress_subdomain: "aipub-keycloak"
+aipub_keycloak_replica_count: 3
+aipub_keycloak_postgresql_storage_size: 128Gi
+
+aipub_harbor_ingress_class: "lb1"
+aipub_harbor_ingress_subdomain: "aipub-harbor"
+aipub_harbor_replica_count: 3
+aipub_harbor_registry_storage_size: 512Gi
+aipub_harbor_postgresql_storage_size: 128Gi
+aipub_harbor_redis_storage_size: 32Gi

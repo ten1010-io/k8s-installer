@@ -1,0 +1,162 @@
+expose:
+  ingress:
+    hosts:
+      core: {{ hostname }}
+    className: {{ ingress_class }}
+externalURL: https://{{ hostname }}
+persistence:
+  enabled: true
+  persistentVolumeClaim:
+    registry:
+      existingClaim: "harbor-registry"
+    database:
+      existingClaim: "harbor-postgresql"
+    redis:
+      existingClaim: "harbor-redis"
+portal:
+  image:
+    repository: {{ image_registry }}/goharbor/harbor-portal
+    tag: v2.14.0
+  replicas: {{ replica_count }}
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.aipub.ten1010.io/control-plane
+                operator: Exists
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: portal
+              app.kubernetes.io/name: harbor
+          topologyKey: kubernetes.io/hostname
+core:
+  image:
+    repository: {{ image_registry }}/goharbor/harbor-core
+    tag: v2.14.0
+  replicas: {{ replica_count }}
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.aipub.ten1010.io/control-plane
+                operator: Exists
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: core
+              app.kubernetes.io/name: harbor
+          topologyKey: kubernetes.io/hostname
+jobservice:
+  image:
+    repository: {{ image_registry }}/goharbor/harbor-jobservice
+    tag: v2.14.0
+  jobLoggers:
+    - database
+  replicas: {{ replica_count }}
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.aipub.ten1010.io/control-plane
+                operator: Exists
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: jobservice
+              app.kubernetes.io/name: harbor
+          topologyKey: kubernetes.io/hostname
+registry:
+  registry:
+    image:
+      repository: {{ image_registry }}/goharbor/registry-photon
+      tag: v2.14.0
+  controller:
+    image:
+      repository: {{ image_registry }}/goharbor/harbor-registryctl
+      tag: v2.14.0
+  replicas: {{ registry_replica_count }}
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.aipub.ten1010.io/control-plane
+                operator: Exists
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: registry
+              app.kubernetes.io/name: harbor
+          topologyKey: kubernetes.io/hostname
+trivy:
+  enabled: false
+database:
+  internal:
+    image:
+      repository: {{ image_registry }}/goharbor/harbor-db
+      tag: v2.14.0
+    tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.aipub.ten1010.io/control-plane
+                  operator: Exists
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: database
+                app.kubernetes.io/name: harbor
+            topologyKey: kubernetes.io/hostname
+redis:
+  internal:
+    image:
+      repository: {{ image_registry }}/goharbor/redis-photon
+      tag: v2.14.0
+    tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.aipub.ten1010.io/control-plane
+                  operator: Exists
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: redis
+                app.kubernetes.io/name: harbor
+            topologyKey: kubernetes.io/hostname

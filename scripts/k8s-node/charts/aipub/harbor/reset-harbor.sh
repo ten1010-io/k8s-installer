@@ -69,6 +69,8 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
+CHART_NAME=harbor
+
 ki_env_path=""
 ki_env_scripts_path=""
 ki_env_bin_path=""
@@ -76,9 +78,12 @@ ki_env_ki_venv_path=""
 
 yq_cmd=""
 jinja2_cmd=""
+python3_cmd=""
 
-playbook=""
-k8s_ingress_classes=""
+ki_etc_charts_path=""
+
+chart_root_path=""
+resources_path=""
 
 main() {
   require_file_exists "$vars_path"
@@ -87,39 +92,25 @@ main() {
   require_directory_exists "$ki_env_path"
   validate_ki_env_directory
 
-  playbook=$($yq_cmd '.playbook' < "$vars_path")
-  k8s_ingress_classes=$($yq_cmd -o json '.k8s_ingress_classes' < "$vars_path")
+  ki_etc_charts_path=$($yq_cmd '.ki_etc_charts_path' < "$vars_path")
 
-  if [[ $playbook = "setup-k8s-charts" ]]; then
-    [[ $(chart_exists kube-flannel flannel) = "true" ]] && die "[ERROR] Chart[\"flannel\"] has already benn set up"
-    [[ $(chart_exists metallb metallb) = "true" ]] && die "[ERROR] Chart[\"metallb\"] has already benn set up"
-    check_ingress_nginx_charts
+  chart_root_path=$ki_etc_charts_path/aipub/$CHART_NAME
+  resources_path=$chart_root_path/resources
 
-    return 0
-  fi
-
-  if [[ $playbook = "setup-aipub-charts" ]]; then
-    [[ $(k8s_namespace_exists aipub) = "true" ]] && die "[ERROR] Namespace[\"aipub\"] has already benn set up"
-    [[ $(chart_exists aipub keycloak) = "true" ]] && die "[ERROR] Chart[\"keycloak\"] has already benn set up"
-    [[ $(chart_exists aipub harbor) = "true" ]] && die "[ERROR] Chart[\"harbor\"] has already benn set up"
-
-    return 0
-  fi
+  [[ $(chart_exists aipub $CHART_NAME) = "true" ]] && helm uninstall -n aipub $CHART_NAME
+  delete_resources
+  rm -rf "$chart_root_path"
 
   return 0
 }
 
-check_ingress_nginx_charts() {
-  local classes_len
-  classes_len=$($yq_cmd --null-input "$k8s_ingress_classes | length")
-
-  local name
-  local release_name
-  for (( i=0; i<"$classes_len"; i++ )); do
-    name=$($yq_cmd --null-input "$k8s_ingress_classes | .[$i][\"name\"]")
-    release_name="ingress-class-$name"
-
-    [[ $(chart_exists ingress-nginx "$release_name") = "true" ]] && die "[ERROR] Chart[\"$release_name\"] has already benn set up"
+delete_resources() {
+  for file in "$resources_path"/*; do
+    local exit_code=0
+    kubectl get -f "$resources_path/$file" > /dev/null 2>&1 || exit_code=$?
+    if [[ $exit_code = 0 ]]; then
+      kubectl delete -f "$resources_path/$file"
+    fi
   done
 
   return 0
@@ -138,16 +129,6 @@ chart_exists() {
   return 0
 }
 
-k8s_namespace_exists() {
-  local name=$1
-
-  local exit_code=0
-  kubectl get namespace "$name" > /dev/null 2>&1 || exit_code=$?
-  if [[ $exit_code = 0 ]]; then echo "true"; else echo "false"; fi
-
-  return 0
-}
-
 import_ki_env_vars() {
   ki_env_path=$(grep -oP  "^ki_env_path: \K(.+)" < "$vars_path")
   ki_env_scripts_path=$(grep -oP  "^ki_env_scripts_path: \K(.+)" < "$vars_path")
@@ -158,6 +139,7 @@ import_ki_env_vars() {
 setup_cmd_vars() {
   yq_cmd="$ki_env_bin_path/bin/yq"
   jinja2_cmd="$ki_env_ki_venv_path/bin/jinja2"
+  python3_cmd="$ki_env_ki_venv_path/bin/python3"
 }
 
 validate_ki_env_directory() {

@@ -1,0 +1,23 @@
+- import_playbook: tasks/check-ki-env-setup.yml
+
+- import_playbook: tasks/charts/aipub/preflight-reset-aipub-charts.yml
+
+- import_playbook: tasks/validate-hostvars.yml
+
+- import_playbook: tasks/gather-facts.yml
+
+- import_playbook: tasks/setup-vars-file.yml
+
+- import_playbook: tasks/charts/check-k8s-cluster-state.yml
+
+- import_playbook: tasks/charts/aipub/reset-ha-service.yml
+
+- import_playbook: tasks/charts/aipub/reset-harbor.yml
+
+- import_playbook: tasks/charts/aipub/reset-keycloak.yml
+
+- import_playbook: tasks/charts/aipub/reset-aipub-environment.yml
+
+- import_playbook: tasks/charts/sync-charts.yml
+
+- import_playbook: tasks/reset-vars-file.yml
