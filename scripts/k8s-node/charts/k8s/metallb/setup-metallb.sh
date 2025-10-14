@@ -118,6 +118,8 @@ install_chart() {
   msg "[INFO] Started to wait for controller being ready"
   wait_controller_ready 300
   kubectl label node --all node.kubernetes.io/exclude-from-external-load-balancers-
+
+  return 0
 }
 
 create_api_resources() {
