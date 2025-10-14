@@ -1,8 +1,0 @@
-#!/bin/sh
-
-exit_with_error() {
-    echo "*** $*" 1>&2
-    exit 1
-}
-
-curl --silent -XGET --unix-socket /run/docker.sock http://localhost/_ping || error_with_exit "ERROR - Ping test for Docker failed"

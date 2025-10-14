@@ -114,7 +114,7 @@ main() {
   docker load -i "$ki_env_bin_path"/images/keepalived/*.tar
 
   mkdir -p "$svc_root_path"
-  $jinja2_cmd --format yaml -o "$svc_root_path""/check_node.sh" "$SCRIPT_DIR_PATH"/templates/check_node.sh.j2 "$vars_path"
+  cp -f "$SCRIPT_DIR_PATH"/templates/check_node.sh "$svc_root_path/"
   $jinja2_cmd --format yaml -o "$svc_root_path""/compose.yml" "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$vars_path"
   create_keepalived_conf_file
 
