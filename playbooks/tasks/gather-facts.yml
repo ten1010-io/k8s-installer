@@ -53,6 +53,20 @@
     - name: "Create output directory[\"{{ ki_tmp_root_path }}\"]"
       shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
 
+    - name: Setup variable[\"hostname\"]
+      block:
+        - name: Execute hostname
+          shell: "sudo hostname"
+          register: shell_result
+
+        - name: Set_fact variable[\"hostname\"]
+          set_fact:
+            hostname: "{{ shell_result.stdout }}"
+
+        - name: Remove temporary variable[\"shell_result\"]
+          set_fact:
+            shell_result: null
+
     - name: Setup variable[\"ih_to_hostname_dict\"]
       block:
         - name: Write temporary file for cli input
@@ -140,6 +154,12 @@
           set_fact:
             shell_result: null
 
+    - name: Setup variable[\"localhost_ih\"]
+      block:
+        - name: Set_fact variable[\"localhost_ih\"]
+          set_fact:
+            localhost_ih: "{{ hostname_to_ih_dict[hostname] | default(None) }}"
+
 - hosts: all:!localhost
   gather_facts: false
   any_errors_fatal: true
@@ -163,3 +183,7 @@
     - name: Set_fact variable[\"ki_cp_k8s_cp_lb_stats_admin_pw\"]
       set_fact:
         ki_cp_k8s_cp_lb_stats_admin_pw: "{{ hostvars['localhost']['ki_cp_k8s_cp_lb_stats_admin_pw'] }}"
+
+    - name: Set_fact variable[\"localhost_ih\"]
+      set_fact:
+        localhost_ih: "{{ hostvars['localhost']['localhost_ih'] }}"
