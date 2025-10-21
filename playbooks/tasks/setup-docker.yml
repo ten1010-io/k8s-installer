@@ -8,3 +8,8 @@
       block:
         - name: Execute setup-docker.sh
           shell: "sudo {{ ki_env_scripts_path }}/all-node/docker/setup-docker.sh {{ vars_path_arg }}"
+          when: inventory_hostname != localhost_ih
+
+        - name: Execute setup-docker.sh
+          shell: "sudo {{ ki_env_scripts_path }}/all-node/docker/setup-docker.sh {{ vars_path_arg }}"
+          when: inventory_hostname == localhost_ih
