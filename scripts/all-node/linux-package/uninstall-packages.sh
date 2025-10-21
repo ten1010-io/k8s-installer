@@ -154,7 +154,7 @@ rhel8_uninstall() {
   rm -f /etc/crictl.yaml
 
   if [[ $("$ki_env_scripts_path/systemctl.sh" exists kubelet) = "true" ]]; then
-    yum erase -y \
+    yum erase -y --disableplugin subscription-manager \
       kubeadm \
       kubectl \
       kubelet \
@@ -163,13 +163,13 @@ rhel8_uninstall() {
   fi
 
   if [[ $("$ki_env_scripts_path/systemctl.sh" exists docker) = "true" ]]; then
-    yum erase -y \
+    yum erase -y --disableplugin subscription-manager \
       nvidia-container-toolkit \
       nvidia-container-toolkit-base \
       libnvidia-container1 \
       libnvidia-container-tools
 
-    yum erase -y \
+    yum erase -y --disableplugin subscription-manager \
       docker-ce \
       docker-ce-cli \
       docker-buildx-plugin \
@@ -179,7 +179,7 @@ rhel8_uninstall() {
   rm -rf "$docker_root_path"
 
   if [[ $("$ki_env_scripts_path/systemctl.sh" exists containerd) = "true" ]]; then
-    yum erase -y \
+    yum erase -y --disableplugin subscription-manager \
       containerd.io
   fi
   rm -rf "$containerd_root_path"

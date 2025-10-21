@@ -134,7 +134,7 @@ rhel8_is_installed() {
   local pkg_regex=$1
 
   local exit_code=0
-  yum list installed 2> /dev/null | grep "$pkg_regex" > /dev/null 2>/dev/null || exit_code=$?
+  yum list installed --disableplugin subscription-manager 2> /dev/null | grep "$pkg_regex" > /dev/null 2>/dev/null || exit_code=$?
 
   if [[ $exit_code = "0" ]]; then echo "true"; else echo "false"; fi
 

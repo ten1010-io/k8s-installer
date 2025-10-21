@@ -163,12 +163,12 @@ rhel8_install() {
 
   setenforce 0
 
-  yum erase -y \
+  yum erase -y --disableplugin subscription-manager \
     systemd-timesyncd \
     ntp \
     chrony
 
-  yum erase -y \
+  yum erase -y --disableplugin subscription-manager \
     podman \
     runc
 
