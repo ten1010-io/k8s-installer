@@ -133,12 +133,12 @@ ubuntu2204_install() {
   dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/pigz/*.deb
   dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/slirp/*.deb
   dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/containerd/*.deb
+  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/conntrack/*.deb
+  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/ebtables/*.deb
   dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/docker/*.deb
 
   dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/nvidia-container-toolkit/*.deb
 
-  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/conntrack/*.deb
-  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/ebtables/*.deb
   dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/ethtool/*.deb
   dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/socat/*.deb
   dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/k8s/*.deb
@@ -198,14 +198,14 @@ rhel8_install() {
   rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/fuse-overlayfs/*.rpm
   rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libcgroup/*.rpm
   rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/slirp/*.rpm
+  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/conntrack/*.rpm
+  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/ebtables/*.rpm
   rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/docker/*.rpm
   sed -i '/StartLimitBurst=/ s/^StartLimitBurst=.\+$/StartLimitBurst=0/g' /usr/lib/systemd/system/docker.service
   sed -i '/StartLimitInterval=/ s/^StartLimitInterval=.\+$/StartLimitInterval=0/g' /usr/lib/systemd/system/docker.service
 
   rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/nvidia-container-toolkit/*.rpm
 
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/conntrack/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/ebtables/*.rpm
   rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/ethtool/*.rpm
   rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libbpf/*.rpm
   rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/iproute/*.rpm
