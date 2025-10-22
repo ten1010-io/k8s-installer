@@ -60,11 +60,24 @@ parse_params "$@"
 # --- End of CLI template ---
 
 main() {
-  disable_service_if_exists ufw
-  disable_service_if_exists firewalld
-  iptables -F; iptables -t nat -F; iptables -t mangle -F
-  iptables -X; iptables -t nat -X; iptables -t mangle -X
-  restart_service_if_running docker
+  if [[ $(has_command iptables) = "true" ]]; then
+    disable_service_if_exists ufw
+    disable_service_if_exists firewalld
+    iptables -F; iptables -t nat -F; iptables -t mangle -F
+    iptables -X; iptables -t nat -X; iptables -t mangle -X
+    restart_service_if_running docker
+  fi
+
+  return 0
+}
+
+has_command() {
+  local command
+  command=$1
+
+  exit_code=0
+  type "$command" &>/dev/null || exit_code=$?
+  if [[ $exit_code = 0 ]]; then echo "true"; else echo "false"; fi
 
   return 0
 }
