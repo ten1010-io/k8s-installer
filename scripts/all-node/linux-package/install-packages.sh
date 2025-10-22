@@ -192,6 +192,7 @@ rhel8_install() {
   rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/systemd/*.rpm
   kill -TERM 1
   wait_systemd_ready 300
+  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libaio/*.rpm
   rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/device-mapper/*.rpm
   rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/fuse3/*.rpm
   rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/fuse-overlayfs/*.rpm
