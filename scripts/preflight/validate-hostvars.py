@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from ipaddress import IPv4Network, IPv4Address
 from pathlib import Path
-from typing import List, Any, Optional, Annotated
+from typing import List, Any, Optional, Annotated, Union
 
 import yaml
 from pydantic import BaseModel, ValidationError, StringConstraints, ConfigDict, field_validator, Field
@@ -90,7 +90,14 @@ class VarsModel(BaseModel):
     ki_cp_ha_mode_vip: IPv4Address
     ki_cp_dns_server_upstream_servers: List[IPv4Address]
     ki_cp_ntp_server_upstream_servers: List[
-        Annotated[str, StringConstraints(pattern=r"^((?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,}$")]]
+        Annotated[
+            Union[
+                IPv4Address,
+                Annotated[str, StringConstraints(pattern=r"^((?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,}$")]
+            ],
+            Field(union_mode='left_to_right')
+        ]
+    ]
 
 
 class ConstantVarsModel(BaseModel):
