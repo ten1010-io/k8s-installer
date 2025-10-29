@@ -8,10 +8,11 @@ controller:
   allowSnippetAnnotations: true
   config:
     log-format-upstream: |-
-      [$time_local] $remote_addr $host $request
-      status: $status    body_bytes_sent: $body_bytes_sent
-      request_length: $request_length    request_time: $request_time    remote_user: $remote_user    referer: $http_referer    user_agent: $http_user_agent
-      upstream_addr: $upstream_addr    upstream_status: $upstream_status    upstream_response_length: $upstream_response_length    upstream_response_time: $upstream_response_time
+      [$time_local] peer: $remote_addr    request_host: $host    request: $request
+      request_length: $request_length    basic_auth_user: $remote_user    referer: $http_referer    user_agent: $http_user_agent
+      response_status: $status    total_elapsed_time: $request_time    response_body_sent_bytes: $body_bytes_sent
+      upstream_ingress: $namespace/$ingress_name    upstream_service: $namespace/$service_name:$service_port    upstream_request_addr: $upstream_addr
+      upstream_response_status: $upstream_status    upstream_response_time: $upstream_response_time    upstream_response_length: $upstream_response_length
   hostPort:
     enabled: {{ hostport }}
     ports:
