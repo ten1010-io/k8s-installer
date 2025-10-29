@@ -115,7 +115,7 @@ ubuntu2204_configure() {
 }
 
 rhel8_configure() {
-  setenforce 0
+  [[ $(getenforce) != "Disabled" ]] && setenforce 0
   sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
 
   disable_swap

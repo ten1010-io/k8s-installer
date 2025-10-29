@@ -161,7 +161,7 @@ rhel8_install() {
   require_not_installed docker
   require_not_installed kubelet
 
-  setenforce 0
+  [[ $(getenforce) != "Disabled" ]] && setenforce 0
 
   yum erase -y --disableplugin subscription-manager \
     systemd-timesyncd \
