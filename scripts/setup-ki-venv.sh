@@ -132,8 +132,8 @@ ubuntu2204_setup() {
 
 rhel8_setup() {
   if [[ $(rhel8_is_installed python3\.12) = "false" ]]; then
-    rpm -Uvh --oldpackage --replacepkgs "$KI_ENV_BIN_PATH/linux-packages/rhel8/chkconfig/*.rpm"
-    rpm -Uvh --oldpackage --replacepkgs "$KI_ENV_BIN_PATH/linux-packages/rhel8/python3.12/*.rpm"
+    rpm --force -Uvh --oldpackage --replacepkgs "$KI_ENV_BIN_PATH/linux-packages/rhel8/chkconfig/*.rpm"
+    rpm --force -Uvh --oldpackage --replacepkgs "$KI_ENV_BIN_PATH/linux-packages/rhel8/python3.12/*.rpm"
   fi
 
   if [[ -e $KI_ENV_KI_VENV_PATH ]]; then

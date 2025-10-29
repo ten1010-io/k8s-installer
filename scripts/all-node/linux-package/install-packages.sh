@@ -172,45 +172,50 @@ rhel8_install() {
     podman \
     runc
 
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/p11-kit/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/gnutls/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/chrony/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/p11-kit/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/autogen-libopts/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/gmp/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libidn2/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libtasn1/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/nettle/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/gnutls/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/chrony/*.rpm
 
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/audit/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libsepol/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libselinux/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libsemanage/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/python3-setools/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/checkpolicy/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/mcstrans/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/policycoreutils/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/selinux-policy/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/container-selinux/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libseccomp/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/containerd/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/audit/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libsepol/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libselinux/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libsemanage/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/python3-setools/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/checkpolicy/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/mcstrans/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/policycoreutils/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/selinux-policy/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/container-selinux/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libseccomp/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/containerd/*.rpm
 
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/systemd/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/systemd/*.rpm
   kill -TERM 1
   wait_systemd_ready 300
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libaio/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/device-mapper/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/fuse3/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/fuse-overlayfs/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libcgroup/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/slirp/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/conntrack/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/ebtables/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/docker/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libaio/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/device-mapper/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/fuse3/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/fuse-overlayfs/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libcgroup/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/slirp/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/conntrack/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/ebtables/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/docker/*.rpm
   sed -i '/StartLimitBurst=/ s/^StartLimitBurst=.\+$/StartLimitBurst=0/g' /usr/lib/systemd/system/docker.service
   sed -i '/StartLimitInterval=/ s/^StartLimitInterval=.\+$/StartLimitInterval=0/g' /usr/lib/systemd/system/docker.service
 
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/nvidia-container-toolkit/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/nvidia-container-toolkit/*.rpm
 
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/ethtool/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libbpf/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/iproute/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/socat/*.rpm
-  rpm -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/k8s/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/ethtool/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libbpf/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/iproute/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/socat/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/k8s/*.rpm
   cp -f "$SCRIPT_DIR_PATH/templates/crictl.yaml" /etc/
 
   "$ki_env_scripts_path/systemctl.sh" reload

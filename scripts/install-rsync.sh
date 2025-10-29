@@ -113,7 +113,7 @@ ubuntu2204_setup() {
 
 rhel8_setup() {
   if [[ $(rhel8_is_installed rsync) = "false" ]]; then
-    rpm -Uvh --oldpackage --replacepkgs "$KI_ENV_BIN_PATH/linux-packages/rhel8/rsync/*.rpm"
+    rpm --force -Uvh --oldpackage --replacepkgs "$KI_ENV_BIN_PATH/linux-packages/rhel8/rsync/*.rpm"
   fi
 
   return 0
