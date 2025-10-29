@@ -205,6 +205,9 @@ rhel8_install() {
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libcgroup/*.rpm
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/slirp/*.rpm
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/conntrack/*.rpm
+  if [[ $(rhel8_is_installed "^libibverbs\.") = "false" ]]; then
+    rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/libibverbs/*.rpm
+  fi
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/ebtables/*.rpm
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/docker/*.rpm
   sed -i '/StartLimitBurst=/ s/^StartLimitBurst=.\+$/StartLimitBurst=0/g' /usr/lib/systemd/system/docker.service
@@ -225,6 +228,17 @@ rhel8_install() {
   "$ki_env_scripts_path/systemctl.sh" disable docker.socket
   "$ki_env_scripts_path/systemctl.sh" disable docker
   "$ki_env_scripts_path/systemctl.sh" disable containerd
+
+  return 0
+}
+
+rhel8_is_installed() {
+  local pkg_regex=$1
+
+  local exit_code=0
+  yum list installed --disableplugin subscription-manager 2> /dev/null | grep "$pkg_regex" > /dev/null 2>/dev/null || exit_code=$?
+
+  if [[ $exit_code = "0" ]]; then echo "true"; else echo "false"; fi
 
   return 0
 }
