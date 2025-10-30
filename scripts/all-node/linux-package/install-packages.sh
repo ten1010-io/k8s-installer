@@ -127,6 +127,8 @@ ubuntu2204_install() {
       chrony
   fi
 
+  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/nfs-common/*.deb
+
   dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/systemd/*.deb
 
   dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/libltdl7/*.deb
@@ -171,6 +173,8 @@ rhel8_install() {
   yum erase -y --disableplugin subscription-manager \
     podman \
     runc
+
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/nfs-utils/*.rpm
 
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/p11-kit/*.rpm
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/autogen-libopts/*.rpm
