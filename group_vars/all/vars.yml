@@ -14,6 +14,7 @@ internal_network_subnets:
 
 ki_cp_ha_mode: true
 ki_cp_ha_mode_vip: "192.168.0.254"
+ki_cp_dns_dnssec_validation: true
 ki_cp_dns_server_upstream_servers:
   - "8.8.8.8"
   - "8.8.4.4"

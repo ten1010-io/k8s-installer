@@ -106,6 +106,7 @@ main() {
   target_node=$($yq_cmd .target_node < "$vars_path")
   target_node_op=$($yq_cmd .target_node_op < "$vars_path")
   internal_network_extra_zone=$($yq_cmd '.internal_network_extra_zone' < "$vars_path")
+  ki_cp_dns_dnssec_validation=$($yq_cmd '.ki_cp_dns_dnssec_validation' < "$vars_path")
 
   svc_root_path="$ki_etc_services_path"/$SVC_NAME
   [[ $update = "false" ]] && require_not_setup $SVC_NAME
@@ -135,11 +136,17 @@ main() {
 create_named_conf_options_file() {
   local servers_len
   local recursion
+  local dnssec_validation
   servers_len=$($yq_cmd '.ki_cp_dns_server_upstream_servers | length' < "$vars_path")
   if [[ $servers_len -gt 0 ]]; then
     recursion="yes"
   else
     recursion="no"
+  fi
+  if [[ $ki_cp_dns_dnssec_validation = "true" ]]; then
+    dnssec_validation="auto"
+  else
+    dnssec_validation="no"
   fi
 
   local tmp_file_path
@@ -147,6 +154,7 @@ create_named_conf_options_file() {
   touch "$tmp_file_path"
   $yq_cmd -o json -i ".upstream_servers = load(\"$vars_path\").ki_cp_dns_server_upstream_servers" "$tmp_file_path"
   $yq_cmd -o json -i ".recursion = \"$recursion\"" "$tmp_file_path"
+  $yq_cmd -o json -i ".dnssec_validation = \"$dnssec_validation\"" "$tmp_file_path"
   $jinja2_cmd --format yaml -o "$svc_root_path""/named.conf.options" "$SCRIPT_DIR_PATH"/templates/named.conf.options.j2 "$tmp_file_path"
   rm "$tmp_file_path"
 }
