@@ -82,8 +82,8 @@ ki_env_ki_venv_path=""
 yq_cmd=""
 jinja2_cmd=""
 
+ki_var_root_path=""
 ki_etc_services_path=""
-ki_var_services_path=""
 
 etc_svc_root_path=""
 var_svc_root_path=""
@@ -95,11 +95,11 @@ main() {
   require_directory_exists "$ki_env_path"
   validate_ki_env_directory
 
+  ki_var_root_path=$($yq_cmd '.ki_var_root_path' < "$vars_path")
   ki_etc_services_path=$($yq_cmd '.ki_etc_services_path' < "$vars_path")
-  ki_var_services_path=$($yq_cmd '.ki_var_services_path' < "$vars_path")
 
   etc_svc_root_path="$ki_etc_services_path"/$SVC_NAME
-  var_svc_root_path="$ki_var_services_path"/$SVC_NAME
+  var_svc_root_path="$ki_var_root_path"/$SVC_NAME
   [[ $update = "false" ]] && require_not_setup $SVC_NAME
 
   docker load -i "$ki_env_bin_path"/images/registry/*.tar

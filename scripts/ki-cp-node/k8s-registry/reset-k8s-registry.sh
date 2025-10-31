@@ -79,8 +79,8 @@ ki_env_ki_venv_path=""
 yq_cmd=""
 jinja2_cmd=""
 
+ki_var_root_path=""
 ki_etc_services_path=""
-ki_var_services_path=""
 
 etc_svc_root_path=""
 var_svc_root_path=""
@@ -94,11 +94,11 @@ main() {
 
   [[ $("$ki_env_scripts_path/systemctl.sh" is-enabled docker) = "false" ]] && exit 0
 
+  ki_var_root_path=$($yq_cmd '.ki_var_root_path' < "$vars_path")
   ki_etc_services_path=$($yq_cmd '.ki_etc_services_path' < "$vars_path")
-  ki_var_services_path=$($yq_cmd '.ki_var_services_path' < "$vars_path")
 
   etc_svc_root_path="$ki_etc_services_path"/$SVC_NAME
-  var_svc_root_path="$ki_var_services_path"/$SVC_NAME
+  var_svc_root_path="$ki_var_root_path"/$SVC_NAME
 
   [[ $(service_exists $SVC_NAME) = "true" ]] && docker compose --project-directory "$etc_svc_root_path" down
   rm -rf "$etc_svc_root_path"

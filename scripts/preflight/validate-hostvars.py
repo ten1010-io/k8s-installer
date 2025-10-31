@@ -117,8 +117,7 @@ class ConstantVarsModel(BaseModel):
         "ki_etc_pki_path",
         "ki_etc_services_path",
         "ki_etc_kubeadm_path",
-        "ki_etc_charts_path",
-        "ki_var_services_path")
+        "ki_etc_charts_path")
     @classmethod
     def must_be_absolute(cls, path: Path) -> Path:
         if not path.is_absolute():
@@ -145,7 +144,6 @@ class ConstantVarsModel(BaseModel):
     ki_etc_services_path: Path
     ki_etc_kubeadm_path: Path
     ki_etc_charts_path: Path
-    ki_var_services_path: Path
     internal_network_ip: IPv4Address | None
     internal_network_zone: Annotated[
         str, StringConstraints(pattern=r'^((?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,}$')]
