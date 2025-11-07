@@ -87,6 +87,7 @@ main() {
   if [[ $("$ki_env_scripts_path"/systemctl.sh exists docker) = "true" ]]; then
     "$ki_env_scripts_path"/systemctl.sh disable docker
     "$ki_env_scripts_path"/systemctl.sh disable docker.socket
+    rm -f /etc/docker/daemon.json
   fi
   "$ki_env_scripts_path/flush-iptables.sh"
 

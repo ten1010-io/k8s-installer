@@ -33,10 +33,11 @@ ki_cp_k8s_cp_lb_port: 16443
 ki_cp_k8s_cp_lb_stats_port: 18404
 ki_cp_k8s_registry_port: 5000
 
-k8s_version: "v1.27.9"
+k8s_version: "v1.34.1"
 k8s_apiserver_port: 6443
 k8s_service_subnet: "10.96.0.0/12"
 k8s_pod_subnet: "10.244.0.0/16"
+k8s_ca_certificate_validity_period: "87600h" # 87600h = 10 year
 k8s_cp: false
 
 nvidia_gpu: false

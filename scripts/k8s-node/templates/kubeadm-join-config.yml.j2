@@ -1,4 +1,4 @@
-apiVersion: kubeadm.k8s.io/v1beta3
+apiVersion: kubeadm.k8s.io/v1beta4
 kind: JoinConfiguration
 discovery:
   bootstrapToken:
@@ -8,7 +8,8 @@ discovery:
       - {{ discovery_token_ca_cert_hash }}
 nodeRegistration:
   kubeletExtraArgs:
-    node-ip: {{ internal_network_interfaces[0]['ip'] }}
+    - name: node-ip
+      value: {{ internal_network_interfaces[0]['ip'] }}
 {%- if k8s_cp | lower == "true" %}
 controlPlane:
   localAPIEndpoint:

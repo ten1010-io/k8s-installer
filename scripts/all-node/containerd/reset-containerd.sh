@@ -86,6 +86,8 @@ main() {
 
   if [[ $("$ki_env_scripts_path"/systemctl.sh exists containerd) = "true" ]]; then
     "$ki_env_scripts_path"/systemctl.sh disable containerd
+    rm -f /etc/containerd/config.toml
+    rm -f /etc/containerd/config.d/99-nvidia.toml
   fi
 
   return 0

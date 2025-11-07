@@ -1,4 +1,4 @@
-apiVersion: kubeadm.k8s.io/v1beta3
+apiVersion: kubeadm.k8s.io/v1beta4
 kind: ClusterConfiguration
 imageRepository: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}
 networking:
@@ -6,3 +6,5 @@ networking:
   podSubnet: {{ k8s_pod_subnet }}
 kubernetesVersion: {{ k8s_version }}
 controlPlaneEndpoint: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_cp_lb_port }}
+certificateValidityPeriod: {{ k8s_certificate_validity_period }}
+caCertificateValidityPeriod: {{ k8s_ca_certificate_validity_period }}

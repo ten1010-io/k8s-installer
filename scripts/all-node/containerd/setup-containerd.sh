@@ -92,7 +92,10 @@ main() {
 
   [[ $nvidia_gpu = "true" ]] && require_nvidia_gpu_exists
 
+  mkdir -p /etc/containerd/config.d
   $jinja2_cmd --format yaml -o "/etc/containerd/config.toml" "$SCRIPT_DIR_PATH"/templates/config.toml.j2 "$vars_path"
+  [[ $nvidia_gpu = "true" ]] &&
+    $jinja2_cmd --format yaml -o "/etc/containerd/config.d/99-nvidia.toml" "$SCRIPT_DIR_PATH"/templates/config.d/99-nvidia.toml.j2 "$vars_path"
   "$ki_env_scripts_path"/systemctl.sh enable containerd
 
   return 0

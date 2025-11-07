@@ -22,6 +22,7 @@ ki_cp_ntp_server_upstream_servers:
   - "time1.google.com"
   - "time2.google.com"
 
+k8s_certificate_validity_period: "26280h" # 26280h = 3 year
 k8s_ingress_classes:
   - name: "lb1"
     controller_nodes:
