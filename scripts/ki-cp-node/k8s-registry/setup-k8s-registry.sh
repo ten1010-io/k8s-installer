@@ -105,7 +105,7 @@ main() {
   docker load -i "$ki_env_bin_path"/images/registry/*.tar
 
   mkdir -p "$var_svc_root_path"
-  tar xzf "$ki_env_bin_path"/registry-data/k8s-registry-data.tgz -C "$var_svc_root_path"
+  tar xzf "$ki_env_bin_path/registry-data/$SVC_NAME.tgz" -C "$var_svc_root_path"
 
   mkdir -p "$etc_svc_root_path"
   $jinja2_cmd -D var_svc_root_path="$var_svc_root_path" \
