@@ -1,8 +1,11 @@
-controller:
+global:
   image:
     registry: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}
+
+controller:
+  image:
     image: ingress-nginx/controller
-    tag: "v1.10.0"
+    tag: "v1.14.0"
     digest: null
     digestChroot: null
   allowSnippetAnnotations: true
@@ -39,7 +42,6 @@ controller:
                   - {{ knn }}
 {%- endfor %}
   service:
-    enabled: true
 {%- if pool_name %}
     annotations:
       metallb.universe.tf/address-pool: {{ pool_name }}
@@ -49,9 +51,8 @@ controller:
   admissionWebhooks:
     patch:
       image:
-        registry: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}
         image: ingress-nginx/kube-webhook-certgen
-        tag: v1.4.0
+        tag: v1.6.4
         digest: null
       tolerations:
         - key: "node-role.kubernetes.io/control-plane"

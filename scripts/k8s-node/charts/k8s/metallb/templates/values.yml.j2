@@ -1,7 +1,7 @@
 controller:
   image:
     repository: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}/metallb/controller
-    tag: v0.14.4
+    tag: v0.15.2
   tolerations:
     - key: "node-role.kubernetes.io/control-plane"
       operator: "Exists"
@@ -9,8 +9,8 @@ controller:
 speaker:
   image:
     repository: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}/metallb/speaker
-    tag: v0.14.4
+    tag: v0.15.2
   frr:
     image:
       repository: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}/frrouting/frr
-      tag: 9.0.2
+      tag: 9.1.0

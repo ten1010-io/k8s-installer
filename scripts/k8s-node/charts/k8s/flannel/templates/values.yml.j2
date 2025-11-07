@@ -1,10 +1,10 @@
 flannel:
   image:
-    repository: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}/flannel/flannel
-    tag: v0.23.0
+    repository: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}/flannel-io/flannel
+    tag: v0.27.4
   image_cni:
-    repository: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}/flannel/flannel-cni-plugin
-    tag: v1.2.0
+    repository: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}/flannel-io/flannel-cni-plugin
+    tag: v1.8.0-flannel1
   args:
   - "--ip-masq"
   - "--kube-subnet-mgr"
