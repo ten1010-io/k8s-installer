@@ -27,6 +27,7 @@ k8s_ingress_classes:
   - name: "lb1"
     controller_nodes:
       - "node1"
+      - "node2"
     ha_mode: true
     ha_mode_vip: "172.16.0.254"
     http_hostport: 80
