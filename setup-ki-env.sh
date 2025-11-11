@@ -96,6 +96,7 @@ inventory=""
 constant_vars=""
 
 main() {
+  [[ ! -e $BIN_PATH/bin ]] && die "[ERROR] Directory \"bin\" not exists. execute \"download-bin.sh\" first"
   import_hostvars
   validate_hostvars
   setup_localhost
