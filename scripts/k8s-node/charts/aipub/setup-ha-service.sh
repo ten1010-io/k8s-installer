@@ -94,8 +94,9 @@ main() {
   mkdir -p "$ha_service_root_path"
   cp -f "$SCRIPT_DIR_PATH/templates/run.sh" "$ha_service_root_path/"
   chmod 755 "$ha_service_root_path/run.sh"
+  cp -f "$SCRIPT_DIR_PATH/templates/sts-list.txt" "$ha_service_root_path/"
 
-  $jinja2_cmd -D exec_start="$ha_service_root_path/run.sh" \
+  $jinja2_cmd -D exec_start="$ha_service_root_path/run.sh -f $ha_service_root_path/sts-list.txt" \
               --format yaml \
               -o "/etc/systemd/system/aipub-ha.service" \
               "$SCRIPT_DIR_PATH/templates/aipub-ha.service.j2" \
