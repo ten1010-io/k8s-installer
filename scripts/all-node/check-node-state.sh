@@ -97,6 +97,7 @@ main() {
   target_node=$($yq_cmd '.target_node' < "$vars_path")
   target_node_op=$($yq_cmd '.target_node_op' < "$vars_path")
   ki_cp_ha_mode=$($yq_cmd '.ki_cp_ha_mode' < "$vars_path")
+  hostname_to_ih_dict=$($yq_cmd -o json '.hostname_to_ih_dict' < "$vars_path")
 
   knn_to_ih_dict=$(get_knn_to_ih_dict)
 
@@ -307,16 +308,24 @@ get_k8s_cluster_cp_node_list() {
 }
 
 get_knn_to_ih_dict() {
-  local hostname_to_ih_dict
   local knn_to_ih_dict="{}"
+  local knn
   local ih
-  hostname_to_ih_dict=$($yq_cmd -o json '.hostname_to_ih_dict' < "$vars_path")
   for hostname in $($yq_cmd '. | keys | join(" ")' <<< "$hostname_to_ih_dict"); do
+    knn=$(convert_into_knn "$hostname")
     ih=$($yq_cmd ".[\"$hostname\"]" <<< "$hostname_to_ih_dict")
-    knn_to_ih_dict=$($yq_cmd -o json ".[\"${hostname,,}\"] = \"$ih\"" <<< "$knn_to_ih_dict")
+    knn_to_ih_dict=$($yq_cmd -o json ".[\"$knn\"] = \"$ih\"" <<< "$knn_to_ih_dict")
   done
 
   echo "$knn_to_ih_dict"
+}
+
+convert_into_knn() {
+  local hostname=$1
+
+  sed "s/_/-/g" <<< "${hostname,,}"
+
+  return 0
 }
 
 docker_service_exists() {

@@ -80,6 +80,9 @@ jinja2_cmd=""
 k8s_cp=""
 ki_etc_kubeadm_path=""
 ki_tmp_join_credentials_path=""
+hostname=""
+
+node_name=""
 
 main() {
   require_file_exists "$vars_path"
@@ -91,9 +94,11 @@ main() {
   k8s_cp=$($yq_cmd '.k8s_cp' < "$vars_path")
   ki_etc_kubeadm_path=$($yq_cmd '.ki_etc_kubeadm_path' < "$vars_path")
   ki_tmp_join_credentials_path=$($yq_cmd '.ki_tmp_join_credentials_path' < "$vars_path")
+  hostname=$($yq_cmd '.hostname' < "$vars_path")
 
   require_kubelet_not_enabled
 
+  node_name=$(convert_into_knn "$hostname")
   token=$($yq_cmd '.token' < "$ki_tmp_join_credentials_path")
   discovery_token_ca_cert_hash=$($yq_cmd '.discovery_token_ca_cert_hash' < "$ki_tmp_join_credentials_path")
   certificate_key=$($yq_cmd '.certificate_key' < "$ki_tmp_join_credentials_path")
@@ -101,7 +106,8 @@ main() {
   mkdir -p "$ki_etc_kubeadm_path"
 
   systemctl enable kubelet
-  $jinja2_cmd -D token="$token" \
+  $jinja2_cmd -D node_name="$node_name" \
+              -D token="$token" \
               -D discovery_token_ca_cert_hash="$discovery_token_ca_cert_hash" \
               -D certificate_key="$certificate_key" \
               --format yaml \
@@ -115,6 +121,14 @@ main() {
     cp -f /etc/kubernetes/admin.conf $HOME/.kube/config
     chown $(id -u):$(id -g) $HOME/.kube/config
   fi
+
+  return 0
+}
+
+convert_into_knn() {
+  local hostname=$1
+
+  sed "s/_/-/g" <<< "${hostname,,}"
 
   return 0
 }

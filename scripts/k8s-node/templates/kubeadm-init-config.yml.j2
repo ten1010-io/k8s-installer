@@ -1,6 +1,7 @@
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: InitConfiguration
 nodeRegistration:
+  name: {{ node_name }}
   kubeletExtraArgs:
     - name: node-ip
       value: {{ internal_network_interfaces[0]['ip'] }}

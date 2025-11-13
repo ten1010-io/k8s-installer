@@ -194,10 +194,16 @@ get_knn_list() {
 get_knn() {
   local ih=$1
 
-  local hostname
-  hostname=$(get_hostname "$ih")
+  convert_into_knn "$(get_hostname "$ih")"
+  return 0
+}
 
-  echo "${hostname,,}"
+convert_into_knn() {
+  local hostname=$1
+
+  sed "s/_/-/g" <<< "${hostname,,}"
+
+  return 0
 }
 
 get_hostname() {

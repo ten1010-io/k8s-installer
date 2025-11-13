@@ -7,6 +7,7 @@ discovery:
     caCertHashes:
       - {{ discovery_token_ca_cert_hash }}
 nodeRegistration:
+  name: {{ node_name }}
   kubeletExtraArgs:
     - name: node-ip
       value: {{ internal_network_interfaces[0]['ip'] }}

@@ -79,6 +79,9 @@ jinja2_cmd=""
 
 ki_etc_kubeadm_path=""
 ki_tmp_root_path=""
+hostname=""
+
+node_name=""
 
 main() {
   require_file_exists "$vars_path"
@@ -89,6 +92,9 @@ main() {
 
   ki_etc_kubeadm_path=$($yq_cmd '.ki_etc_kubeadm_path' < "$vars_path")
   ki_tmp_root_path=$($yq_cmd '.ki_tmp_root_path' < "$vars_path")
+  hostname=$($yq_cmd '.hostname' < "$vars_path")
+
+  node_name=$(convert_into_knn "$hostname")
 
   require_kubelet_not_enabled
 
@@ -98,7 +104,7 @@ main() {
   systemctl enable kubelet
 
   $jinja2_cmd --format yaml -o "$ki_etc_kubeadm_path""/kubeadm-cluster-config.yml" "$SCRIPT_DIR_PATH"/templates/kubeadm-cluster-config.yml.j2 "$vars_path"
-  $jinja2_cmd --format yaml -o "$ki_etc_kubeadm_path""/kubeadm-init-config.yml" "$SCRIPT_DIR_PATH"/templates/kubeadm-init-config.yml.j2 "$vars_path"
+  $jinja2_cmd -D node_name="$node_name" --format yaml -o "$ki_etc_kubeadm_path""/kubeadm-init-config.yml" "$SCRIPT_DIR_PATH"/templates/kubeadm-init-config.yml.j2 "$vars_path"
   cat "$ki_etc_kubeadm_path/kubeadm-cluster-config.yml" > "$ki_tmp_root_path/kubeadm-config.yml"
   echo "---" >> "$ki_tmp_root_path/kubeadm-config.yml"
   cat "$ki_etc_kubeadm_path/kubeadm-init-config.yml" >> "$ki_tmp_root_path/kubeadm-config.yml"
@@ -109,6 +115,14 @@ main() {
   mkdir -p $HOME/.kube
   cp -f /etc/kubernetes/admin.conf $HOME/.kube/config
   chown $(id -u):$(id -g) $HOME/.kube/config
+
+  return 0
+}
+
+convert_into_knn() {
+  local hostname=$1
+
+  sed "s/_/-/g" <<< "${hostname,,}"
 
   return 0
 }
