@@ -77,24 +77,53 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
+NL=$'\n'
 JSONPATH="{range .items[*]}{.spec.nodeName}{'/'}{.metadata.namespace}{'/'}{.metadata.name}{'/'}{.metadata.ownerReferences[0].kind}{'/'}{.metadata.ownerReferences[0].name}{'\n'}"
 
 sts_list=""
+namespaces=""
 not_ready_nodes=""
 all_pod_lines=""
 
 main() {
   [[ ! -e $sts_list_txt_path ]] && die "[ERROR] File[\"$sts_list_txt_path\"] not exists"
   readarray -t sts_list < "$sts_list_txt_path"
+  namespaces=$(get_namespaces)
 
   while true; do
     not_ready_nodes=$(kubectl get nodes --no-headers | sed -n '/\sNotReady\s/ s/^\(\S\+\)\s\+NotReady.*$/\1/g p')
-    all_pod_lines=$(kubectl get pods -A -o jsonpath="$JSONPATH")
+    all_pod_lines=$(get_all_pod_lines "$namespaces")
     delete_sts_pods_on_not_ready_nodes
 
     sleep "$check_interval_sec"s
   done
 
+  return 0
+}
+
+get_namespaces() {
+  local namespace_lines=""
+
+  for sts in "${sts_list[@]}"; do
+    namespace_lines="$(get_ns "$sts")$NL$namespace_lines"
+  done
+  echo -n "$namespace_lines" | sort -u
+
+  return 0
+}
+
+get_all_pod_lines() {
+  local namespaces=$1
+
+  local all_pod_lines=""
+
+  OLD_IFS=$IFS; IFS=$'\n'
+  for ns in $namespaces; do
+    all_pod_lines="$(kubectl get pods -n "$ns" -o jsonpath="$JSONPATH")$NL$all_pod_lines"
+  done
+  IFS=$OLD_IFS
+
+  echo -n "$all_pod_lines"
   return 0
 }
 
@@ -154,7 +183,7 @@ get_ns() {
   done
   IFS=$OLD_IFS
 
-  echo "${words[0]}"
+  echo -n "${words[0]}"
 
   return 0
 }
@@ -169,7 +198,7 @@ get_name() {
   done
   IFS=$OLD_IFS
 
-  echo "${words[1]}"
+  echo -n "${words[1]}"
 
   return 0
 }
