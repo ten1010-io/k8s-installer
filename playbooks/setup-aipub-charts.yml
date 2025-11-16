@@ -1,6 +1,8 @@
 - import_playbook: tasks/check-ki-env-setup.yml
 
-- import_playbook: tasks/charts/aipub/preflight-setup-aipub-charts.yml
+- import_playbook: tasks/preflight-playbook.yml
+  vars:
+    playbook: "setup-aipub-charts"
 
 - import_playbook: tasks/validate-hostvars.yml
 

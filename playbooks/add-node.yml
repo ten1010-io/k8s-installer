@@ -1,6 +1,8 @@
 - import_playbook: tasks/check-ki-env-setup.yml
 
-- import_playbook: tasks/add-node-preflight.yml
+- import_playbook: tasks/preflight-playbook.yml
+  vars:
+    playbook: "add-node"
 
 - import_playbook: tasks/validate-hostvars.yml
 
