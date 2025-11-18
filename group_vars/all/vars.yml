@@ -13,7 +13,7 @@ internal_network_subnets:
 #    ip: "172.16.0.254"
 
 ki_cp_ha_mode: true
-ki_cp_ha_mode_vip: "192.168.0.254"
+ki_cp_ha_mode_vip: null
 ki_cp_dns_dnssec_validation: true
 ki_cp_dns_server_upstream_servers:
   - "8.8.8.8"
@@ -29,13 +29,13 @@ k8s_ingress_classes:
       - "node1"
       - "node2"
     ha_mode: true
-    ha_mode_vip: "172.16.0.254"
+    ha_mode_vip: null
     http_hostport: 80
     https_hostport: 443
 
 aipub_ingress_zone: "example.com"
 aipub_ha_mode: true
-aipub_ha_mode_storage_class: ""
+aipub_ha_mode_storage_class: null
 aipub_cp_nodes:
   - "node1"
   - "node2"

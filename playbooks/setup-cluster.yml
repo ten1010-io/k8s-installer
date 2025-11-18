@@ -4,9 +4,9 @@
   vars:
     playbook: "setup-cluster"
 
-- import_playbook: tasks/validate-hostvars.yml
-
 - import_playbook: tasks/gather-facts.yml
+
+- import_playbook: tasks/validate-hostvars.yml
 
 - import_playbook: tasks/setup-vars-file.yml
 
