@@ -1,0 +1,8 @@
+- hosts: k8s_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute delete-local-pv-directory.sh
+      shell: "sudo {{ ki_env_scripts_path }}/k8s-node/charts/aipub/delete-local-pv-directory.sh {{ vars_path_arg }}"

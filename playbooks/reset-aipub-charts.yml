@@ -20,6 +20,8 @@
 
 - import_playbook: tasks/charts/aipub/reset-aipub-environment.yml
 
+- import_playbook: tasks/charts/aipub/delete-local-pv-directory.yml
+
 - import_playbook: tasks/charts/sync-charts.yml
 
 - import_playbook: tasks/reset-vars-file.yml

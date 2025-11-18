@@ -12,6 +12,8 @@
 
 - import_playbook: tasks/charts/check-k8s-cluster-state.yml
 
+- import_playbook: tasks/charts/aipub/create-local-pv-directory.yml
+
 - import_playbook: tasks/charts/aipub/setup-aipub-environment.yml
 
 - import_playbook: tasks/charts/aipub/setup-keycloak.yml

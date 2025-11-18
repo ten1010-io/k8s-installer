@@ -12,9 +12,13 @@
 
 - import_playbook: tasks/check-node-state.yml
 
+- import_playbook: tasks/charts/aipub/reset-ha-service.yml
+
 - import_playbook: tasks/reset-all-node-charts.yml
 
 - import_playbook: tasks/reset-k8s-cluster.yml
+
+- import_playbook: tasks/charts/aipub/delete-local-pv-directory.yml
 
 - import_playbook: tasks/reset-ntp-client.yml
 
