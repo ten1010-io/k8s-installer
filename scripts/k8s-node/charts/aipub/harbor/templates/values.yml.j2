@@ -29,13 +29,16 @@ portal:
           - matchExpressions:
               - key: node-role.aipub.ten1010.io/control-plane
                 operator: Exists
-    podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchLabels:
-              app.kubernetes.io/component: portal
-              app.kubernetes.io/name: harbor
-          topologyKey: kubernetes.io/hostname
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: portal
+          app.kubernetes.io/name: harbor
+      matchLabelKeys:
+        - pod-template-hash
 core:
   image:
     repository: {{ image_registry }}/goharbor/harbor-core
@@ -52,13 +55,16 @@ core:
           - matchExpressions:
               - key: node-role.aipub.ten1010.io/control-plane
                 operator: Exists
-    podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchLabels:
-              app.kubernetes.io/component: core
-              app.kubernetes.io/name: harbor
-          topologyKey: kubernetes.io/hostname
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: core
+          app.kubernetes.io/name: harbor
+      matchLabelKeys:
+        - pod-template-hash
 jobservice:
   image:
     repository: {{ image_registry }}/goharbor/harbor-jobservice
@@ -77,13 +83,16 @@ jobservice:
           - matchExpressions:
               - key: node-role.aipub.ten1010.io/control-plane
                 operator: Exists
-    podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchLabels:
-              app.kubernetes.io/component: jobservice
-              app.kubernetes.io/name: harbor
-          topologyKey: kubernetes.io/hostname
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: jobservice
+          app.kubernetes.io/name: harbor
+      matchLabelKeys:
+        - pod-template-hash
 registry:
   registry:
     image:
@@ -105,13 +114,16 @@ registry:
           - matchExpressions:
               - key: node-role.aipub.ten1010.io/control-plane
                 operator: Exists
-    podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchLabels:
-              app.kubernetes.io/component: registry
-              app.kubernetes.io/name: harbor
-          topologyKey: kubernetes.io/hostname
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: registry
+          app.kubernetes.io/name: harbor
+      matchLabelKeys:
+        - pod-template-hash
 trivy:
   enabled: false
 database:
@@ -130,13 +142,14 @@ database:
             - matchExpressions:
                 - key: node-role.aipub.ten1010.io/control-plane
                   operator: Exists
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                app.kubernetes.io/component: database
-                app.kubernetes.io/name: harbor
-            topologyKey: kubernetes.io/hostname
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/component: database
+            app.kubernetes.io/name: harbor
 redis:
   internal:
     image:
@@ -153,10 +166,11 @@ redis:
             - matchExpressions:
                 - key: node-role.aipub.ten1010.io/control-plane
                   operator: Exists
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                app.kubernetes.io/component: redis
-                app.kubernetes.io/name: harbor
-            topologyKey: kubernetes.io/hostname
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/component: redis
+            app.kubernetes.io/name: harbor

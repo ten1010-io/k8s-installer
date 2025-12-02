@@ -14,17 +14,18 @@ affinity:
         - matchExpressions:
             - key: node-role.aipub.ten1010.io/control-plane
               operator: Exists
-  podAntiAffinity:
-    requiredDuringSchedulingIgnoredDuringExecution:
-      - labelSelector:
-          matchLabels:
-            app.kubernetes.io/instance: keycloak
-            app.kubernetes.io/name: keycloak
-        topologyKey: kubernetes.io/hostname
 tolerations:
   - key: "node-role.kubernetes.io/control-plane"
     operator: "Exists"
     effect: "NoSchedule"
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/instance: keycloak
+        app.kubernetes.io/name: keycloak
 ingress:
   enabled: true
   ingressClassName: {{ ingress_class }}
@@ -45,16 +46,17 @@ postgresql:
             - matchExpressions:
                 - key: node-role.aipub.ten1010.io/control-plane
                   operator: Exists
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                app.kubernetes.io/instance: keycloak
-                app.kubernetes.io/name: postgresql
-            topologyKey: kubernetes.io/hostname
     tolerations:
       - key: "node-role.kubernetes.io/control-plane"
         operator: "Exists"
         effect: "NoSchedule"
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/instance: keycloak
+            app.kubernetes.io/name: postgresql
     persistence:
       existingClaim: "keycloak-postgresql"
