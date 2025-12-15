@@ -128,6 +128,9 @@ ubuntu2204_install() {
   fi
 
   dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/nfs-common/*.deb
+  mkdir -p /etc/systemd/system/rpc-statd.service.d
+  cp -f "$SCRIPT_DIR_PATH/templates/override.conf" /etc/systemd/system/rpc-statd.service.d/
+  "$ki_env_scripts_path/systemctl.sh" enable rpc-statd
 
   dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/systemd/*.deb
 
@@ -176,6 +179,9 @@ rhel8_install() {
     systemd-container
 
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/nfs-utils/*.rpm
+  mkdir -p /etc/systemd/system/rpc-statd.service.d
+  cp -f "$SCRIPT_DIR_PATH/templates/override.conf" /etc/systemd/system/rpc-statd.service.d/
+  "$ki_env_scripts_path/systemctl.sh" enable rpc-statd
 
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/p11-kit/*.rpm
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel8/autogen-libopts/*.rpm
