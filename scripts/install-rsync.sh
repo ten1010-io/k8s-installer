@@ -104,7 +104,7 @@ main() {
 ubuntu2204_setup() {
   if [[ $(ubuntu2204_is_installed rsync) = "false" ]]; then
     export DEBIAN_FRONTEND=noninteractive
-    dpkg -i "$KI_ENV_BIN_PATH"/linux-packages/ubuntu22.04/rsync/*.deb
+    dpkg -R -i "$KI_ENV_BIN_PATH"/linux-packages/ubuntu22.04/rsync
     export DEBIAN_FRONTEND=""
   fi
 

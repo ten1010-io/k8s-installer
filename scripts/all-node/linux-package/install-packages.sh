@@ -127,26 +127,26 @@ ubuntu2204_install() {
       chrony
   fi
 
-  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/nfs-common/*.deb
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/nfs-common
   mkdir -p /etc/systemd/system/rpc-statd.service.d
   cp -f "$SCRIPT_DIR_PATH/templates/override.conf" /etc/systemd/system/rpc-statd.service.d/
   "$ki_env_scripts_path/systemctl.sh" enable rpc-statd
 
-  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/systemd/*.deb
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/systemd
 
-  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/libltdl7/*.deb
-  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/pigz/*.deb
-  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/slirp/*.deb
-  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/containerd/*.deb
-  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/conntrack/*.deb
-  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/ebtables/*.deb
-  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/docker/*.deb
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/libltdl7
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/pigz
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/slirp
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/containerd
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/conntrack
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/ebtables
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/docker
 
-  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/nvidia-container-toolkit/*.deb
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/nvidia-container-toolkit
 
-  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/ethtool/*.deb
-  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/socat/*.deb
-  dpkg -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/k8s/*.deb
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/ethtool
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/socat
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/k8s
   cp -f "$SCRIPT_DIR_PATH/templates/crictl.yaml" /etc/
 
   export DEBIAN_FRONTEND=""
