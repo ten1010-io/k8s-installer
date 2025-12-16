@@ -153,7 +153,7 @@ get_ki_cp_master_node_ih() {
   elif [[ $target_node != "null" && $target_node_op = "remove" ]]; then
     $yq_cmd ".groups.ki_cp_node - [\"$target_node\"] | .[0]" < "$vars_path"
   else
-    die "[ERROR] Invalid variable[\"\target_node\"] or Invalid variable[\"\target_node_op\"]"
+    die "[ERROR] Invalid variable[\"target_node\"] or Invalid variable[\"target_node_op\"]"
   fi
 }
 
