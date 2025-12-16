@@ -105,6 +105,9 @@ ubuntu2204_setup() {
   if [[ $(ubuntu2204_is_installed python3\.10-venv) = "false" ]]; then
     export DEBIAN_FRONTEND=noninteractive
     dpkg -R -i "$KI_ENV_BIN_PATH"/linux-packages/ubuntu22.04/python3.10
+    dpkg -i "$KI_ENV_BIN_PATH"/linux-packages/ubuntu22.04/python3/python3-minimal*
+    dpkg -R -i "$KI_ENV_BIN_PATH"/linux-packages/ubuntu22.04/python3
+    dpkg -R -i "$KI_ENV_BIN_PATH"/linux-packages/ubuntu22.04/python3-distutils
     dpkg -R -i "$KI_ENV_BIN_PATH"/linux-packages/ubuntu22.04/python3.10-venv
     export DEBIAN_FRONTEND=""
   fi
