@@ -70,6 +70,7 @@ parse_params "$@"
 # --- End of CLI template ---
 
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
+UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
 
 ki_env_path=""
@@ -103,6 +104,11 @@ main() {
     exit 0
   fi
 
+  if [[ $os_distribution = "ubuntu" && $os_major_version = "24.04" && $os_minor_version -le "$UBUNTU2404_SUPPORTED_MINOR_VERSION" ]]; then
+    ubuntu2404_uninstall
+    exit 0
+  fi
+
   if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
     rhel8_uninstall
     exit 0
@@ -112,6 +118,45 @@ main() {
 }
 
 ubuntu2204_uninstall() {
+  rm -f /etc/crictl.yaml
+
+  if [[ $("$ki_env_scripts_path/systemctl.sh" exists kubelet) = "true" ]]; then
+    apt remove -y --purge --allow-change-held-packages \
+      kubeadm \
+      kubectl \
+      kubelet \
+      cri-tools \
+      kubernetes-cni
+  fi
+
+  if [[ $("$ki_env_scripts_path/systemctl.sh" exists docker) = "true" ]]; then
+    apt remove -y --purge --allow-change-held-packages \
+      nvidia-container-toolkit \
+      nvidia-container-toolkit-base \
+      libnvidia-container1 \
+      libnvidia-container-tools
+
+    apt remove -y --purge --allow-change-held-packages \
+      docker-ce \
+      docker-ce-cli \
+      docker-buildx-plugin \
+      docker-compose-plugin
+  fi
+  rm -f /etc/docker/daemon.json
+  rm -rf "$docker_root_path"
+
+  if [[ $("$ki_env_scripts_path/systemctl.sh" exists containerd) = "true" ]]; then
+    apt remove -y --purge --allow-change-held-packages \
+      containerd.io
+  fi
+  rm -rf "$containerd_root_path"
+
+  systemctl daemon-reload
+
+  return 0
+}
+
+ubuntu2404_uninstall() {
   rm -f /etc/crictl.yaml
 
   if [[ $("$ki_env_scripts_path/systemctl.sh" exists kubelet) = "true" ]]; then

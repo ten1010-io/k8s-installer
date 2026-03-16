@@ -70,6 +70,7 @@ parse_params "$@"
 # --- End of CLI template ---
 
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
+UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
 
 ki_env_path=""
@@ -94,6 +95,11 @@ main() {
 
   if [[ $os_distribution = "ubuntu" && $os_major_version = "22.04" && $os_minor_version -le "$UBUNTU2204_SUPPORTED_MINOR_VERSION" ]]; then
     ubuntu2204_install
+    exit 0
+  fi
+
+  if [[ $os_distribution = "ubuntu" && $os_major_version = "24.04" && $os_minor_version -le "$UBUNTU2404_SUPPORTED_MINOR_VERSION" ]]; then
+    ubuntu2404_install
     exit 0
   fi
 
@@ -132,7 +138,7 @@ ubuntu2204_install() {
   cp -f "$SCRIPT_DIR_PATH/templates/override.conf" /etc/systemd/system/rpc-statd.service.d/
   "$ki_env_scripts_path/systemctl.sh" enable rpc-statd
 
-  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/systemd
+  dpkg -R -i --force-confnew "$ki_env_bin_path"/linux-packages/ubuntu22.04/systemd
 
   dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/libltdl7
   dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/pigz
@@ -147,6 +153,59 @@ ubuntu2204_install() {
   dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/ethtool
   dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/socat
   dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu22.04/k8s
+  cp -f "$SCRIPT_DIR_PATH/templates/crictl.yaml" /etc/
+
+  export DEBIAN_FRONTEND=""
+
+  "$ki_env_scripts_path/systemctl.sh" reload
+
+  "$ki_env_scripts_path/systemctl.sh" disable kubelet
+  "$ki_env_scripts_path/systemctl.sh" disable docker.socket
+  "$ki_env_scripts_path/systemctl.sh" disable docker
+  "$ki_env_scripts_path/systemctl.sh" disable containerd
+
+  return 0
+}
+
+ubuntu2404_install() {
+  require_not_installed containerd
+  require_not_installed docker
+  require_not_installed kubelet
+
+  export DEBIAN_FRONTEND=noninteractive
+
+  if [[ $("$ki_env_scripts_path/systemctl.sh" exists systemd-timesyncd) = "true" ]]; then
+    apt remove -y --purge --allow-change-held-packages \
+      systemd-timesyncd
+  fi
+
+  if [[ $("$ki_env_scripts_path/systemctl.sh" exists ntp) = "true" ]]; then
+    apt remove -y --purge --allow-change-held-packages \
+      ntp
+  fi
+
+  if [[ $("$ki_env_scripts_path/systemctl.sh" exists chrony) = "true" ]]; then
+    apt remove -y --purge --allow-change-held-packages \
+      chrony
+  fi
+
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/nfs-common
+  mkdir -p /etc/systemd/system/rpc-statd.service.d
+  cp -f "$SCRIPT_DIR_PATH/templates/override.conf" /etc/systemd/system/rpc-statd.service.d/
+  "$ki_env_scripts_path/systemctl.sh" enable rpc-statd
+
+  dpkg -R -i --force-confnew "$ki_env_bin_path"/linux-packages/ubuntu24.04/systemd
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/dbus
+
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/pigz
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/slirp
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/containerd
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/conntrack
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/docker
+
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/nvidia-container-toolkit
+
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/k8s
   cp -f "$SCRIPT_DIR_PATH/templates/crictl.yaml" /etc/
 
   export DEBIAN_FRONTEND=""

@@ -70,6 +70,7 @@ parse_params "$@"
 # --- End of CLI template ---
 
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
+UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
 
 KI_ENV_SCRIPTS_PATH="$ki_env_path"/scripts
@@ -90,6 +91,11 @@ main() {
 
   if [[ $os_distribution = "ubuntu" && $os_major_version = "22.04" && $os_minor_version -le "$UBUNTU2204_SUPPORTED_MINOR_VERSION" ]]; then
     ubuntu2204_setup
+    exit 0
+  fi
+
+  if [[ $os_distribution = "ubuntu" && $os_major_version = "24.04" && $os_minor_version -le "$UBUNTU2404_SUPPORTED_MINOR_VERSION" ]]; then
+    ubuntu2404_setup
     exit 0
   fi
 
@@ -133,6 +139,35 @@ ubuntu2204_setup() {
   return 0
 }
 
+ubuntu2404_setup() {
+  if [[ $(ubuntu2404_is_installed python3\.12-venv) = "false" ]]; then
+    export DEBIAN_FRONTEND=noninteractive
+    dpkg -R -i "$KI_ENV_BIN_PATH"/linux-packages/ubuntu24.04/python3.12
+    dpkg -R -i "$KI_ENV_BIN_PATH"/linux-packages/ubuntu24.04/python3.12-venv
+    export DEBIAN_FRONTEND=""
+  fi
+
+  if [[ -e $KI_ENV_KI_VENV_PATH ]]; then
+    msg "[INFO] K8s installer will use existing ki-venv"
+  else
+    msg "[INFO] K8s installer will create virtual environment[\"ki-venv\"]"
+
+    python3.12 -m venv "$KI_ENV_KI_VENV_PATH"
+    "$KI_ENV_KI_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_ENV_BIN_PATH"/python-packages/python3.12/netifaces netifaces
+    "$KI_ENV_KI_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_ENV_BIN_PATH"/python-packages/python3.12/jinja2-cli jinja2-cli PyYAML
+    "$KI_ENV_KI_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_ENV_BIN_PATH"/python-packages/python3.12/ansible ansible jmespath
+    "$KI_ENV_KI_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_ENV_BIN_PATH"/python-packages/python3.12/pydantic pydantic
+  fi
+
+  validate_ki_venv_directory
+
+  msg ""
+  msg "[INFO] To activate ki-venv, run the following"
+  msg "source $KI_ENV_KI_VENV_PATH/bin/activate"
+
+  return 0
+}
+
 rhel8_setup() {
   if [[ $(rhel8_is_installed python3\.12) = "false" ]]; then
     rpm --force -Uvh --oldpackage --replacepkgs "$KI_ENV_BIN_PATH/linux-packages/rhel8/chkconfig/*.rpm"
@@ -161,6 +196,17 @@ rhel8_setup() {
 }
 
 ubuntu2204_is_installed() {
+  local pkg_regex=$1
+
+  local exit_code=0
+  apt list --installed 2> /dev/null | grep "$pkg_regex" > /dev/null 2>/dev/null || exit_code=$?
+
+  if [[ $exit_code = "0" ]]; then echo "true"; else echo "false"; fi
+
+  return 0
+}
+
+ubuntu2404_is_installed() {
   local pkg_regex=$1
 
   local exit_code=0

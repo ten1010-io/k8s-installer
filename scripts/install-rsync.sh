@@ -70,6 +70,7 @@ parse_params "$@"
 # --- End of CLI template ---
 
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
+UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
 
 KI_ENV_SCRIPTS_PATH="$ki_env_path"/scripts
@@ -93,6 +94,11 @@ main() {
     exit 0
   fi
 
+  if [[ $os_distribution = "ubuntu" && $os_major_version = "24.04" && $os_minor_version -le "UBUNTU2404_SUPPORTED_MINOR_VERSION" ]]; then
+    ubuntu2404_setup
+    exit 0
+  fi
+
   if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
     rhel8_setup
     exit 0
@@ -111,6 +117,16 @@ ubuntu2204_setup() {
   return 0
 }
 
+ubuntu2404_setup() {
+  if [[ $(ubuntu2404_is_installed rsync) = "false" ]]; then
+    export DEBIAN_FRONTEND=noninteractive
+    dpkg -R -i "$KI_ENV_BIN_PATH"/linux-packages/ubuntu24.04/rsync
+    export DEBIAN_FRONTEND=""
+  fi
+
+  return 0
+}
+
 rhel8_setup() {
   if [[ $(rhel8_is_installed rsync) = "false" ]]; then
     rpm --force -Uvh --oldpackage --replacepkgs "$KI_ENV_BIN_PATH/linux-packages/rhel8/rsync/*.rpm"
@@ -120,6 +136,17 @@ rhel8_setup() {
 }
 
 ubuntu2204_is_installed() {
+  local pkg_regex=$1
+
+  local exit_code=0
+  apt list --installed 2> /dev/null | grep "$pkg_regex" > /dev/null 2>/dev/null || exit_code=$?
+
+  if [[ $exit_code = "0" ]]; then echo "true"; else echo "false"; fi
+
+  return 0
+}
+
+ubuntu2404_is_installed() {
   local pkg_regex=$1
 
   local exit_code=0

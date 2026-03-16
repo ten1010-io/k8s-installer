@@ -218,6 +218,7 @@ create_ki_env_directory_with_ssh() {
       "mkdir -p ${all_group_hostvars_ki_env_paths[$i]};
        mkdir -p ${all_group_hostvars_ki_env_paths[$i]}/bin/bin;
        mkdir -p ${all_group_hostvars_ki_env_paths[$i]}/bin/linux-packages/ubuntu22.04;
+       mkdir -p ${all_group_hostvars_ki_env_paths[$i]}/bin/linux-packages/ubuntu24.04;
        mkdir -p ${all_group_hostvars_ki_env_paths[$i]}/bin/linux-packages/rhel8"
   done
 
@@ -288,6 +289,25 @@ copy_rsync_directory_with_scp() {
       "handle_scp" \
       "$BIN_PATH/linux-packages/ubuntu22.04/rsync" \
       "${all_group_hostvars_ki_env_paths[$i]}/bin/linux-packages/ubuntu22.04/"
+  done
+
+  print_result
+  [[ ${#failed_result_ih_list[@]} -gt 0 ]] && exit 1
+  clear_result
+
+  msg "[INFO] Started to copy ubuntu24.04 rsync directory for all group nodes"
+  msg ""
+
+  for i in "${!all_group_hostvars_ih_list[@]}"; do
+    msg "[INFO] Copying to the node[\"${all_group_hostvars_ih_list[$i]}\"]..."
+    execute_scp \
+      "${all_group_hostvars_ih_list[$i]}" \
+      "${all_group_hostvars_ansible_hosts[$i]}" \
+      "${all_group_hostvars_ansible_ports[$i]}" \
+      "${all_group_hostvars_ansible_ssh_users[$i]}" \
+      "handle_scp" \
+      "$BIN_PATH/linux-packages/ubuntu24.04/rsync" \
+      "${all_group_hostvars_ki_env_paths[$i]}/bin/linux-packages/ubuntu24.04/"
   done
 
   print_result

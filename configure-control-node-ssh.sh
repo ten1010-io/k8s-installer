@@ -81,7 +81,7 @@ configure_id_rsa_pub() {
   else
     msg "[INFO] k8s installer will create id_rsa.pub"
 
-    ssh-keygen -N '' <<< $'\ny'
+    ssh-keygen -t rsa -N '' <<< $'\ny'
   fi
 
   public_key=$(<~/.ssh/id_rsa.pub)
@@ -105,7 +105,9 @@ configure_sshd_config() {
   sudo sed -i '/^PermitRootLogin/ d' /etc/ssh/sshd_config
   sudo sed -i '$ a\\nPermitRootLogin prohibit-password' /etc/ssh/sshd_config
   sudo sed -i -z 's/\n\{3,\}/\n\n/g' /etc/ssh/sshd_config
-  sudo systemctl restart sshd
+  [[ $(get_os_id) = "ubuntu" ]] && sudo systemctl restart ssh
+  [[ $(get_os_id) = "rhel" ]] && sudo systemctl restart sshd
+  return 0
 }
 
 print_how_to_configure_managed_node_ssh() {
@@ -126,8 +128,28 @@ EOF
 sudo sed -i '/^PermitRootLogin/ d' /etc/ssh/sshd_config
 sudo sed -i '$ a\\nPermitRootLogin prohibit-password' /etc/ssh/sshd_config
 sudo sed -i -z 's/\n\{3,\}/\n\n/g' /etc/ssh/sshd_config
-sudo systemctl restart sshd
 EOF
+  [[ $(get_os_id) = "ubuntu" ]] && echo "sudo systemctl restart ssh"
+  [[ $(get_os_id) = "rhel" ]] && sudo "systemctl restart sshd"
+  return 0
+}
+
+get_os_id() {
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release
+  fi
+
+  case "$ID" in
+    *ubuntu*)
+      echo "ubuntu"
+      ;;
+    *rhel*)
+      echo "rhel"
+      ;;
+    *)
+      die "[ERROR] Unknown os id[$ID]"
+      ;;
+  esac
 }
 
 main

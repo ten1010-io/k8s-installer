@@ -70,6 +70,7 @@ parse_params "$@"
 # --- End of CLI template ---
 
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
+UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
 
 ki_env_path=""
@@ -104,6 +105,11 @@ main() {
     exit 0
   fi
 
+  if [[ $os_distribution = "ubuntu" && $os_major_version = "24.04" && $os_minor_version -le "$UBUNTU2404_SUPPORTED_MINOR_VERSION" ]]; then
+    ubuntu2404_setup
+    exit 0
+  fi
+
   if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
     rhel8_setup
     exit 0
@@ -113,6 +119,12 @@ main() {
 }
 
 ubuntu2204_setup() {
+  create_timesyncd_conf_file
+  systemctl enable systemd-timesyncd
+  systemctl restart systemd-timesyncd
+}
+
+ubuntu2404_setup() {
   create_timesyncd_conf_file
   systemctl enable systemd-timesyncd
   systemctl restart systemd-timesyncd
