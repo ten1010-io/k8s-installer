@@ -200,11 +200,13 @@ ubuntu2404_install() {
   dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/pigz
   dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/slirp
   dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/containerd
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/iptables
   dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/conntrack
   dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/docker
 
   dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/nvidia-container-toolkit
 
+  dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/ethtool
   dpkg -R -i "$ki_env_bin_path"/linux-packages/ubuntu24.04/k8s
   cp -f "$SCRIPT_DIR_PATH/templates/crictl.yaml" /etc/
 
