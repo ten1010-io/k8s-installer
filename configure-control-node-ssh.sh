@@ -130,7 +130,7 @@ sudo sed -i '$ a\\nPermitRootLogin prohibit-password' /etc/ssh/sshd_config
 sudo sed -i -z 's/\n\{3,\}/\n\n/g' /etc/ssh/sshd_config
 EOF
   [[ $(get_os_id) = "ubuntu" ]] && echo "sudo systemctl restart ssh"
-  [[ $(get_os_id) = "rhel" ]] && sudo "systemctl restart sshd"
+  [[ $(get_os_id) = "rhel" ]] && echo "sudo systemctl restart sshd"
   return 0
 }
 
