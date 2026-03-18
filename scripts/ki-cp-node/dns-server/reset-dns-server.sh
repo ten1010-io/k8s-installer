@@ -96,8 +96,10 @@ main() {
 
   etc_svc_root_path="$ki_etc_services_path"/$SVC_NAME
 
-  $yq_cmd -i -o json -P '.dns = []' /etc/docker/daemon.json
-  systemctl restart docker
+  if [[ -f /etc/docker/daemon.json ]]; then
+    $yq_cmd -i -o json -P '.dns = []' /etc/docker/daemon.json
+    systemctl restart docker
+  fi
 
   [[ $(service_exists $SVC_NAME) = "true" ]] && docker compose --project-directory "$etc_svc_root_path" down
   rm -rf "$etc_svc_root_path"
