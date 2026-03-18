@@ -130,11 +130,13 @@ ubuntu2204_uninstall() {
   fi
 
   if [[ $("$ki_env_scripts_path/systemctl.sh" exists docker) = "true" ]]; then
-    apt remove -y --purge --allow-change-held-packages \
-      nvidia-container-toolkit \
-      nvidia-container-toolkit-base \
-      libnvidia-container1 \
-      libnvidia-container-tools
+    if dpkg-query -W nvidia-container-toolkit &>/dev/null; then
+      apt remove -y --purge --allow-change-held-packages \
+        nvidia-container-toolkit \
+        nvidia-container-toolkit-base \
+        libnvidia-container1 \
+        libnvidia-container-tools
+    fi
 
     apt remove -y --purge --allow-change-held-packages \
       docker-ce \
@@ -169,11 +171,13 @@ ubuntu2404_uninstall() {
   fi
 
   if [[ $("$ki_env_scripts_path/systemctl.sh" exists docker) = "true" ]]; then
-    apt remove -y --purge --allow-change-held-packages \
-      nvidia-container-toolkit \
-      nvidia-container-toolkit-base \
-      libnvidia-container1 \
-      libnvidia-container-tools
+    if dpkg-query -W nvidia-container-toolkit &>/dev/null; then
+      apt remove -y --purge --allow-change-held-packages \
+        nvidia-container-toolkit \
+        nvidia-container-toolkit-base \
+        libnvidia-container1 \
+        libnvidia-container-tools
+    fi
 
     apt remove -y --purge --allow-change-held-packages \
       docker-ce \
@@ -208,11 +212,13 @@ rhel8_uninstall() {
   fi
 
   if [[ $("$ki_env_scripts_path/systemctl.sh" exists docker) = "true" ]]; then
-    yum erase -y --disableplugin subscription-manager \
-      nvidia-container-toolkit \
-      nvidia-container-toolkit-base \
-      libnvidia-container1 \
-      libnvidia-container-tools
+    if rpm -q nvidia-container-toolkit &>/dev/null; then
+      yum erase -y --disableplugin subscription-manager \
+        nvidia-container-toolkit \
+        nvidia-container-toolkit-base \
+        libnvidia-container1 \
+        libnvidia-container-tools
+    fi
 
     yum erase -y --disableplugin subscription-manager \
       docker-ce \
