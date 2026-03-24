@@ -1,10 +1,9 @@
-
 ki_var_root_path: "/var/lib/k8s-installer"
 containerd_root_path: "/var/lib/containerd"
 docker_root_path: "/var/lib/docker"
 
 internal_network_subnets:
-  - "192.168.0.0/20"
+  - "192.168.0.0/24"
 
 #internal_network_extra_zone: "example.com"
 #internal_network_extra_zone_a_records:
@@ -14,7 +13,7 @@ internal_network_subnets:
 #    ip: "172.16.0.254"
 
 ki_cp_ha_mode: true
-ki_cp_ha_mode_vip: 192.168.15.4
+ki_cp_ha_mode_vip: null
 ki_cp_dns_dnssec_validation: true
 ki_cp_dns_server_upstream_servers:
   - "8.8.8.8"
@@ -30,16 +29,17 @@ k8s_ingress_classes:
       - "node1"
       - "node2"
     ha_mode: true
-    ha_mode_vip: 101.202.0.17
+    ha_mode_vip: null
     http_hostport: 80
     https_hostport: 443
 
-aipub_ingress_zone: "cluster4.idc1.ten1010.io"
+aipub_ingress_zone: "example.com"
 aipub_ha_mode: true
-aipub_ha_mode_storage_class: ontap-nas
+aipub_ha_mode_storage_class: null
 aipub_cp_nodes:
   - "node1"
   - "node2"
+  - "node3"
 
 aipub_keycloak_ingress_class: "lb1"
 aipub_keycloak_ingress_subdomain: "aipub-keycloak"
