@@ -59,7 +59,7 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
-DOWNLOAD_URL="https://k8s-installer-bin.s3.ap-northeast-2.amazonaws.com/1.0.x/bin.tgz"
+DOWNLOAD_URL="https://k8s-installer-bin.s3.ap-northeast-2.amazonaws.com/1.1.x/bin.tgz"
 
 KI_ROOT_PATH=$SCRIPT_DIR_PATH
 BIN_PATH="$KI_ROOT_PATH"/bin

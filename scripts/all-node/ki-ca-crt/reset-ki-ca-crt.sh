@@ -72,6 +72,7 @@ parse_params "$@"
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
+RHEL9_SUPPORTED_MINOR_VERSION=7
 
 ki_env_path=""
 ki_env_scripts_path=""
@@ -116,6 +117,12 @@ main() {
     exit 0
   fi
 
+  if [[ $os_distribution = "rhel" && $os_major_version = "9" && $os_minor_version -le "$RHEL9_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel9_reset
+    exit 0
+  fi
+
+
   die "[ERROR] OS not supported\n$os_info"
 }
 
@@ -138,6 +145,15 @@ ubuntu2404_reset() {
 }
 
 rhel8_reset() {
+  mkdir -p /etc/pki/ca-trust/source/anchors
+  rm -f "/etc/pki/ca-trust/source/anchors/$ki_ca_crt_filename"
+  update-ca-trust
+
+  restart_if_running docker
+  restart_if_running containerd
+}
+
+rhel9_reset() {
   mkdir -p /etc/pki/ca-trust/source/anchors
   rm -f "/etc/pki/ca-trust/source/anchors/$ki_ca_crt_filename"
   update-ca-trust
