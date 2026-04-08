@@ -86,7 +86,6 @@ ki_var_aipub_local_pv_path=""
 ih_to_hostname_dict=""
 aipub_ha_mode=""
 aipub_cp_nodes=""
-aipub_keycloak_postgresql_storage_size=""
 
 main() {
   require_file_exists "$vars_path"
@@ -101,16 +100,12 @@ main() {
   ih_to_hostname_dict=$($yq_cmd -o json '.ih_to_hostname_dict' < "$vars_path")
   aipub_ha_mode=$($yq_cmd '.aipub_ha_mode' < "$vars_path")
   aipub_cp_nodes=$($yq_cmd -o json '.aipub_cp_nodes' < "$vars_path")
-  aipub_keycloak_postgresql_storage_size=$($yq_cmd '.aipub_keycloak_postgresql_storage_size' < "$vars_path")
   aipub_harbor_registry_storage_size=$($yq_cmd '.aipub_harbor_registry_storage_size' < "$vars_path")
   aipub_harbor_postgresql_storage_size=$($yq_cmd '.aipub_harbor_postgresql_storage_size' < "$vars_path")
   aipub_harbor_redis_storage_size=$($yq_cmd '.aipub_harbor_redis_storage_size' < "$vars_path")
 
   resources_path=$ki_etc_charts_path/aipub/resources
 
-  keycloak_postgresql_local_pv_name="local-aipub-keycloak-postgresql"
-  keycloak_postgresql_local_pv_ih=$($yq_cmd --null-input "$aipub_cp_nodes | .[0]")
-  keycloak_postgresql_local_pv_path="$ki_var_aipub_local_pv_path/keycloak/postgresql"
   harbor_registry_local_pv_name="local-aipub-harbor-registry"
   harbor_registry_local_pv_ih=$($yq_cmd --null-input "$aipub_cp_nodes | .[0]")
   harbor_registry_local_pv_path="$ki_var_aipub_local_pv_path/harbor/registry"
@@ -124,11 +119,6 @@ main() {
 
   mkdir -p "$resources_path"
   if [[ $aipub_ha_mode != "true" ]]; then
-    create_local_pv_yml_file "$keycloak_postgresql_local_pv_name" \
-      "$aipub_keycloak_postgresql_storage_size" \
-      "$keycloak_postgresql_local_pv_name" \
-      "$(get_knn "$keycloak_postgresql_local_pv_ih")" \
-      "$keycloak_postgresql_local_pv_path"
     create_local_pv_yml_file "$harbor_registry_local_pv_name" \
       "$aipub_harbor_registry_storage_size" \
       "$harbor_registry_local_pv_name" \

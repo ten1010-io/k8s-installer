@@ -41,11 +41,6 @@ aipub_cp_nodes:
   - "node2"
   - "node3"
 
-aipub_keycloak_ingress_class: "lb1"
-aipub_keycloak_ingress_subdomain: "aipub-keycloak"
-aipub_keycloak_replica_count: 3
-aipub_keycloak_postgresql_storage_size: 128Gi
-
 aipub_harbor_ingress_class: "lb1"
 aipub_harbor_ingress_subdomain: "aipub-harbor"
 aipub_harbor_replica_count: 3

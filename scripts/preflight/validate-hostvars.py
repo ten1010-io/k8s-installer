@@ -209,11 +209,6 @@ class VarsModel(BaseModel):
     aipub_ha_mode_storage_class: Optional[Annotated[str, StringConstraints(pattern=K8S_OBJ_NAME_PATTERN)]] = None
     aipub_cp_nodes: List[Annotated[str, StringConstraints(pattern=K8S_OBJ_NAME_PATTERN)]]
 
-    aipub_keycloak_ingress_class: Annotated[str, StringConstraints(pattern=K8S_OBJ_NAME_PATTERN)]
-    aipub_keycloak_ingress_subdomain: Annotated[str, StringConstraints(pattern=SUB_DOMAIN_PATTERN)]
-    aipub_keycloak_replica_count: PositiveInt
-    aipub_keycloak_postgresql_storage_size: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
-
     aipub_harbor_ingress_class: Annotated[str, StringConstraints(pattern=K8S_OBJ_NAME_PATTERN)]
     aipub_harbor_ingress_subdomain: Annotated[str, StringConstraints(pattern=SUB_DOMAIN_PATTERN)]
     aipub_harbor_replica_count: PositiveInt

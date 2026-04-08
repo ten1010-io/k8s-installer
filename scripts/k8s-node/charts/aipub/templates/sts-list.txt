@@ -1,4 +1,2 @@
-aipub/keycloak
-aipub/keycloak-postgresql
 aipub/harbor-database
 aipub/harbor-redis

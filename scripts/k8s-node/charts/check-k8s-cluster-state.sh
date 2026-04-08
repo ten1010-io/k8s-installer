@@ -100,7 +100,6 @@ main() {
 
   if [[ $playbook = "setup-aipub-charts" ]]; then
     [[ $(k8s_namespace_exists aipub) = "true" ]] && die "[ERROR] Namespace[\"aipub\"] has already benn set up"
-    [[ $(chart_exists aipub keycloak) = "true" ]] && die "[ERROR] Chart[\"keycloak\"] has already benn set up"
     [[ $(chart_exists aipub harbor) = "true" ]] && die "[ERROR] Chart[\"harbor\"] has already benn set up"
 
     return 0

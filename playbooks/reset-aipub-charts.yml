@@ -16,8 +16,6 @@
 
 - import_playbook: tasks/charts/aipub/reset-harbor.yml
 
-- import_playbook: tasks/charts/aipub/reset-keycloak.yml
-
 - import_playbook: tasks/charts/aipub/reset-aipub-environment.yml
 
 - import_playbook: tasks/charts/aipub/delete-local-pv-directory.yml

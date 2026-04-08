@@ -95,8 +95,6 @@ main() {
   aipub_ha_mode=$($yq_cmd '.aipub_ha_mode' < "$vars_path")
   aipub_cp_nodes=$($yq_cmd -o json '.aipub_cp_nodes' < "$vars_path")
 
-  keycloak_postgresql_local_pv_ih=$($yq_cmd --null-input "$aipub_cp_nodes | .[0]")
-  keycloak_postgresql_local_pv_path="$ki_var_aipub_local_pv_path/keycloak/postgresql"
   harbor_registry_local_pv_ih=$($yq_cmd --null-input "$aipub_cp_nodes | .[0]")
   harbor_registry_local_pv_path="$ki_var_aipub_local_pv_path/harbor/registry"
   harbor_postgresql_local_pv_ih=$($yq_cmd --null-input "$aipub_cp_nodes | .[0]")
@@ -106,7 +104,6 @@ main() {
 
   [[ $aipub_ha_mode = "true" ]] && return 0
 
-  [[ $inventory_hostname = "$keycloak_postgresql_local_pv_ih" ]] && mkdir -p "$keycloak_postgresql_local_pv_path"
   [[ $inventory_hostname = "$harbor_registry_local_pv_ih" ]] && mkdir -p "$harbor_registry_local_pv_path"
   [[ $inventory_hostname = "$harbor_postgresql_local_pv_ih" ]] && mkdir -p "$harbor_postgresql_local_pv_path"
   [[ $inventory_hostname = "$harbor_redis_local_pv_ih" ]] && mkdir -p "$harbor_redis_local_pv_path"

@@ -16,8 +16,6 @@
 
 - import_playbook: tasks/charts/aipub/setup-aipub-environment.yml
 
-- import_playbook: tasks/charts/aipub/setup-keycloak.yml
-
 - import_playbook: tasks/charts/aipub/setup-harbor.yml
 
 - import_playbook: tasks/charts/aipub/setup-ha-service.yml
