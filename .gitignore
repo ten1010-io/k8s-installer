@@ -25,3 +25,6 @@ build/
 .factorypath
 
 /bin/
+
+### Claude ###
+.claude/
