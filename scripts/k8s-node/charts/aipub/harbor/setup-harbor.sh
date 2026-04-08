@@ -87,7 +87,6 @@ ki_cp_aipub_registry_port=""
 aipub_ingress_zone=""
 aipub_ha_mode=""
 aipub_ha_mode_storage_class=""
-aipub_harbor_ingress_class=""
 aipub_harbor_ingress_subdomain=""
 aipub_harbor_replica_count=""
 aipub_harbor_registry_storage_size=""
@@ -111,7 +110,6 @@ main() {
   aipub_ingress_zone=$($yq_cmd '.aipub_ingress_zone' < "$vars_path")
   aipub_ha_mode=$($yq_cmd '.aipub_ha_mode' < "$vars_path")
   aipub_ha_mode_storage_class=$($yq_cmd '.aipub_ha_mode_storage_class' < "$vars_path")
-  aipub_harbor_ingress_class=$($yq_cmd '.aipub_harbor_ingress_class' < "$vars_path")
   aipub_harbor_ingress_subdomain=$($yq_cmd '.aipub_harbor_ingress_subdomain' < "$vars_path")
   aipub_harbor_replica_count=$($yq_cmd '.aipub_harbor_replica_count' < "$vars_path")
   aipub_harbor_registry_storage_size=$($yq_cmd '.aipub_harbor_registry_storage_size' < "$vars_path")
@@ -149,12 +147,10 @@ install_chart() {
 create_values_yml_file() {
   local image_registry
   local replica_count
-  local ingress_class
   local hostname
   local registry_replica_count
   image_registry="$internal_network_ki_cp_dns_name:$ki_cp_aipub_registry_port"
   replica_count=$aipub_harbor_replica_count
-  ingress_class=$aipub_harbor_ingress_class
   hostname="$aipub_harbor_ingress_subdomain.$aipub_ingress_zone"
   if [[ $aipub_ha_mode = "true" ]]; then
     registry_replica_count=$aipub_harbor_replica_count
@@ -167,7 +163,6 @@ create_values_yml_file() {
   touch "$tmp_file_path"
   $yq_cmd -i ".image_registry = \"$image_registry\"" "$tmp_file_path"
   $yq_cmd -i ".replica_count = $replica_count" "$tmp_file_path"
-  $yq_cmd -i ".ingress_class = \"$ingress_class\"" "$tmp_file_path"
   $yq_cmd -i ".hostname = \"$hostname\"" "$tmp_file_path"
   $yq_cmd -i ".registry_replica_count = $registry_replica_count" "$tmp_file_path"
   $jinja2_cmd --format yaml -o "$chart_root_path/values.yml" "$SCRIPT_DIR_PATH"/templates/values.yml.j2 "$tmp_file_path"

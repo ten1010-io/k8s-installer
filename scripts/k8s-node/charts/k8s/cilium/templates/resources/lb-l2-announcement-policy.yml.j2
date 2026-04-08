@@ -1,0 +1,17 @@
+apiVersion: cilium.io/v2alpha1
+kind: CiliumL2AnnouncementPolicy
+metadata:
+  name: {{ name }}
+spec:
+  loadBalancerIPs: true
+  serviceSelector:
+    matchLabels:
+      k8s-installer.ten1010.io/load-balancer: {{ lb_name }}
+  nodeSelector:
+    matchExpressions:
+    - key: kubernetes.io/hostname
+      operator: In
+      values:
+{%- for knn in knn_list %}
+      - {{ knn }}
+{%- endfor %}

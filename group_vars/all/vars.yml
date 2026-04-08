@@ -23,15 +23,15 @@ ki_cp_ntp_server_upstream_servers:
   - "time2.google.com"
 
 k8s_certificate_validity_period: "26280h" # 26280h = 3 year
-k8s_ingress_classes:
+k8s_load_balancers:
   - name: "lb1"
-    controller_nodes:
+    vip: null
+    nodes:
       - "node1"
       - "node2"
-    ha_mode: true
-    ha_mode_vip: null
-    http_hostport: 80
-    https_hostport: 443
+k8s_default_ingress_class:
+  load_balancer: "lb1"
+  host_network_port: 443
 
 aipub_ingress_zone: "example.com"
 aipub_ha_mode: true
@@ -41,7 +41,6 @@ aipub_cp_nodes:
   - "node2"
   - "node3"
 
-aipub_harbor_ingress_class: "lb1"
 aipub_harbor_ingress_subdomain: "aipub-harbor"
 aipub_harbor_replica_count: 3
 aipub_harbor_registry_storage_size: 512Gi

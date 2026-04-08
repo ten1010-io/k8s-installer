@@ -1,0 +1,10 @@
+apiVersion: cilium.io/v2
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: {{ name }}
+spec:
+  blocks:
+  - cidr: {{ address }}/32
+  serviceSelector:
+    matchLabels:
+      k8s-installer.ten1010.io/load-balancer: {{ lb_name }}

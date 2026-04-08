@@ -69,8 +69,6 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
-CHART_NAME=metallb
-
 ki_env_path=""
 ki_env_scripts_path=""
 ki_env_bin_path=""
@@ -82,10 +80,9 @@ python3_cmd=""
 
 ki_etc_charts_path=""
 ki_tmp_root_path=""
-k8s_ingress_classes=""
+k8s_load_balancers=""
 ih_to_hostname_dict=""
 
-chart_root_path=""
 resources_root_path=""
 
 main() {
@@ -97,27 +94,32 @@ main() {
 
   ki_etc_charts_path=$($yq_cmd '.ki_etc_charts_path' < "$vars_path")
   ki_tmp_root_path=$($yq_cmd '.ki_tmp_root_path' < "$vars_path")
-  k8s_ingress_classes=$($yq_cmd -o json '.k8s_ingress_classes' < "$vars_path")
+  k8s_load_balancers=$($yq_cmd -o json '.k8s_load_balancers' < "$vars_path")
   ih_to_hostname_dict=$($yq_cmd -o json '.ih_to_hostname_dict' < "$vars_path")
 
-  chart_root_path=$ki_etc_charts_path/k8s/$CHART_NAME
-  resources_root_path=$chart_root_path/resources
+  resources_root_path=$ki_etc_charts_path/k8s/cilium/resources
 
-  install_chart
+  msg "[INFO] Started to wait for cilium CRDs being ready"
+  wait_cilium_crds_ready 300
+  kubectl label node --all node.kubernetes.io/exclude-from-external-load-balancers-
   create_api_resources
 
   return 0
 }
 
-install_chart() {
-  mkdir -p "$chart_root_path"
-  cp -f "$ki_env_bin_path/charts/k8s/metallb.tgz" "$chart_root_path/chart.tgz"
-  create_values_yml_file
-  kubectl create ns metallb
-  helm install -n metallb metallb "$chart_root_path/chart.tgz" -f "$chart_root_path/values.yml"
-  msg "[INFO] Started to wait for controller being ready"
-  wait_controller_ready 300
-  kubectl label node --all node.kubernetes.io/exclude-from-external-load-balancers-
+wait_cilium_crds_ready() {
+  local timeout=$1
+  local elapsed=0
+
+  while true; do
+    local exit_code=0
+    kubectl get crd ciliumloadbalancerippools.cilium.io > /dev/null 2>&1 || exit_code=$?
+    [[ $exit_code -eq 0 ]] && break
+    [[ $elapsed -ge $timeout ]] && die "[ERROR] Failed to wait for cilium CRDs being ready. timeout occurred"
+
+    sleep 3s
+    elapsed=$(("$elapsed" + 3))
+  done
 
   return 0
 }
@@ -129,38 +131,24 @@ create_api_resources() {
   return 0
 }
 
-create_values_yml_file() {
-  local tmp_file_path
-  tmp_file_path="$ki_tmp_root_path/tmp-templates-vars.yml"
-  touch "$tmp_file_path"
-  $yq_cmd -i ".internal_network_ki_cp_dns_name = load(\"$vars_path\").internal_network_ki_cp_dns_name" "$tmp_file_path"
-  $yq_cmd -i ".ki_cp_k8s_registry_port = load(\"$vars_path\").ki_cp_k8s_registry_port" "$tmp_file_path"
-  $jinja2_cmd --format yaml -o "$chart_root_path/values.yml" "$SCRIPT_DIR_PATH"/templates/values.yml.j2 "$tmp_file_path"
-  rm "$tmp_file_path"
-
-  return 0
-}
-
 create_resource_files() {
   mkdir -p "$resources_root_path"
 
-  local classes_len
-  classes_len=$($yq_cmd --null-input "$k8s_ingress_classes | length")
+  local lbs_len
+  lbs_len=$($yq_cmd --null-input "$k8s_load_balancers | length")
 
   local name
-  local controller_nodes
-  local ha_mode
-  local ha_mode_vip
-  for (( i=0; i<"$classes_len"; i++ )); do
-    name=$($yq_cmd --null-input "$k8s_ingress_classes | .[$i][\"name\"]")
-    controller_nodes=$($yq_cmd -o json --null-input "$k8s_ingress_classes | .[$i][\"controller_nodes\"]")
-    ha_mode=$($yq_cmd --null-input "$k8s_ingress_classes | .[$i][\"ha_mode\"]")
-    ha_mode_vip=$($yq_cmd --null-input "$k8s_ingress_classes | .[$i][\"ha_mode_vip\"]")
+  local vip
+  local nodes
+  for (( i=0; i<"$lbs_len"; i++ )); do
+    name=$($yq_cmd --null-input "$k8s_load_balancers | .[$i][\"name\"]")
+    vip=$($yq_cmd --null-input "$k8s_load_balancers | .[$i][\"vip\"]")
+    nodes=$($yq_cmd -o json --null-input "$k8s_load_balancers | .[$i][\"nodes\"]")
 
-    [[ $ha_mode != "true" ]] && continue
+    [[ $vip = "null" ]] && die "[ERROR] Variable[\"vip\"] must not be null for load balancer \"$name\""
 
-    create_pool_yml_file "$name" "$ha_mode_vip"
-    create_advertisement_yml_file "$name" "$controller_nodes"
+    create_pool_yml_file "$name" "$vip"
+    create_announcement_yml_file "$name" "$nodes"
   done
 
   return 0
@@ -168,48 +156,49 @@ create_resource_files() {
 
 create_pool_yml_file() {
   local name=$1
-  local ha_mode_vip=$2
+  local vip=$2
 
-  local resource_name="ingress-class-$name"
+  local resource_name="$name.load-balancers.k8s-installer.ten1010.io"
 
   local tmp_file_path
   tmp_file_path="$ki_tmp_root_path/tmp-templates-vars.yml"
   touch "$tmp_file_path"
   $yq_cmd -i ".name = \"$resource_name\"" "$tmp_file_path"
-  $yq_cmd -i ".address = \"$ha_mode_vip\"" "$tmp_file_path"
-  $jinja2_cmd --format yaml -o "$resources_root_path/$resource_name-pool.yml" "$SCRIPT_DIR_PATH"/templates/resources/ip-address-pool.yml.j2 "$tmp_file_path"
+  $yq_cmd -i ".lb_name = \"$name\"" "$tmp_file_path"
+  $yq_cmd -i ".address = \"$vip\"" "$tmp_file_path"
+  $jinja2_cmd --format yaml -o "$resources_root_path/$resource_name-pool.yml" "$SCRIPT_DIR_PATH"/templates/resources/lb-ip-pool.yml.j2 "$tmp_file_path"
   rm "$tmp_file_path"
 
   return 0
 }
 
-create_advertisement_yml_file() {
+create_announcement_yml_file() {
   local name=$1
-  local controller_nodes=$2
+  local nodes=$2
 
-  local resource_name="ingress-class-$name"
+  local resource_name="$name.load-balancers.k8s-installer.ten1010.io"
 
   local knn_list
-  knn_list=$(get_knn_list "$controller_nodes")
+  knn_list=$(get_knn_list "$nodes")
 
   local tmp_file_path
   tmp_file_path="$ki_tmp_root_path/tmp-templates-vars.yml"
   touch "$tmp_file_path"
   $yq_cmd -i ".name = \"$resource_name\"" "$tmp_file_path"
-  $yq_cmd -i ".pool_name = \"$resource_name\"" "$tmp_file_path"
+  $yq_cmd -i ".lb_name = \"$name\"" "$tmp_file_path"
   $yq_cmd -o json -i ".knn_list = $knn_list" "$tmp_file_path"
-  $jinja2_cmd --format yaml -o "$resources_root_path/$resource_name-advertisement.yml" "$SCRIPT_DIR_PATH"/templates/resources/l2-advertisement.yml.j2 "$tmp_file_path"
+  $jinja2_cmd --format yaml -o "$resources_root_path/$resource_name-announcement.yml" "$SCRIPT_DIR_PATH"/templates/resources/lb-l2-announcement-policy.yml.j2 "$tmp_file_path"
   rm "$tmp_file_path"
 
   return 0
 }
 
 get_knn_list() {
-  local controller_nodes=$1
+  local nodes=$1
 
   local knn_list="[]"
   local knn
-  for ih in $($yq_cmd '. | join(" ")' <<< "$controller_nodes"); do
+  for ih in $($yq_cmd '. | join(" ")' <<< "$nodes"); do
     knn=$(get_knn "$ih")
     knn_list=$($yq_cmd -o json ". + [\"$knn\"]" <<< "$knn_list")
   done
@@ -240,33 +229,6 @@ get_hostname() {
   [[ -z $hostname || $hostname = "null" ]] && die "[ERROR] Fail to get hostname for ih[\"$ih\"]"
 
   echo "$hostname"
-}
-
-wait_controller_ready() {
-  local timeout=$1
-
-  local elapsed=0
-  elapsed=0
-
-  while true; do
-    local is_ready
-    is_ready=$(is_controller_ready)
-    [[ $is_ready = "true" ]] && break
-    [[ $elapsed -ge $timeout ]] && die "[ERROR] Failed to wait for controller being ready. timeout occurred"
-
-    sleep 3s
-    elapsed=$(("$elapsed" + 3))
-  done
-
-  return 0
-}
-
-is_controller_ready() {
-  local ready_replicas_num
-  ready_replicas_num=$(kubectl get deploy -n metallb metallb-controller -o jsonpath="{.status.readyReplicas}")
-  if [[ $ready_replicas_num -gt 0 ]]; then echo "true"; else echo "false"; fi
-
-  return 0
 }
 
 has_files() {

@@ -109,7 +109,7 @@ main() {
   echo "---" >> "$ki_tmp_root_path/kubeadm-config.yml"
   cat "$ki_etc_kubeadm_path/kubeadm-init-config.yml" >> "$ki_tmp_root_path/kubeadm-config.yml"
 
-  kubeadm init --upload-certs --config "$ki_tmp_root_path/kubeadm-config.yml"
+  kubeadm init --upload-certs --skip-phases=addon/kube-proxy --config "$ki_tmp_root_path/kubeadm-config.yml"
   rm -f "$ki_tmp_root_path/kubeadm-config.yml"
 
   mkdir -p $HOME/.kube

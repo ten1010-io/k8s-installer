@@ -84,10 +84,13 @@ main() {
   require_directory_exists "$ki_env_path"
   validate_ki_env_directory
 
-  [[ $(link_exists cni0) = "true" ]] && ip link del cni0
   rm -rf /etc/cni/net.d
-  [[ $(link_exists flannel.1) = "true" ]] && ip link del flannel.1
-  rm -rf /var/run/flannel
+  [[ $(link_exists cilium_host) = "true" ]] && ip link del cilium_host
+  [[ $(link_exists cilium_net) = "true" ]] && ip link del cilium_net
+  [[ $(link_exists cilium_vxlan) = "true" ]] && ip link del cilium_vxlan
+  [[ $(link_exists lxc_health) = "true" ]] && ip link del lxc_health
+  mountpoint -q /var/run/cilium/cgroupv2 && umount -l /var/run/cilium/cgroupv2
+  rm -rf /var/run/cilium
 
   "$ki_env_scripts_path/flush-iptables.sh"
 

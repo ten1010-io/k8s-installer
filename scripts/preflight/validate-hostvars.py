@@ -24,7 +24,8 @@ def main():
     check_type(hostvars_errors, hostvars)
     validate_ki_cp_ha_mode_vip(hostvars_errors, hostvars)
     validate_internal_network_subnets(hostvars_errors, hostvars)
-    validate_k8s_ingress_classes(hostvars_errors, hostvars)
+    validate_k8s_load_balancers(hostvars_errors, hostvars)
+    validate_k8s_default_ingress_class(hostvars_errors, hostvars)
     validate_aipub_ha_mode_storage_class(hostvars_errors, hostvars)
     validate_aipub_cp_nodes(hostvars_errors, hostvars)
 
@@ -102,25 +103,35 @@ def validate_internal_network_subnets(hostvars_errors: List[HostvarsError], host
             hostvars_errors.append(error)
 
 
-def validate_k8s_ingress_classes(hostvars_errors: List[HostvarsError], hostvars):
+def validate_k8s_load_balancers(hostvars_errors: List[HostvarsError], hostvars):
     lo_hostvars = hostvars["localhost"]
-    k8s_ingress_classes = lo_hostvars["k8s_ingress_classes"]
+    k8s_load_balancers = lo_hostvars["k8s_load_balancers"]
 
     k8s_nodes: List[str] = lo_hostvars["groups"]["k8s_node"]
 
-    for idx, item in enumerate(k8s_ingress_classes):
-        if not set(item["controller_nodes"]).issubset(k8s_nodes):
+    for idx, item in enumerate(k8s_load_balancers):
+        if not set(item["nodes"]).issubset(k8s_nodes):
             error = HostvarsError("localhost",
-                                  ("k8s_ingress_classes", str(idx), "controller_nodes"),
-                                  str(item["controller_nodes"]),
-                                  "Value for variable[\"controller_nodes\"] must be nodes which belong to k8s_node group")
+                                  ("k8s_load_balancers", str(idx), "nodes"),
+                                  str(item["nodes"]),
+                                  "Value for variable[\"nodes\"] must be nodes which belong to k8s_node group")
             hostvars_errors.append(error)
-        if item["ha_mode"] and item["ha_mode_vip"] is None:
-            error = HostvarsError("localhost",
-                                  ("k8s_ingress_classes", str(idx), "ha_mode_vip"),
-                                  str(item["ha_mode_vip"]),
-                                  "Variable[\"ha_mode_vip\"] must be set when value for variable[\"ha_mode\"] is true")
-            hostvars_errors.append(error)
+
+
+def validate_k8s_default_ingress_class(hostvars_errors: List[HostvarsError], hostvars):
+    lo_hostvars = hostvars["localhost"]
+    k8s_default_ingress_class = lo_hostvars["k8s_default_ingress_class"]
+    k8s_load_balancers = lo_hostvars["k8s_load_balancers"]
+
+    lb_names = {item["name"] for item in k8s_load_balancers}
+
+    load_balancer = k8s_default_ingress_class.get("load_balancer")
+    if load_balancer is not None and load_balancer not in lb_names:
+        error = HostvarsError("localhost",
+                              ("k8s_default_ingress_class", "load_balancer"),
+                              str(load_balancer),
+                              f"Variable[\"load_balancer\"] references unknown load balancer \"{load_balancer}\"")
+        hostvars_errors.append(error)
 
 
 def validate_aipub_ha_mode_storage_class(hostvars_errors: List[HostvarsError], hostvars):
@@ -202,14 +213,14 @@ class VarsModel(BaseModel):
     ]
 
     k8s_certificate_validity_period: Annotated[str, StringConstraints(pattern=VALIDITY_PERIOD_PATTERN)]
-    k8s_ingress_classes: List[K8sIngressClassModel]
+    k8s_load_balancers: List[K8sLoadBalancerModel]
+    k8s_default_ingress_class: K8sDefaultIngressClassModel
 
     aipub_ingress_zone: Annotated[str, StringConstraints(pattern=FQDN_PATTERN)]
     aipub_ha_mode: bool
     aipub_ha_mode_storage_class: Optional[Annotated[str, StringConstraints(pattern=K8S_OBJ_NAME_PATTERN)]] = None
     aipub_cp_nodes: List[Annotated[str, StringConstraints(pattern=K8S_OBJ_NAME_PATTERN)]]
 
-    aipub_harbor_ingress_class: Annotated[str, StringConstraints(pattern=K8S_OBJ_NAME_PATTERN)]
     aipub_harbor_ingress_subdomain: Annotated[str, StringConstraints(pattern=SUB_DOMAIN_PATTERN)]
     aipub_harbor_replica_count: PositiveInt
     aipub_harbor_registry_storage_size: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
@@ -305,13 +316,15 @@ class ARecordModel(BaseModel):
     ip: IPv4Address
 
 
-class K8sIngressClassModel(BaseModel):
+class K8sLoadBalancerModel(BaseModel):
     name: Annotated[str, StringConstraints(pattern=K8S_OBJ_NAME_PATTERN)]
-    controller_nodes: List[Annotated[str, StringConstraints(pattern=K8S_OBJ_NAME_PATTERN)]]
-    ha_mode: bool
-    ha_mode_vip: Optional[IPv4Address] = None
-    http_hostport: int = Field(ge=0, le=65535)
-    https_hostport: int = Field(ge=0, le=65535)
+    vip: IPv4Address
+    nodes: List[Annotated[str, StringConstraints(pattern=K8S_OBJ_NAME_PATTERN)]]
+
+
+class K8sDefaultIngressClassModel(BaseModel):
+    load_balancer: Optional[Annotated[str, StringConstraints(pattern=K8S_OBJ_NAME_PATTERN)]] = None
+    host_network_port: int = Field(ge=0, le=65535)
 
 
 main()

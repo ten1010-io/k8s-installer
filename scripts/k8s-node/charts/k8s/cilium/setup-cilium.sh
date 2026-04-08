@@ -69,7 +69,7 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
-CHART_NAME=metallb
+CHART_NAME=cilium
 
 ki_env_path=""
 ki_env_scripts_path=""
@@ -81,6 +81,7 @@ jinja2_cmd=""
 python3_cmd=""
 
 ki_etc_charts_path=""
+ki_tmp_root_path=""
 
 chart_root_path=""
 
@@ -92,36 +93,31 @@ main() {
   validate_ki_env_directory
 
   ki_etc_charts_path=$($yq_cmd '.ki_etc_charts_path' < "$vars_path")
+  ki_tmp_root_path=$($yq_cmd '.ki_tmp_root_path' < "$vars_path")
+
   chart_root_path=$ki_etc_charts_path/k8s/$CHART_NAME
 
-  [[ $(chart_exists metallb metallb) = "true" ]] && helm uninstall -n metallb metallb
-  [[ $(namespace_exists metallb) = "true" ]] && kubectl delete namespace metallb
-  rm -rf "$chart_root_path"
+  mkdir -p "$chart_root_path"
+  cp -f "$ki_env_bin_path/charts/k8s/cilium.tgz" "$chart_root_path/chart.tgz"
+  create_values_yml_file
+
+  helm install -n kube-system cilium "$chart_root_path/chart.tgz" -f "$chart_root_path/values.yml"
 
   return 0
 }
 
-namespace_exists() {
-  local namespace=$1
-
-  local exit_code=0
-  kubectl get namespace "$namespace" > /dev/null 2>&1 || exit_code=$?
-  if [[ $exit_code = 0 ]]; then echo "true"; else echo "false"; fi
-
-  return 0
-}
-
-chart_exists() {
-  local namespace
-  local name
-  namespace=$1
-  name=$2
-
-  local exit_code=0
-  helm get notes -n "$namespace" "$name" > /dev/null 2>&1 || exit_code=$?
-  if [[ $exit_code = 0 ]]; then echo "true"; else echo "false"; fi
-
-  return 0
+create_values_yml_file() {
+  local tmp_file_path
+  tmp_file_path="$ki_tmp_root_path/tmp-templates-vars.yml"
+  touch "$tmp_file_path"
+  $yq_cmd -i ".internal_network_ki_cp_dns_name = load(\"$vars_path\").internal_network_ki_cp_dns_name" "$tmp_file_path"
+  $yq_cmd -i ".ki_cp_k8s_registry_port = load(\"$vars_path\").ki_cp_k8s_registry_port" "$tmp_file_path"
+  $yq_cmd -i ".ki_cp_k8s_cp_lb_port = load(\"$vars_path\").ki_cp_k8s_cp_lb_port" "$tmp_file_path"
+  $yq_cmd -i ".k8s_pod_subnet = load(\"$vars_path\").k8s_pod_subnet" "$tmp_file_path"
+  $yq_cmd -i ".k8s_default_ingress_class_load_balancer = load(\"$vars_path\").k8s_default_ingress_class.load_balancer" "$tmp_file_path"
+  $yq_cmd -i ".k8s_default_ingress_class_host_network_port = load(\"$vars_path\").k8s_default_ingress_class.host_network_port" "$tmp_file_path"
+  $jinja2_cmd --format yaml -o "$chart_root_path/values.yml" "$SCRIPT_DIR_PATH"/templates/values.yml.j2 "$tmp_file_path"
+  rm "$tmp_file_path"
 }
 
 import_ki_env_vars() {

@@ -69,7 +69,7 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
-CHART_NAME=ingress-nginx
+CHART_NAME=cilium
 
 ki_env_path=""
 ki_env_scripts_path=""
@@ -81,7 +81,6 @@ jinja2_cmd=""
 python3_cmd=""
 
 ki_etc_charts_path=""
-k8s_ingress_classes=""
 
 chart_root_path=""
 
@@ -93,39 +92,10 @@ main() {
   validate_ki_env_directory
 
   ki_etc_charts_path=$($yq_cmd '.ki_etc_charts_path' < "$vars_path")
-  k8s_ingress_classes=$($yq_cmd -o json '.k8s_ingress_classes' < "$vars_path")
   chart_root_path=$ki_etc_charts_path/k8s/$CHART_NAME
 
-  uninstall_charts
+  [[ $(chart_exists kube-system cilium) = "true" ]] && helm uninstall -n kube-system cilium
   rm -rf "$chart_root_path"
-
-  return 0
-}
-
-uninstall_charts() {
-  local classes_len
-  classes_len=$($yq_cmd --null-input "$k8s_ingress_classes | length")
-
-  local name
-  local release_name
-  for (( i=0; i<"$classes_len"; i++ )); do
-    name=$($yq_cmd --null-input "$k8s_ingress_classes | .[$i][\"name\"]")
-    release_name="ingress-class-$name"
-
-    [[ $(chart_exists ingress-nginx "$release_name") = "true" ]] && helm uninstall -n ingress-nginx "$release_name"
-  done
-
-  [[ $(namespace_exists ingress-nginx) = "true" ]] && kubectl delete namespace ingress-nginx
-
-  return 0
-}
-
-namespace_exists() {
-  local namespace=$1
-
-  local exit_code=0
-  kubectl get namespace "$namespace" > /dev/null 2>&1 || exit_code=$?
-  if [[ $exit_code = 0 ]]; then echo "true"; else echo "false"; fi
 
   return 0
 }

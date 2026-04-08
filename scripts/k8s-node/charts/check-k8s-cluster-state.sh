@@ -78,7 +78,6 @@ yq_cmd=""
 jinja2_cmd=""
 
 playbook=""
-k8s_ingress_classes=""
 
 main() {
   require_file_exists "$vars_path"
@@ -88,12 +87,9 @@ main() {
   validate_ki_env_directory
 
   playbook=$($yq_cmd '.playbook' < "$vars_path")
-  k8s_ingress_classes=$($yq_cmd -o json '.k8s_ingress_classes' < "$vars_path")
 
   if [[ $playbook = "setup-k8s-charts" ]]; then
-    [[ $(chart_exists kube-flannel flannel) = "true" ]] && die "[ERROR] Chart[\"flannel\"] has already benn set up"
-    [[ $(chart_exists metallb metallb) = "true" ]] && die "[ERROR] Chart[\"metallb\"] has already benn set up"
-    check_ingress_nginx_charts
+    [[ $(chart_exists kube-system cilium) = "true" ]] && die "[ERROR] Chart[\"cilium\"] has already benn set up"
 
     return 0
   fi
@@ -104,22 +100,6 @@ main() {
 
     return 0
   fi
-
-  return 0
-}
-
-check_ingress_nginx_charts() {
-  local classes_len
-  classes_len=$($yq_cmd --null-input "$k8s_ingress_classes | length")
-
-  local name
-  local release_name
-  for (( i=0; i<"$classes_len"; i++ )); do
-    name=$($yq_cmd --null-input "$k8s_ingress_classes | .[$i][\"name\"]")
-    release_name="ingress-class-$name"
-
-    [[ $(chart_exists ingress-nginx "$release_name") = "true" ]] && die "[ERROR] Chart[\"$release_name\"] has already benn set up"
-  done
 
   return 0
 }
