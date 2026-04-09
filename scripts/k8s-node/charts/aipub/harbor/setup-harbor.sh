@@ -127,9 +127,9 @@ main() {
     create_pvc_yml_file "harbor-postgresql" "aipub" "$aipub_ha_mode_storage_class" "ReadWriteMany" "$aipub_harbor_postgresql_storage_size"
     create_pvc_yml_file "harbor-redis" "aipub" "$aipub_ha_mode_storage_class" "ReadWriteMany" "$aipub_harbor_redis_storage_size"
   else
-    create_pvc_yml_file "harbor-registry" "aipub" "local-aipub-harbor-registry" "ReadWriteOnce" "$aipub_harbor_registry_storage_size"
-    create_pvc_yml_file "harbor-postgresql" "aipub" "local-aipub-harbor-postgresql" "ReadWriteOnce" "$aipub_harbor_postgresql_storage_size"
-    create_pvc_yml_file "harbor-redis" "aipub" "local-aipub-harbor-redis" "ReadWriteOnce" "$aipub_harbor_redis_storage_size"
+    create_pvc_yml_file "harbor-registry" "aipub" "harbor-registry.local-pvs.k8s-installer.ten1010.io" "ReadWriteOnce" "$aipub_harbor_registry_storage_size"
+    create_pvc_yml_file "harbor-postgresql" "aipub" "harbor-postgresql.local-pvs.k8s-installer.ten1010.io" "ReadWriteOnce" "$aipub_harbor_postgresql_storage_size"
+    create_pvc_yml_file "harbor-redis" "aipub" "harbor-redis.local-pvs.k8s-installer.ten1010.io" "ReadWriteOnce" "$aipub_harbor_redis_storage_size"
   fi
   [[ $(has_files "$resources_path") = "true" ]] && kubectl apply -f "$resources_path"
   install_chart

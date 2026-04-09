@@ -106,13 +106,13 @@ main() {
 
   resources_path=$ki_etc_charts_path/aipub/resources
 
-  harbor_registry_local_pv_name="local-aipub-harbor-registry"
+  harbor_registry_local_pv_name="harbor-registry.local-pvs.k8s-installer.ten1010.io"
   harbor_registry_local_pv_ih=$($yq_cmd --null-input "$aipub_cp_nodes | .[0]")
   harbor_registry_local_pv_path="$ki_var_aipub_local_pv_path/harbor/registry"
-  harbor_postgresql_local_pv_name="local-aipub-harbor-postgresql"
+  harbor_postgresql_local_pv_name="harbor-postgresql.local-pvs.k8s-installer.ten1010.io"
   harbor_postgresql_local_pv_ih=$($yq_cmd --null-input "$aipub_cp_nodes | .[0]")
   harbor_postgresql_local_pv_path="$ki_var_aipub_local_pv_path/harbor/postgresql"
-  harbor_redis_local_pv_name="local-aipub-harbor-redis"
+  harbor_redis_local_pv_name="harbor-redis.local-pvs.k8s-installer.ten1010.io"
   harbor_redis_local_pv_ih=$($yq_cmd --null-input "$aipub_cp_nodes | .[0]")
   harbor_redis_local_pv_path="$ki_var_aipub_local_pv_path/harbor/redis"
 
