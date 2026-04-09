@@ -72,6 +72,7 @@ parse_params "$@"
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
+RHEL9_SUPPORTED_MINOR_VERSION=7
 
 ki_env_path=""
 ki_env_scripts_path=""
@@ -105,6 +106,11 @@ main() {
 
   if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
     rhel8_install
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "9" && $os_minor_version -le "$RHEL9_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel9_install
     exit 0
   fi
 
@@ -304,7 +310,98 @@ rhel8_install() {
   return 0
 }
 
+rhel9_install() {
+  require_not_installed containerd
+  require_not_installed docker
+  require_not_installed kubelet
+
+  [[ $(getenforce) != "Disabled" ]] && setenforce 0
+
+  yum erase -y --disableplugin subscription-manager \
+    systemd-timesyncd \
+    ntp \
+    chrony
+
+  yum erase -y --disableplugin subscription-manager \
+    podman \
+    runc \
+    systemd-container
+
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/nfs-utils/*.rpm
+  mkdir -p /etc/systemd/system/rpc-statd.service.d
+  cp -f "$SCRIPT_DIR_PATH/templates/override.conf" /etc/systemd/system/rpc-statd.service.d/
+  "$ki_env_scripts_path/systemctl.sh" enable rpc-statd
+
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/p11-kit/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/gmp/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/libidn2/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/libtasn1/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/nettle/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/gnutls/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/chrony/*.rpm
+
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/audit/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/libsepol/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/pcre2/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/libselinux/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/libsemanage/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/python3-setools/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/checkpolicy/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/mcstrans/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/policycoreutils/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/selinux-policy/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/container-selinux/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/libseccomp/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/containerd/*.rpm
+
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/systemd/*.rpm
+  kill -TERM 1
+  wait_systemd_ready 300
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/libaio/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/device-mapper/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/fuse3/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/fuse-overlayfs/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/slirp/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/conntrack/*.rpm
+  if [[ $(rhel9_is_installed "^libibverbs\.") = "false" ]]; then
+    rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/libibverbs/*.rpm
+  fi
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/ebtables/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/docker/*.rpm
+  sed -i '/StartLimitBurst=/ s/^StartLimitBurst=.\+$/StartLimitBurst=0/g' /usr/lib/systemd/system/docker.service
+  sed -i '/StartLimitInterval=/ s/^StartLimitInterval=.\+$/StartLimitInterval=0/g' /usr/lib/systemd/system/docker.service
+
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/nvidia-container-toolkit/*.rpm
+
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/ethtool/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/libbpf/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/iproute/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/socat/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_env_bin_path"/linux-packages/rhel9/k8s/*.rpm
+  cp -f "$SCRIPT_DIR_PATH/templates/crictl.yaml" /etc/
+
+  "$ki_env_scripts_path/systemctl.sh" reload
+
+  "$ki_env_scripts_path/systemctl.sh" disable kubelet
+  "$ki_env_scripts_path/systemctl.sh" disable docker.socket
+  "$ki_env_scripts_path/systemctl.sh" disable docker
+  "$ki_env_scripts_path/systemctl.sh" disable containerd
+
+  return 0
+}
+
 rhel8_is_installed() {
+  local pkg_regex=$1
+
+  local exit_code=0
+  yum list installed --disableplugin subscription-manager 2> /dev/null | grep "$pkg_regex" > /dev/null 2>/dev/null || exit_code=$?
+
+  if [[ $exit_code = "0" ]]; then echo "true"; else echo "false"; fi
+
+  return 0
+}
+
+rhel9_is_installed() {
   local pkg_regex=$1
 
   local exit_code=0

@@ -72,6 +72,7 @@ parse_params "$@"
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
+RHEL9_SUPPORTED_MINOR_VERSION=7
 
 KI_ENV_SCRIPTS_PATH="$ki_env_path"/scripts
 KI_ENV_BIN_PATH="$ki_env_path"/bin
@@ -101,6 +102,11 @@ main() {
 
   if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
     rhel8_setup
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "9" && $os_minor_version -le "$RHEL9_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel9_setup
     exit 0
   fi
 
@@ -195,6 +201,33 @@ rhel8_setup() {
   return 0
 }
 
+rhel9_setup() {
+  if [[ $(rhel9_is_installed python3\.12) = "false" ]]; then
+    rpm --force -Uvh --oldpackage --replacepkgs "$KI_ENV_BIN_PATH/linux-packages/rhel9/chkconfig/*.rpm"
+    rpm --force -Uvh --oldpackage --replacepkgs "$KI_ENV_BIN_PATH/linux-packages/rhel9/python3.12/*.rpm"
+  fi
+
+  if [[ -e $KI_ENV_KI_VENV_PATH ]]; then
+    msg "[INFO] K8s installer will use existing ki-venv"
+  else
+    msg "[INFO] K8s installer will create virtual environment[\"ki-venv\"]"
+
+    python3.12 -m venv "$KI_ENV_KI_VENV_PATH"
+    "$KI_ENV_KI_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_ENV_BIN_PATH"/python-packages/python3.12/netifaces netifaces
+    "$KI_ENV_KI_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_ENV_BIN_PATH"/python-packages/python3.12/jinja2-cli jinja2-cli PyYAML
+    "$KI_ENV_KI_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_ENV_BIN_PATH"/python-packages/python3.12/ansible ansible jmespath
+    "$KI_ENV_KI_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_ENV_BIN_PATH"/python-packages/python3.12/pydantic pydantic
+  fi
+
+  validate_ki_venv_directory
+
+  msg ""
+  msg "[INFO] To activate ki-venv, run the following"
+  msg "source $KI_ENV_KI_VENV_PATH/bin/activate"
+
+  return 0
+}
+
 ubuntu2204_is_installed() {
   local pkg_regex=$1
 
@@ -218,6 +251,17 @@ ubuntu2404_is_installed() {
 }
 
 rhel8_is_installed() {
+  local pkg_regex=$1
+
+  local exit_code=0
+  yum list installed --disableplugin subscription-manager 2> /dev/null | grep "$pkg_regex" > /dev/null 2>/dev/null || exit_code=$?
+
+  if [[ $exit_code = "0" ]]; then echo "true"; else echo "false"; fi
+
+  return 0
+}
+
+rhel9_is_installed() {
   local pkg_regex=$1
 
   local exit_code=0
