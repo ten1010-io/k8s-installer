@@ -69,6 +69,37 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
+# Network interfaces and state directories left behind by CNI plugins.
+# Kept as an explicit list since a CNI managed interface can not be told apart
+# from an operator managed one at runtime.
+CNI_LINK_NAMES=(
+  cni0
+  flannel.1
+  flannel-v6.1
+  kube-ipvs0
+  kube-bridge
+  vxlan.calico
+  vxlan-v6.calico
+  tunl0
+  cilium_host
+  cilium_net
+  cilium_vxlan
+  antrea-gw0
+  weave
+  datapath
+)
+
+CNI_STATE_PATHS=(
+  /etc/cni/net.d
+  /var/lib/cni
+  /var/lib/calico
+  /var/lib/cilium
+  /var/lib/weave
+  /var/run/flannel
+  /var/run/calico
+  /var/run/cilium
+)
+
 ki_env_path=""
 ki_env_scripts_path=""
 ki_env_bin_path=""
@@ -84,12 +115,61 @@ main() {
   require_directory_exists "$ki_env_path"
   validate_ki_env_directory
 
-  [[ $(link_exists cni0) = "true" ]] && ip link del cni0
-  rm -rf /etc/cni/net.d
-  [[ $(link_exists flannel.1) = "true" ]] && ip link del flannel.1
-  rm -rf /var/run/flannel
+  delete_cni_links
+  delete_cni_state_paths
 
   "$ki_env_scripts_path/flush-iptables.sh"
+
+  return 0
+}
+
+delete_cni_links() {
+  local name
+
+  for name in "${CNI_LINK_NAMES[@]}"; do
+    if [[ $(link_exists "$name") = "true" ]]; then
+      # Best effort. some interfaces, such as tunl0, are provided by a kernel
+      # module and can not be deleted
+      ip link del "$name" || msg "[WARN] Failed to delete network interface[\"$name\"]"
+    fi
+  done
+
+  return 0
+}
+
+delete_cni_state_paths() {
+  local path
+  local real_path
+  local mount_point
+
+  for path in "${CNI_STATE_PATHS[@]}"; do
+    # /var/run is a symlink to /run on the supported distributions, so resolve
+    # the path before comparing it against mount points
+    real_path=$(readlink -f "$path" 2>/dev/null || echo "$path")
+    if [[ ! -e $real_path ]]; then
+      continue
+    fi
+
+    # Some CNI plugins, such as cilium, mount a filesystem below their state
+    # directory. its contents can not be removed, so unmount it first. the
+    # deepest mount point comes first
+    while read -r mount_point; do
+      if [[ -n $mount_point ]]; then
+        umount "$mount_point" || msg "[WARN] Failed to unmount[\"$mount_point\"]"
+      fi
+    done < <(list_mount_points_under "$real_path")
+
+    # Best effort. a mount point that could not be unmounted keeps its contents
+    rm -rf "$real_path" || msg "[WARN] Failed to delete directory[\"$real_path\"]"
+  done
+
+  return 0
+}
+
+list_mount_points_under() {
+  local path=$1
+
+  findmnt -rno TARGET | awk -v p="$path" '$0 == p || index($0, p "/") == 1' | sort -r
 
   return 0
 }
