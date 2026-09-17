@@ -1,0 +1,4 @@
+# Every file in this repository is consumed on Linux nodes. Keep LF in the
+# working tree, in the index and in archives regardless of core.autocrlf, so
+# that shell scripts never end up with a CRLF shebang.
+* text=auto eol=lf
