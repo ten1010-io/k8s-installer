@@ -9,24 +9,6 @@ registries:
       - registry.k8s.io/coredns/coredns:v1.12.1
       - registry.k8s.io/pause:3.10.1
       - registry.k8s.io/etcd:3.6.4-0
-      - ghcr.io/flannel-io/flannel:v0.27.4
-      - ghcr.io/flannel-io/flannel-cni-plugin:v1.8.0-flannel1
-      - quay.io/metallb/controller:v0.15.2
-      - quay.io/metallb/speaker:v0.15.2
-      - quay.io/frrouting/frr:9.1.0
-      - registry.k8s.io/ingress-nginx/controller:v1.14.0
-      - registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.4
     mappings:
       - from: registry.k8s.io/coredns/coredns:v1.12.1
         to: coredns:v1.12.1
-  - name: ki-cp-aipub-registry
-    images:
-      - docker.io/bitnamilegacy/postgresql:17.6.0-debian-12-r0
-      - docker.io/goharbor/harbor-portal:v2.14.0
-      - docker.io/goharbor/harbor-core:v2.14.0
-      - docker.io/goharbor/harbor-jobservice:v2.14.0
-      - docker.io/goharbor/registry-photon:v2.14.0
-      - docker.io/goharbor/harbor-registryctl:v2.14.0
-      - docker.io/goharbor/harbor-db:v2.14.0
-      - docker.io/goharbor/redis-photon:v2.14.0
-    mappings: []

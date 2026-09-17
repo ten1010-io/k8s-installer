@@ -12,9 +12,6 @@
 
 - import_playbook: tasks/check-node-state.yml
 
-- import_playbook: tasks/charts/sync-charts.yml
-  when: target_node in k8s_cp_nodes
-
 - import_playbook: tasks/remove-k8s-node.yml
   when: target_node in groups['k8s_node']
 

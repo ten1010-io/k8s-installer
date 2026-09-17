@@ -1,2 +1,0 @@
-aipub/harbor-database
-aipub/harbor-redis
