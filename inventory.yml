@@ -23,6 +23,10 @@ k8s_node:
   hosts:
     node1:
       k8s_cp: true
+      # Kubelet reservations are calculated from the resources of the node.
+      # Override a variable here to pin it for this node only
+      #kubelet_system_reserved_cpu: "1"
+      #kubelet_system_reserved_memory: "4Gi"
     node2:
       k8s_cp: true
     node3:

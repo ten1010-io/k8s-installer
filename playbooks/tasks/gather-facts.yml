@@ -44,6 +44,45 @@
           set_fact:
             shell_result: null
 
+    - name: Setup variable[\"node_resources\"]
+      block:
+        - name: Execute get-node-resources.sh
+          shell: "sudo {{ ki_env_scripts_path }}/preflight/get-node-resources.sh {{ imagefs_path_arg }}"
+          vars:
+            imagefs_path_arg: "--imagefs-path {{ containerd_root_path }}"
+          register: shell_result
+
+        - name: Set_fact variable[\"node_resources\"]
+          set_fact:
+            node_resources: "{{ shell_result.stdout | from_yaml }}"
+
+        - name: Remove temporary variable[\"shell_result\"]
+          set_fact:
+            shell_result: null
+
+    - name: Setup variable[\"kubelet_reservations\"]
+      block:
+        - name: Write temporary file for cli input
+          copy:
+            content: "{{ hostvars | to_yaml }}"
+            dest: "{{ tmp_input_path }}"
+          become: yes
+
+        - name: Execute create-kubelet-reservations.py
+          shell: "sudo {{ ansible_python_interpreter }} {{ ki_env_scripts_path }}/preflight/create-kubelet-reservations.py {{ inventory_hostname }} < {{ tmp_input_path }}"
+          register: shell_result
+
+        - name: Set_fact variable[\"kubelet_reservations\"]
+          set_fact:
+            kubelet_reservations: "{{ shell_result.stdout | from_yaml | community.general.json_query('kubelet_reservations') }}"
+
+        - name: Remove temporary file for cli input
+          shell: "sudo rm {{ tmp_input_path }}"
+
+        - name: Remove temporary variable[\"shell_result\"]
+          set_fact:
+            shell_result: null
+
 - hosts: localhost
   gather_facts: false
   any_errors_fatal: true

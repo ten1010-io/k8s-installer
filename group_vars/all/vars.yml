@@ -23,3 +23,35 @@ ki_cp_ntp_server_upstream_servers:
   - "time2.google.com"
 
 k8s_certificate_validity_period: "26280h" # 26280h = 3 year
+
+# Kubelet resource reservations
+# Leave a value null to calculate it from the actual cpu, memory and disk capacity of the node.
+# See scripts/preflight/create-kubelet-reservations.py for the calculation
+# To give a single node different values, override only that variable in inventory.yml
+kubelet_system_reserved_cpu: null
+kubelet_system_reserved_memory: null
+kubelet_system_reserved_ephemeral_storage: null
+kubelet_system_reserved_pid: null
+kubelet_kube_reserved_cpu: null
+kubelet_kube_reserved_memory: null
+kubelet_kube_reserved_ephemeral_storage: null
+kubelet_kube_reserved_pid: null
+kubelet_eviction_hard_memory_available: null
+kubelet_eviction_hard_nodefs_available: null
+kubelet_eviction_hard_imagefs_available: null
+kubelet_eviction_hard_nodefs_inodes_free: "5%"
+
+# Bounds applied to the calculated values.
+# A lower bound is ignored when it would take an excessive share of a small node
+kubelet_auto_memory_available_min: "500Mi"
+kubelet_auto_memory_available_max: "4Gi"
+kubelet_auto_nodefs_available_min: "15Gi"
+kubelet_auto_nodefs_available_max: "50Gi"
+kubelet_auto_ephemeral_storage_min: "5Gi"
+kubelet_auto_ephemeral_storage_max: "30Gi"
+
+# Added to systemReserved on nodes of the ki_cp_node group.
+# Those nodes run keepalived, dns server, ntp server, k8s cp lb and k8s registry
+# with docker, outside of kubernetes, so kubelet does not account for them
+kubelet_ki_cp_extra_cpu: "500m"
+kubelet_ki_cp_extra_memory: "1Gi"

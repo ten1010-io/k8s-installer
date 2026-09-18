@@ -1,0 +1,26 @@
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+# cgroupDriver is intentionally omitted. kubeadm fills it in from the detected
+# container runtime, and setting it here risks contradicting the SystemdCgroup
+# setting of containerd
+#
+# enforceNodeAllocatable is intentionally left at its default value ["pods"].
+# Adding kube-reserved or system-reserved to it requires kubeReservedCgroup and
+# systemReservedCgroup to point at cgroups that already exist, and kubelet fails
+# to start when they do not. The reservations below are used for scheduler
+# accounting only, which is what keeps the node from being over committed
+systemReserved:
+  cpu: "{{ kubelet_reservations['system_reserved']['cpu'] }}"
+  memory: "{{ kubelet_reservations['system_reserved']['memory'] }}"
+  ephemeral-storage: "{{ kubelet_reservations['system_reserved']['ephemeral-storage'] }}"
+  pid: "{{ kubelet_reservations['system_reserved']['pid'] }}"
+kubeReserved:
+  cpu: "{{ kubelet_reservations['kube_reserved']['cpu'] }}"
+  memory: "{{ kubelet_reservations['kube_reserved']['memory'] }}"
+  ephemeral-storage: "{{ kubelet_reservations['kube_reserved']['ephemeral-storage'] }}"
+  pid: "{{ kubelet_reservations['kube_reserved']['pid'] }}"
+evictionHard:
+  memory.available: "{{ kubelet_reservations['eviction_hard']['memory.available'] }}"
+  nodefs.available: "{{ kubelet_reservations['eviction_hard']['nodefs.available'] }}"
+  imagefs.available: "{{ kubelet_reservations['eviction_hard']['imagefs.available'] }}"
+  nodefs.inodesFree: "{{ kubelet_reservations['eviction_hard']['nodefs.inodesFree'] }}"

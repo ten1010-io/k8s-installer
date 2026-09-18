@@ -8,10 +8,14 @@ from pathlib import Path
 from typing import List, Any, Optional, Annotated, Union
 
 import yaml
-from pydantic import BaseModel, ValidationError, StringConstraints, ConfigDict, field_validator, Field
+from pydantic import BaseModel, ValidationError, StringConstraints, ConfigDict, field_validator, Field, \
+    PositiveInt
 
 FQDN_PATTERN = r"^((?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,}$"
 VALIDITY_PERIOD_PATTERN = r"^[0-9]+h$"
+STORAGE_SIZE_PATTERN = r"^[0-9]+[EPTGMK]i$"
+CPU_QUANTITY_PATTERN = r"^([0-9]+m|[0-9]+(\.[0-9]+)?)$"
+EVICTION_THRESHOLD_PATTERN = r"^([0-9]+(\.[0-9]+)?%|[0-9]+[EPTGMK]i)$"
 
 
 def main():
@@ -21,6 +25,7 @@ def main():
     check_type(hostvars_errors, hostvars)
     validate_ki_cp_ha_mode_vip(hostvars_errors, hostvars)
     validate_internal_network_subnets(hostvars_errors, hostvars)
+    validate_kubelet_reservations(hostvars_errors, hostvars)
 
     if len(hostvars_errors) > 0:
         print("[ERROR] Invalid hostvars", file=sys.stderr)
@@ -96,6 +101,31 @@ def validate_internal_network_subnets(hostvars_errors: List[HostvarsError], host
             hostvars_errors.append(error)
 
 
+def validate_kubelet_reservations(hostvars_errors: List[HostvarsError], hostvars):
+    """Validates the values calculated by create-kubelet-reservations.py.
+
+    A wrong value here makes kubelet fail to start, which is hard to diagnose
+    afterwards, so it is caught before kubeadm is run
+    """
+    for ih in hostvars.keys():
+        if ih == "localhost":
+            continue
+
+        if "kubelet_reservations" not in hostvars[ih]:
+            error = HostvarsError(ih,
+                                  ("kubelet_reservations",),
+                                  "None",
+                                  "Variable[\"kubelet_reservations\"] not set. it must be gathered by gather-facts")
+            hostvars_errors.append(error)
+            continue
+
+        try:
+            KubeletReservationsModel.model_validate(hostvars[ih]["kubelet_reservations"])
+        except ValidationError as e:
+            for error in e.errors():
+                hostvars_errors.append(build_hostvars_error(ih, error))
+
+
 def print_hostvars_errors(errors: List[HostvarsError]):
     for idx, error in enumerate(errors):
         print(f"Error {idx + 1}:", file=sys.stderr)
@@ -148,6 +178,41 @@ class VarsModel(BaseModel):
     ]
 
     k8s_certificate_validity_period: Annotated[str, StringConstraints(pattern=VALIDITY_PERIOD_PATTERN)]
+
+    # Explicit overrides. None means the value is calculated from the resources
+    # of the node by create-kubelet-reservations.py
+    kubelet_system_reserved_cpu: Optional[
+        Annotated[str, StringConstraints(pattern=CPU_QUANTITY_PATTERN)]] = None
+    kubelet_system_reserved_memory: Optional[
+        Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]] = None
+    kubelet_system_reserved_ephemeral_storage: Optional[
+        Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]] = None
+    kubelet_system_reserved_pid: Optional[PositiveInt] = None
+    kubelet_kube_reserved_cpu: Optional[
+        Annotated[str, StringConstraints(pattern=CPU_QUANTITY_PATTERN)]] = None
+    kubelet_kube_reserved_memory: Optional[
+        Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]] = None
+    kubelet_kube_reserved_ephemeral_storage: Optional[
+        Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]] = None
+    kubelet_kube_reserved_pid: Optional[PositiveInt] = None
+    kubelet_eviction_hard_memory_available: Optional[
+        Annotated[str, StringConstraints(pattern=EVICTION_THRESHOLD_PATTERN)]] = None
+    kubelet_eviction_hard_nodefs_available: Optional[
+        Annotated[str, StringConstraints(pattern=EVICTION_THRESHOLD_PATTERN)]] = None
+    kubelet_eviction_hard_imagefs_available: Optional[
+        Annotated[str, StringConstraints(pattern=EVICTION_THRESHOLD_PATTERN)]] = None
+    kubelet_eviction_hard_nodefs_inodes_free: Annotated[
+        str, StringConstraints(pattern=EVICTION_THRESHOLD_PATTERN)]
+
+    kubelet_auto_memory_available_min: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
+    kubelet_auto_memory_available_max: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
+    kubelet_auto_nodefs_available_min: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
+    kubelet_auto_nodefs_available_max: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
+    kubelet_auto_ephemeral_storage_min: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
+    kubelet_auto_ephemeral_storage_max: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
+
+    kubelet_ki_cp_extra_cpu: Annotated[str, StringConstraints(pattern=CPU_QUANTITY_PATTERN)]
+    kubelet_ki_cp_extra_memory: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
 
 
 class ConstantVarsModel(BaseModel):
@@ -228,6 +293,37 @@ class HostvarsError:
 class ARecordModel(BaseModel):
     name: str
     ip: IPv4Address
+
+
+class KubeletReservedModel(BaseModel):
+    model_config = ConfigDict(regex_engine='python-re', populate_by_name=True)
+
+    cpu: Annotated[str, StringConstraints(pattern=CPU_QUANTITY_PATTERN)]
+    memory: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
+    ephemeral_storage: Annotated[
+        str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)] = Field(alias="ephemeral-storage")
+    pid: PositiveInt
+
+
+class KubeletEvictionHardModel(BaseModel):
+    model_config = ConfigDict(regex_engine='python-re', populate_by_name=True)
+
+    memory_available: Annotated[
+        str, StringConstraints(pattern=EVICTION_THRESHOLD_PATTERN)] = Field(alias="memory.available")
+    nodefs_available: Annotated[
+        str, StringConstraints(pattern=EVICTION_THRESHOLD_PATTERN)] = Field(alias="nodefs.available")
+    imagefs_available: Annotated[
+        str, StringConstraints(pattern=EVICTION_THRESHOLD_PATTERN)] = Field(alias="imagefs.available")
+    nodefs_inodes_free: Annotated[
+        str, StringConstraints(pattern=EVICTION_THRESHOLD_PATTERN)] = Field(alias="nodefs.inodesFree")
+
+
+class KubeletReservationsModel(BaseModel):
+    model_config = ConfigDict(regex_engine='python-re')
+
+    system_reserved: KubeletReservedModel
+    kube_reserved: KubeletReservedModel
+    eviction_hard: KubeletEvictionHardModel
 
 
 main()

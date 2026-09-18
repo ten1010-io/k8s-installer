@@ -114,6 +114,7 @@ main() {
               -o "$ki_etc_kubeadm_path""/kubeadm-join-config.yml" \
               "$SCRIPT_DIR_PATH"/templates/kubeadm-join-config.yml.j2 \
               "$vars_path"
+  create_kubelet_config_patch_file
   kubeadm join --config "$ki_etc_kubeadm_path""/kubeadm-join-config.yml"
 
   if [[ $k8s_cp == "true" ]]; then
@@ -121,6 +122,19 @@ main() {
     cp -f /etc/kubernetes/admin.conf $HOME/.kube/config
     chown $(id -u):$(id -g) $HOME/.kube/config
   fi
+
+  return 0
+}
+
+# This node downloads the cluster wide KubeletConfiguration from the
+# kubelet-config ConfigMap. The reservations are calculated per node, so the
+# baseline is patched with the values calculated for the capacity of this node
+create_kubelet_config_patch_file() {
+  mkdir -p "$ki_etc_kubeadm_path""/patches"
+  $jinja2_cmd --format yaml \
+              -o "$ki_etc_kubeadm_path""/patches/kubeletconfiguration+merge.yaml" \
+              "$SCRIPT_DIR_PATH"/templates/kubeadm-kubelet-config.yml.j2 \
+              "$vars_path"
 
   return 0
 }

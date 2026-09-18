@@ -105,9 +105,13 @@ main() {
 
   $jinja2_cmd --format yaml -o "$ki_etc_kubeadm_path""/kubeadm-cluster-config.yml" "$SCRIPT_DIR_PATH"/templates/kubeadm-cluster-config.yml.j2 "$vars_path"
   $jinja2_cmd -D node_name="$node_name" --format yaml -o "$ki_etc_kubeadm_path""/kubeadm-init-config.yml" "$SCRIPT_DIR_PATH"/templates/kubeadm-init-config.yml.j2 "$vars_path"
+  create_kubelet_config_file
+  create_kubelet_config_patch_file
   cat "$ki_etc_kubeadm_path/kubeadm-cluster-config.yml" > "$ki_tmp_root_path/kubeadm-config.yml"
   echo "---" >> "$ki_tmp_root_path/kubeadm-config.yml"
   cat "$ki_etc_kubeadm_path/kubeadm-init-config.yml" >> "$ki_tmp_root_path/kubeadm-config.yml"
+  echo "---" >> "$ki_tmp_root_path/kubeadm-config.yml"
+  cat "$ki_etc_kubeadm_path/kubeadm-kubelet-config.yml" >> "$ki_tmp_root_path/kubeadm-config.yml"
 
   kubeadm init --upload-certs --config "$ki_tmp_root_path/kubeadm-config.yml"
   rm -f "$ki_tmp_root_path/kubeadm-config.yml"
@@ -115,6 +119,33 @@ main() {
   mkdir -p $HOME/.kube
   cp -f /etc/kubernetes/admin.conf $HOME/.kube/config
   chown $(id -u):$(id -g) $HOME/.kube/config
+
+  return 0
+}
+
+# Becomes the cluster wide baseline. kubeadm uploads it to the kubelet-config
+# ConfigMap in the kube-system namespace, and every node joining later downloads
+# it to /var/lib/kubelet/config.yaml
+create_kubelet_config_file() {
+  $jinja2_cmd --format yaml \
+              -o "$ki_etc_kubeadm_path""/kubeadm-kubelet-config.yml" \
+              "$SCRIPT_DIR_PATH"/templates/kubeadm-kubelet-config.yml.j2 \
+              "$vars_path"
+
+  return 0
+}
+
+# The reservations are calculated per node, so each node patches the baseline
+# with the values calculated for its own capacity. On this node the patch is
+# identical to the baseline, but it is written anyway so that the patch
+# directory referenced by kubeadm-init-config.yml is never empty and so that the
+# init path and the join path stay the same
+create_kubelet_config_patch_file() {
+  mkdir -p "$ki_etc_kubeadm_path""/patches"
+  $jinja2_cmd --format yaml \
+              -o "$ki_etc_kubeadm_path""/patches/kubeletconfiguration+merge.yaml" \
+              "$SCRIPT_DIR_PATH"/templates/kubeadm-kubelet-config.yml.j2 \
+              "$vars_path"
 
   return 0
 }

@@ -11,6 +11,8 @@ nodeRegistration:
   kubeletExtraArgs:
     - name: node-ip
       value: {{ internal_network_interfaces[0]['ip'] }}
+patches:
+  directory: {{ ki_etc_kubeadm_path }}/patches
 {%- if k8s_cp | lower == "true" %}
 controlPlane:
   localAPIEndpoint:

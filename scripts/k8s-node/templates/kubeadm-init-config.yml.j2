@@ -8,3 +8,5 @@ nodeRegistration:
 localAPIEndpoint:
   advertiseAddress: {{ internal_network_interfaces[0]['ip'] }}
   bindPort: {{ k8s_apiserver_port }}
+patches:
+  directory: {{ ki_etc_kubeadm_path }}/patches
