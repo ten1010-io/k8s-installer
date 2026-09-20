@@ -59,15 +59,28 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
-DOWNLOAD_URL="https://k8s-installer-bin.s3.ap-northeast-2.amazonaws.com/1.0.x/bundle.tgz"
+DOWNLOAD_BASE_URL="https://k8s-installer-bin.s3.ap-northeast-2.amazonaws.com"
 
 KI_ROOT_PATH=$SCRIPT_DIR_PATH
 BUNDLE_PATH="$KI_ROOT_PATH"/bundle
 BUNDLE_ARCHIVE_PATH="$KI_ROOT_PATH"/bundle.tgz
+RELEASE_META_PATH="$KI_ROOT_PATH"/release.yml
+
+version=""
+download_url=""
 
 main() {
   [[ -e $BUNDLE_PATH && -d $BUNDLE_PATH ]] && die "[ERROR] Directory \"bundle\" already exists"
   [[ -e $BUNDLE_PATH ]] && die "[ERROR] File of which name is \"bundle\" exists"
+  [[ ! -f $RELEASE_META_PATH ]] && die "[ERROR] No such file or directory of which path is \"$RELEASE_META_PATH\""
+
+  # yq is in the bundle this is about to download, so the one key needed here is
+  # read the way the node scripts read their vars file
+  version=$(grep -oP '^version: "\K[^"]+' < "$RELEASE_META_PATH")
+  [[ -z $version ]] && die "[ERROR] File[\"$RELEASE_META_PATH\"] has no version"
+  download_url="$DOWNLOAD_BASE_URL/$version/bundle.tgz"
+
+  msg "[INFO] Downloading the bundle of release[\"$version\"] from \"$download_url\""
 
   download_bundle_tgz
   tar xzfv "$BUNDLE_ARCHIVE_PATH" --directory "$KI_ROOT_PATH"
@@ -92,12 +105,12 @@ download_bundle_tgz() {
   has_wget=$(has_command wget)
 
   if [[ "${has_curl}" = "true" ]]; then
-    curl -L "$DOWNLOAD_URL" -o "$BUNDLE_ARCHIVE_PATH"
+    curl -fL "$download_url" -o "$BUNDLE_ARCHIVE_PATH"
     return 0
   fi
 
   if [[ "${has_wget}" = "true" ]]; then
-    wget "$DOWNLOAD_URL" -O "$BUNDLE_ARCHIVE_PATH"
+    wget "$download_url" -O "$BUNDLE_ARCHIVE_PATH"
     return 0
   fi
 
