@@ -1,0 +1,73 @@
+# Works out what changed since each node was last built or updated, and decides
+# whether any of it can be applied at all. Nothing is applied here: a run that
+# is going to refuse has to refuse before it has changed anything, or it leaves
+# the cluster holding half of a change nobody asked for
+- hosts: all:!localhost:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: "Read file[\"{{ ki_etc_applied_vars_path }}\"]"
+      shell: "sudo cat {{ ki_etc_applied_vars_path }} 2>/dev/null || true"
+      register: shell_result
+
+    - name: Set_fact variable[\"ki_applied_vars\"]
+      set_fact:
+        ki_applied_vars: "{{ shell_result.stdout | from_yaml | default({}, true) }}"
+
+    - name: Remove temporary variable[\"shell_result\"]
+      set_fact:
+        shell_result: null
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    tmp_input_path: "{{ ki_tmp_root_path }}/tmp-input.yml"
+  tasks:
+    - name: "Create output directory[\"{{ ki_tmp_root_path }}\"]"
+      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+    - name: Write temporary file for cli input
+      copy:
+        content: "{{ hostvars | to_yaml }}"
+        dest: "{{ tmp_input_path }}"
+      become: yes
+
+    - name: Execute diff-applied-vars.py
+      shell: "sudo {{ ansible_python_interpreter }} {{ ki_opt_scripts_path }}/preflight/diff-applied-vars.py < {{ tmp_input_path }}"
+      register: shell_result
+
+    - name: Remove temporary file for cli input
+      shell: "sudo rm {{ tmp_input_path }}"
+
+    - name: Set_fact variable[\"ki_var_changes\"]
+      set_fact:
+        ki_var_changes: "{{ (shell_result.stdout | from_yaml)['changes'] }}"
+        ki_baseline_ihs: "{{ (shell_result.stdout | from_yaml)['baseline_ihs'] }}"
+        ki_var_change_summary: "{{ (shell_result.stdout | from_yaml)['summary'] }}"
+
+    - name: Remove temporary variable[\"shell_result\"]
+      set_fact:
+        shell_result: null
+
+    # A cluster built before anything was recorded has nothing to compare
+    # against. What it has now becomes the starting point, and saying so is the
+    # difference between a first run that looks like it did nothing and one that
+    # is understood to have set the baseline
+    - name: Report the nodes with nothing recorded yet
+      debug:
+        msg: >-
+          Node[{{ ki_baseline_ihs | join(", ") }}] has no record of what it was built with,
+          so this run takes the values it has now as the starting point.
+          Changes to them are reported from the next run on
+      when: ki_baseline_ihs | length > 0
+
+    - name: Report what changed
+      debug:
+        msg: "{{ ki_var_change_summary }}"
+      when: ki_var_change_summary | length > 0
+
+    - name: Report that nothing changed
+      debug:
+        msg: "No variable changed since these nodes were last built or updated"
+      when: ki_var_change_summary | length == 0

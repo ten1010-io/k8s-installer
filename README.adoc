@@ -134,6 +134,7 @@ ansible-playbook -i inventory.yml playbooks/upgrade-k8s-installer.yml
 ----
 
 NOTE: 클러스터 업그레이드(`upgrade-cluster.yml`)와 인증서 갱신(`renew-certs.yml`)은 아직 제공되지 않습니다.
+설정 변경은 아래 <<설정 변경 적용>> 을 보세요.
 
 `inventory.yml` 도 보존되므로 새 릴리스가 추가한 그룹이 빠져 있을 수 있습니다. 마찬가지로
 플레이북이 알려주고 중단합니다. 접속되지 않는 노드를 선언하는 `broken_node` 그룹이 여기
@@ -143,6 +144,26 @@ NOTE: 클러스터 업그레이드(`upgrade-cluster.yml`)와 인증서 갱신(`r
 어느 변수를 지워야 하는지 알려주고 중단하므로, 안내대로 지우고 다시 실행하세요.
 `containerd_root_path` 가 여기 해당합니다. 컨테이너 런타임 루트는 더 이상 설정할 수 없고,
 루트 디스크에서 떼어내려면 위의 `ephemeral_storage_device` 를 씁니다.
+
+=== 설정 변경 적용
+
+`vars.yml` 이나 `inventory.yml` 을 고친 뒤 이미 서 있는 클러스터에 반영합니다.
+
+[source,shell]
+----
+source /opt/k8s-installer/venv/bin/activate
+cd /opt/k8s-installer/ansible
+ansible-playbook -i inventory.yml playbooks/update-cluster.yml
+----
+
+각 노드가 마지막으로 무엇을 가지고 만들어졌는지 기록해 두므로, 무엇이 달라졌는지 스스로
+알아내고 변수마다 정해진 방법으로 적용합니다. 바꿀 수 없는 변수나 노드를 다시 만들어야 하는
+변수가 섞여 있으면 **아무것도 적용하지 않고** 어느 노드의 어떤 변수가 문제인지 알려준 뒤
+멈춥니다. 적용 방법은 `ansible/group_vars/all/constant-vars.yml` 의 `ki_var_classes` 에
+변수별로 적혀 있고, 자세한 근거는 `docs/impl-notes.adoc` 에 있습니다.
+
+NOTE: 이 릴리스 이전에 만들어진 클러스터에는 기록이 없습니다. 첫 실행은 현재 값을 기준점으로
+삼고 그렇게 알려 주며, 변경 감지는 그 다음 실행부터입니다.
 
 === 스냅샷 릴리스
 
