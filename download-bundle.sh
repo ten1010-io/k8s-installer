@@ -67,6 +67,7 @@ BUNDLE_ARCHIVE_PATH="$KI_ROOT_PATH"/bundle.tgz
 RELEASE_META_PATH="$KI_ROOT_PATH"/release.yml
 
 version=""
+bundle_version=""
 download_url=""
 
 main() {
@@ -78,13 +79,31 @@ main() {
   # read the way the node scripts read their vars file
   version=$(grep -oP '^version: "\K[^"]+' < "$RELEASE_META_PATH")
   [[ -z $version ]] && die "[ERROR] File[\"$RELEASE_META_PATH\"] has no version"
-  download_url="$DOWNLOAD_BASE_URL/$version/bundle.tgz"
+  bundle_version=$(get_bundle_version "$version")
+  download_url="$DOWNLOAD_BASE_URL/$bundle_version/bundle.tgz"
 
-  msg "[INFO] Downloading the bundle of release[\"$version\"] from \"$download_url\""
+  msg "[INFO] Downloading the bundle[\"$bundle_version\"] of release[\"$version\"] from \"$download_url\""
 
   download_bundle_tgz
   tar xzfv "$BUNDLE_ARCHIVE_PATH" --directory "$KI_ROOT_PATH"
   rm -f "$BUNDLE_ARCHIVE_PATH"
+}
+
+# A patch release exists to fix what is in this repository, and republishing a
+# gigabyte of packages and images to carry a corrected shell script is waste. The
+# releases of one minor line therefore share one bundle, which in turn means the
+# bundle of a minor line can never change: anything that needs a different package
+# or image is a minor bump rather than a patch. See release.yml
+#
+# Snapshots are no exception. A patch being developed reads the bundle its line was
+# released with and has nothing to publish, and a minor being developed reads a line
+# that is not in the field yet
+get_bundle_version() {
+  local version=$1
+
+  echo "${version%.*}.x"
+
+  return 0
 }
 
 has_command() {

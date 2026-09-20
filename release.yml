@@ -22,6 +22,24 @@
 # Upgrading a release to a snapshot is allowed, because it is the only way to try
 # an upgrade path out before the release is cut. The cluster it produces is a
 # development cluster and can only be rebuilt from there.
+#
+# The bundle is served per minor line rather than per version. 1.2.0 and 1.2.7
+# are both fetched from 1.2.x, so a patch that fixes what is in this repository
+# does not republish a gigabyte of packages and images to carry it. The cost is a
+# rule that has to be kept by hand:
+#
+#   *** the bundle of a minor line never changes once it is published ***
+#
+# A different package, a different image, a different binary: all of them are a
+# minor bump, never a patch. Republishing the bundle of a line already in the
+# field would make two clusters reporting the same version hold different things,
+# which is the ambiguity this whole scheme exists to avoid.
+#
+# Snapshots follow the same mapping. A patch under development reads the bundle its
+# line was released with and has nothing of its own to publish, and a minor under
+# development reads a line that is not in the field yet. What keeps a published
+# bundle from being overwritten is the rule above and the permissions on the bucket,
+# not the name of the object, since the name only decides what is downloaded.
 version: "1.0.0-SNAPSHOT"
 
 # Releases that upgrade.sh and upgrade-k8s-installer.yml accept as a starting
