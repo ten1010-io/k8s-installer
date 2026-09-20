@@ -73,6 +73,10 @@ UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
 
+SVC_NAME=rpc-statd
+DROP_IN_DIR_PATH=/etc/systemd/system/rpc-statd.service.d
+DROP_IN_PATH="$DROP_IN_DIR_PATH"/override.conf
+
 ki_opt_root_path=""
 ki_opt_scripts_path=""
 ki_opt_bin_path=""
@@ -85,9 +89,6 @@ os_distribution=""
 os_major_version=""
 os_minor_version=""
 
-docker_root_path=""
-containerd_root_path=""
-
 main() {
   require_file_exists "$vars_path"
   import_ki_opt_vars
@@ -96,140 +97,59 @@ main() {
   validate_ki_opt_directory
   get_os_version
 
-  docker_root_path=$($yq_cmd '.docker_root_path' < "$vars_path")
-  containerd_root_path=$($yq_cmd '.containerd_root_path' < "$vars_path")
+  require_svc_installed
 
   if [[ $os_distribution = "ubuntu" && $os_major_version = "22.04" && $os_minor_version -le "$UBUNTU2204_SUPPORTED_MINOR_VERSION" ]]; then
-    ubuntu2204_uninstall
+    ubuntu2204_setup
     exit 0
   fi
 
   if [[ $os_distribution = "ubuntu" && $os_major_version = "24.04" && $os_minor_version -le "$UBUNTU2404_SUPPORTED_MINOR_VERSION" ]]; then
-    ubuntu2404_uninstall
+    ubuntu2404_setup
     exit 0
   fi
 
   if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
-    rhel8_uninstall
+    rhel8_setup
     exit 0
   fi
 
   die "[ERROR] OS not supported\n$os_info"
 }
 
-ubuntu2204_uninstall() {
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists kubelet) = "true" ]]; then
-    apt remove -y --purge --allow-change-held-packages \
-      kubeadm \
-      kubectl \
-      kubelet \
-      cri-tools \
-      kubernetes-cni
-  fi
+ubuntu2204_setup() {
+  create_drop_in_file
+}
 
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists docker) = "true" ]]; then
-    if dpkg-query -W nvidia-container-toolkit &>/dev/null; then
-      apt remove -y --purge --allow-change-held-packages \
-        nvidia-container-toolkit \
-        nvidia-container-toolkit-base \
-        libnvidia-container1 \
-        libnvidia-container-tools
-    fi
+ubuntu2404_setup() {
+  create_drop_in_file
+}
 
-    apt remove -y --purge --allow-change-held-packages \
-      docker-ce \
-      docker-ce-cli \
-      docker-buildx-plugin \
-      docker-compose-plugin
-  fi
-  rm -f /etc/docker/daemon.json
-  rm -rf "$docker_root_path"
+rhel8_setup() {
+  create_drop_in_file
+}
 
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists containerd) = "true" ]]; then
-    apt remove -y --purge --allow-change-held-packages \
-      containerd.io
-  fi
-  rm -rf "$containerd_root_path"
-
-  systemctl daemon-reload
+# nfs-common and nfs-utils ship rpc-statd as a static unit, which carries no
+# [Install] section and so can not be enabled. The drop-in supplies one, so that
+# the nfs lock manager comes up with the node rather than only when something
+# happens to mount an nfs share
+#
+# The daemon reload comes before the enable, so that systemd has read the drop-in
+# by the time it looks for the [Install] section
+create_drop_in_file() {
+  mkdir -p "$DROP_IN_DIR_PATH"
+  cp -f "$SCRIPT_DIR_PATH"/templates/override.conf "$DROP_IN_PATH"
+  "$ki_opt_scripts_path"/systemctl.sh reload
+  "$ki_opt_scripts_path"/systemctl.sh enable "$SVC_NAME"
 
   return 0
 }
 
-ubuntu2404_uninstall() {
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists kubelet) = "true" ]]; then
-    apt remove -y --purge --allow-change-held-packages \
-      kubeadm \
-      kubectl \
-      kubelet \
-      cri-tools \
-      kubernetes-cni
-  fi
+require_svc_installed() {
+  local result
+  result=$("$ki_opt_scripts_path"/systemctl.sh exists "$SVC_NAME")
 
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists docker) = "true" ]]; then
-    if dpkg-query -W nvidia-container-toolkit &>/dev/null; then
-      apt remove -y --purge --allow-change-held-packages \
-        nvidia-container-toolkit \
-        nvidia-container-toolkit-base \
-        libnvidia-container1 \
-        libnvidia-container-tools
-    fi
-
-    apt remove -y --purge --allow-change-held-packages \
-      docker-ce \
-      docker-ce-cli \
-      docker-buildx-plugin \
-      docker-compose-plugin
-  fi
-  rm -f /etc/docker/daemon.json
-  rm -rf "$docker_root_path"
-
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists containerd) = "true" ]]; then
-    apt remove -y --purge --allow-change-held-packages \
-      containerd.io
-  fi
-  rm -rf "$containerd_root_path"
-
-  systemctl daemon-reload
-
-  return 0
-}
-
-rhel8_uninstall() {
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists kubelet) = "true" ]]; then
-    yum erase -y --disableplugin subscription-manager \
-      kubeadm \
-      kubectl \
-      kubelet \
-      cri-tools \
-      kubernetes-cni
-  fi
-
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists docker) = "true" ]]; then
-    if rpm -q nvidia-container-toolkit &>/dev/null; then
-      yum erase -y --disableplugin subscription-manager \
-        nvidia-container-toolkit \
-        nvidia-container-toolkit-base \
-        libnvidia-container1 \
-        libnvidia-container-tools
-    fi
-
-    yum erase -y --disableplugin subscription-manager \
-      docker-ce \
-      docker-ce-cli \
-      docker-buildx-plugin \
-      docker-compose-plugin
-  fi
-  rm -f /etc/docker/daemon.json
-  rm -rf "$docker_root_path"
-
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists containerd) = "true" ]]; then
-    yum erase -y --disableplugin subscription-manager \
-      containerd.io
-  fi
-  rm -rf "$containerd_root_path"
-
-  systemctl daemon-reload
+  [[ $result = "false" ]] && die "[ERROR] Service[\"$SVC_NAME\"] not installed. execute \"install-packages.sh\" first"
 
   return 0
 }

@@ -21,6 +21,10 @@
 
 - import_playbook: tasks/install-packages.yml
 
+- import_playbook: tasks/setup-nfs-client.yml
+
+- import_playbook: tasks/setup-crictl.yml
+
 - import_playbook: tasks/install-programs.yml
 
 - import_playbook: tasks/setup-containerd.yml

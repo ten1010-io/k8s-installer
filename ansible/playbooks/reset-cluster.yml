@@ -26,6 +26,10 @@
 
 - import_playbook: tasks/uninstall-programs.yml
 
+- import_playbook: tasks/reset-crictl.yml
+
+- import_playbook: tasks/reset-nfs-client.yml
+
 - import_playbook: tasks/uninstall-packages.yml
 
 - import_playbook: tasks/reset-ki-ca-crt.yml

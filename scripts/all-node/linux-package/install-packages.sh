@@ -134,9 +134,6 @@ ubuntu2204_install() {
   fi
 
   dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu22.04/nfs-common
-  mkdir -p /etc/systemd/system/rpc-statd.service.d
-  cp -f "$SCRIPT_DIR_PATH/templates/override.conf" /etc/systemd/system/rpc-statd.service.d/
-  "$ki_opt_scripts_path/systemctl.sh" enable rpc-statd
 
   dpkg -R -i --force-confnew "$ki_opt_bin_path"/linux-packages/ubuntu22.04/systemd
 
@@ -153,7 +150,6 @@ ubuntu2204_install() {
   dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu22.04/ethtool
   dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu22.04/socat
   dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu22.04/k8s
-  cp -f "$SCRIPT_DIR_PATH/templates/crictl.yaml" /etc/
 
   export DEBIAN_FRONTEND=""
 
@@ -190,9 +186,6 @@ ubuntu2404_install() {
   fi
 
   dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu24.04/nfs-common
-  mkdir -p /etc/systemd/system/rpc-statd.service.d
-  cp -f "$SCRIPT_DIR_PATH/templates/override.conf" /etc/systemd/system/rpc-statd.service.d/
-  "$ki_opt_scripts_path/systemctl.sh" enable rpc-statd
 
   dpkg -R -i --force-confnew "$ki_opt_bin_path"/linux-packages/ubuntu24.04/systemd
   dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu24.04/dbus
@@ -208,7 +201,6 @@ ubuntu2404_install() {
 
   dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu24.04/ethtool
   dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu24.04/k8s
-  cp -f "$SCRIPT_DIR_PATH/templates/crictl.yaml" /etc/
 
   export DEBIAN_FRONTEND=""
 
@@ -240,9 +232,6 @@ rhel8_install() {
     systemd-container
 
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/nfs-utils/*.rpm
-  mkdir -p /etc/systemd/system/rpc-statd.service.d
-  cp -f "$SCRIPT_DIR_PATH/templates/override.conf" /etc/systemd/system/rpc-statd.service.d/
-  "$ki_opt_scripts_path/systemctl.sh" enable rpc-statd
 
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/p11-kit/*.rpm
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/autogen-libopts/*.rpm
@@ -292,7 +281,6 @@ rhel8_install() {
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/iproute/*.rpm
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/socat/*.rpm
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/k8s/*.rpm
-  cp -f "$SCRIPT_DIR_PATH/templates/crictl.yaml" /etc/
 
   "$ki_opt_scripts_path/systemctl.sh" reload
 

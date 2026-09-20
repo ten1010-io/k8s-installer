@@ -73,6 +73,8 @@ UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
 
+CRICTL_CONF_PATH=/etc/crictl.yaml
+
 ki_opt_root_path=""
 ki_opt_scripts_path=""
 ki_opt_bin_path=""
@@ -85,9 +87,6 @@ os_distribution=""
 os_major_version=""
 os_minor_version=""
 
-docker_root_path=""
-containerd_root_path=""
-
 main() {
   require_file_exists "$vars_path"
   import_ki_opt_vars
@@ -96,140 +95,38 @@ main() {
   validate_ki_opt_directory
   get_os_version
 
-  docker_root_path=$($yq_cmd '.docker_root_path' < "$vars_path")
-  containerd_root_path=$($yq_cmd '.containerd_root_path' < "$vars_path")
-
   if [[ $os_distribution = "ubuntu" && $os_major_version = "22.04" && $os_minor_version -le "$UBUNTU2204_SUPPORTED_MINOR_VERSION" ]]; then
-    ubuntu2204_uninstall
+    ubuntu2204_reset
     exit 0
   fi
 
   if [[ $os_distribution = "ubuntu" && $os_major_version = "24.04" && $os_minor_version -le "$UBUNTU2404_SUPPORTED_MINOR_VERSION" ]]; then
-    ubuntu2404_uninstall
+    ubuntu2404_reset
     exit 0
   fi
 
   if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
-    rhel8_uninstall
+    rhel8_reset
     exit 0
   fi
 
   die "[ERROR] OS not supported\n$os_info"
 }
 
-ubuntu2204_uninstall() {
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists kubelet) = "true" ]]; then
-    apt remove -y --purge --allow-change-held-packages \
-      kubeadm \
-      kubectl \
-      kubelet \
-      cri-tools \
-      kubernetes-cni
-  fi
-
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists docker) = "true" ]]; then
-    if dpkg-query -W nvidia-container-toolkit &>/dev/null; then
-      apt remove -y --purge --allow-change-held-packages \
-        nvidia-container-toolkit \
-        nvidia-container-toolkit-base \
-        libnvidia-container1 \
-        libnvidia-container-tools
-    fi
-
-    apt remove -y --purge --allow-change-held-packages \
-      docker-ce \
-      docker-ce-cli \
-      docker-buildx-plugin \
-      docker-compose-plugin
-  fi
-  rm -f /etc/docker/daemon.json
-  rm -rf "$docker_root_path"
-
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists containerd) = "true" ]]; then
-    apt remove -y --purge --allow-change-held-packages \
-      containerd.io
-  fi
-  rm -rf "$containerd_root_path"
-
-  systemctl daemon-reload
-
-  return 0
+ubuntu2204_reset() {
+  delete_crictl_conf_file
 }
 
-ubuntu2404_uninstall() {
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists kubelet) = "true" ]]; then
-    apt remove -y --purge --allow-change-held-packages \
-      kubeadm \
-      kubectl \
-      kubelet \
-      cri-tools \
-      kubernetes-cni
-  fi
-
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists docker) = "true" ]]; then
-    if dpkg-query -W nvidia-container-toolkit &>/dev/null; then
-      apt remove -y --purge --allow-change-held-packages \
-        nvidia-container-toolkit \
-        nvidia-container-toolkit-base \
-        libnvidia-container1 \
-        libnvidia-container-tools
-    fi
-
-    apt remove -y --purge --allow-change-held-packages \
-      docker-ce \
-      docker-ce-cli \
-      docker-buildx-plugin \
-      docker-compose-plugin
-  fi
-  rm -f /etc/docker/daemon.json
-  rm -rf "$docker_root_path"
-
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists containerd) = "true" ]]; then
-    apt remove -y --purge --allow-change-held-packages \
-      containerd.io
-  fi
-  rm -rf "$containerd_root_path"
-
-  systemctl daemon-reload
-
-  return 0
+ubuntu2404_reset() {
+  delete_crictl_conf_file
 }
 
-rhel8_uninstall() {
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists kubelet) = "true" ]]; then
-    yum erase -y --disableplugin subscription-manager \
-      kubeadm \
-      kubectl \
-      kubelet \
-      cri-tools \
-      kubernetes-cni
-  fi
+rhel8_reset() {
+  delete_crictl_conf_file
+}
 
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists docker) = "true" ]]; then
-    if rpm -q nvidia-container-toolkit &>/dev/null; then
-      yum erase -y --disableplugin subscription-manager \
-        nvidia-container-toolkit \
-        nvidia-container-toolkit-base \
-        libnvidia-container1 \
-        libnvidia-container-tools
-    fi
-
-    yum erase -y --disableplugin subscription-manager \
-      docker-ce \
-      docker-ce-cli \
-      docker-buildx-plugin \
-      docker-compose-plugin
-  fi
-  rm -f /etc/docker/daemon.json
-  rm -rf "$docker_root_path"
-
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists containerd) = "true" ]]; then
-    yum erase -y --disableplugin subscription-manager \
-      containerd.io
-  fi
-  rm -rf "$containerd_root_path"
-
-  systemctl daemon-reload
+delete_crictl_conf_file() {
+  rm -f "$CRICTL_CONF_PATH"
 
   return 0
 }
