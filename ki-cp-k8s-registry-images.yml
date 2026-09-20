@@ -1,0 +1,19 @@
+# The images the ki-cp-k8s-registry serves, which are the ones kubeadm asks for.
+# The name of this file is the name of the registry, and build-bundle-images.sh
+# puts what it declares under a bundle directory named after it in turn, so a
+# registry is added by adding a file rather than by editing a shared list.
+images:
+  - registry.k8s.io/kube-apiserver:v1.34.1
+  - registry.k8s.io/kube-controller-manager:v1.34.1
+  - registry.k8s.io/kube-scheduler:v1.34.1
+  - registry.k8s.io/kube-proxy:v1.34.1
+  - registry.k8s.io/coredns/coredns:v1.12.1
+  - registry.k8s.io/pause:3.10.1
+  - registry.k8s.io/etcd:3.6.4-0
+
+# An image whose repository under the registry has to differ from the one it is
+# pulled from. kubeadm looks for coredns directly under imageRepository rather
+# than under the coredns path it upstream sits in
+mappings:
+  - from: registry.k8s.io/coredns/coredns:v1.12.1
+    to: coredns:v1.12.1
