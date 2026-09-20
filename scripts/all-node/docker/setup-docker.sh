@@ -69,6 +69,9 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
+DROP_IN_DIR_PATH=/etc/systemd/system/docker.service.d
+DROP_IN_PATH="$DROP_IN_DIR_PATH"/override.conf
+
 ki_opt_root_path=""
 ki_opt_scripts_path=""
 ki_opt_bin_path=""
@@ -93,7 +96,29 @@ main() {
   [[ $nvidia_gpu = "true" ]] && require_nvidia_gpu_exists
 
   $jinja2_cmd --format yaml -o "/etc/docker/daemon.json" "$SCRIPT_DIR_PATH"/templates/daemon.json.j2 "$vars_path"
+  create_drop_in_file
   "$ki_opt_scripts_path"/systemctl.sh enable docker
+
+  return 0
+}
+
+# docker.service comes with Restart=always, but also with a start limit of 3
+# attempts and RestartSec=2, which is six seconds of grace. Anything dockerd
+# waits on that is not ready yet, containerd among them, spends that budget and
+# leaves the unit failed for good, with the dns server, the ntp server, the
+# apiserver lb and the registry of a ki cp node inside it
+#
+# The window is widened rather than removed. Thirty attempts over five minutes
+# covers a dependency that is merely slow, while a dockerd that can not start at
+# all still ends up in failed, where it can be seen, instead of restarting out of
+# sight forever
+#
+# A drop-in rather than an edit of the unit, so that it survives a docker package
+# upgrade, which overwrites everything under /usr/lib
+create_drop_in_file() {
+  mkdir -p "$DROP_IN_DIR_PATH"
+  cp -f "$SCRIPT_DIR_PATH"/templates/override.conf "$DROP_IN_PATH"
+  "$ki_opt_scripts_path"/systemctl.sh reload
 
   return 0
 }

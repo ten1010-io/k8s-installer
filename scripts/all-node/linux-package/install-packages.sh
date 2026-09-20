@@ -271,8 +271,6 @@ rhel8_install() {
   fi
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/ebtables/*.rpm
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/docker/*.rpm
-  sed -i '/StartLimitBurst=/ s/^StartLimitBurst=.\+$/StartLimitBurst=0/g' /usr/lib/systemd/system/docker.service
-  sed -i '/StartLimitInterval=/ s/^StartLimitInterval=.\+$/StartLimitInterval=0/g' /usr/lib/systemd/system/docker.service
 
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/nvidia-container-toolkit/*.rpm
 

@@ -69,6 +69,9 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
+DROP_IN_DIR_PATH=/etc/systemd/system/docker.service.d
+DROP_IN_PATH="$DROP_IN_DIR_PATH"/override.conf
+
 ki_opt_root_path=""
 ki_opt_scripts_path=""
 ki_opt_bin_path=""
@@ -89,7 +92,19 @@ main() {
     "$ki_opt_scripts_path"/systemctl.sh disable docker.socket
     rm -f /etc/docker/daemon.json
   fi
+  delete_drop_in_file
   "$ki_opt_scripts_path/flush-iptables.sh"
+
+  return 0
+}
+
+# Taken away whether or not docker is still installed, so that the start limit of
+# the unit is what the package says again. The directory goes as well, so that a
+# node that has been reset keeps no trace of the installer
+delete_drop_in_file() {
+  rm -f "$DROP_IN_PATH"
+  [[ -d $DROP_IN_DIR_PATH ]] && rmdir --ignore-fail-on-non-empty "$DROP_IN_DIR_PATH"
+  "$ki_opt_scripts_path"/systemctl.sh reload
 
   return 0
 }
