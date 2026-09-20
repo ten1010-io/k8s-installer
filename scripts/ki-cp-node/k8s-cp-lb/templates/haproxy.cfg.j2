@@ -1,6 +1,13 @@
 global
     maxconn 5000
     log stdout format raw local0
+    # Taking a backend out before its apiserver is stopped is the only way to do
+    # that without failing the requests in flight, and this is what lb-admin.sh
+    # says it through. A unix socket rather than a port, so that nothing outside
+    # the container can reach an api that takes no credentials and can disable a
+    # backend. lb-admin.sh gets to it with the socat the image carries
+    stats socket {{ ki_cp_k8s_cp_lb_admin_socket_path }} mode 660 level admin
+    stats timeout 30s
 
 defaults
     log                     global

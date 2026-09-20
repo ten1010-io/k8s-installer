@@ -141,6 +141,7 @@ create_haproxy_cfg_file() {
   $yq_cmd -i ".internal_network_hosts = load(\"$vars_path\").internal_network_hosts" "$tmp_file_path"
   $yq_cmd -i ".k8s_apiserver_port = load(\"$vars_path\").k8s_apiserver_port" "$tmp_file_path"
   $yq_cmd -i ".ki_cp_k8s_cp_lb_stats_port = load(\"$vars_path\").ki_cp_k8s_cp_lb_stats_port" "$tmp_file_path"
+  $yq_cmd -i ".ki_cp_k8s_cp_lb_admin_socket_path = load(\"$vars_path\").ki_cp_k8s_cp_lb_admin_socket_path" "$tmp_file_path"
   $jinja2_cmd --format yaml -o "$svc_root_path""/haproxy.cfg" "$SCRIPT_DIR_PATH"/templates/haproxy.cfg.j2 "$tmp_file_path"
   rm "$tmp_file_path"
 }

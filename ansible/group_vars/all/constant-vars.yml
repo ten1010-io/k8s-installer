@@ -96,6 +96,11 @@ ki_cp_k8s_registry_image: "registry:2.8"
 
 ki_cp_k8s_cp_lb_port: 16443
 ki_cp_k8s_cp_lb_stats_port: 18404
+# The runtime api of the load balancer, which lb-admin.sh drains a backend
+# through. A path inside the container, under the one directory the haproxy
+# user owns, and deliberately not published: reaching it means being able to
+# talk to the docker daemon, which on these nodes is root already
+ki_cp_k8s_cp_lb_admin_socket_path: "/var/lib/haproxy/admin.sock"
 ki_cp_k8s_registry_port: 5000
 
 k8s_version: "v1.34.1"
