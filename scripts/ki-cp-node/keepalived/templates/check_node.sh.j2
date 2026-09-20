@@ -11,14 +11,15 @@ die() {
   exit "$code"
 }
 
-# What decides whether this node should keep the vip is whether it can serve the
-# control plane, which is whether its load balancer is there and still has an
-# apiserver to send work to. Pinging docker answered neither: the load balancer
-# keeps running while the daemon is down, and a node whose apiservers are all
-# gone answered that it was fine and held the vip over a control plane it could
-# not reach.
+# What decides whether this node should keep the vip is whether its load
+# balancer is running, since the vip is the address of that load balancer and of
+# the dns server and registry beside it. Pinging docker answered a different
+# question: the load balancer keeps running while the daemon is down, so a
+# daemon that died moved the vip for nothing, and a load balancer that died took
+# the vip nowhere because the daemon under it was fine.
 #
-# The load balancer answers both on one url. The connection is refused while it
-# is gone, and 503 comes back while no backend of it is usable
+# Whether an apiserver is reachable is deliberately not part of this. Every node
+# has the same backends, so none of them is a better place for the vip when they
+# are all unreachable
 curl --silent --fail --max-time 2 http://127.0.0.1:{{ ki_cp_k8s_cp_lb_stats_port }}/lb-healthz >/dev/null ||
   die "[ERROR] Health check for the apiserver load balancer failed"

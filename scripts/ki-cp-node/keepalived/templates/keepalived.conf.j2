@@ -1,11 +1,15 @@
 vrrp_script check_node {
   script "/etc/keepalived/check_node.sh"
   interval 3
-  # Enough to lose to any healthy peer. Priorities are handed out one apart, so
-  # -2 only held while a single node was failing: with two of them down the
-  # second one landed on the same priority as a healthy third and the tie was
-  # broken by address, which could leave the vip on a node that serves nothing
-  weight -50
+  # No weight on purpose. A tracked script that carries one only lowers the
+  # priority of the node, and a lower priority is something a peer acts on by
+  # preempting, which nopreempt below forbids: the two together left the vip on
+  # a node whose load balancer was stopped for fifty seconds with every request
+  # refused. Without a weight a failing script puts the instance into FAULT, the
+  # node stops advertising at all, and the peer takes over because nobody is
+  # holding the address rather than because it outranks the holder. That also
+  # retires the question of whether the priorities are far enough apart
+  #
   # Thirty seconds before the vip moves, which is slow for an outage and is
   # meant to be. Moving it kills every connection through it, on both nodes, and
   # the load balancer is restarted whenever the set of control plane nodes
@@ -15,7 +19,19 @@ vrrp_script check_node {
 }
 
 vrrp_instance VI_1 {
-  state {{ state }}
+  # BACKUP on every node, including the one the priorities mean to win. That is
+  # what nopreempt needs: keepalived ignores it on an instance that starts as
+  # MASTER. With every node starting as BACKUP the highest priority one takes
+  # the vip a few seconds after the first of them comes up, which is the same
+  # node it would have been
+  state BACKUP
+  # A node that has just recovered does not take the vip back. Taking it back
+  # kills every connection the node that is serving has, and there is nothing to
+  # win by moving it: the node holding it is serving. Without this a load
+  # balancer that came back moved the vip a second time fifteen seconds later,
+  # so one failure cost two outages instead of one. The priorities still decide
+  # who wins when nobody holds it
+  nopreempt
   interface {{ interface }}
   unicast_src_ip {{ unicast_src_ip }}
   priority {{ priority }}

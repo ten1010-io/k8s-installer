@@ -126,13 +126,12 @@ main() {
 }
 
 create_keepalived_conf_file() {
-  local state
   local interface
   local unicast_src_ip
   local priority
   local unicast_peers
 
-  state=$(get_state)
+  require_ki_cp_node "$inventory_hostname"
   interface=$(get_if "$inventory_hostname")
   unicast_src_ip=$(get_ip "$inventory_hostname")
   priority=$(get_priority "$inventory_hostname")
@@ -141,7 +140,6 @@ create_keepalived_conf_file() {
   local tmp_file_path
   tmp_file_path="$ki_tmp_root_path"/tmp-templates-vars.yml
   touch "$tmp_file_path"
-  $yq_cmd -i ".state = \"$state\"" "$tmp_file_path"
   $yq_cmd -i ".interface = \"$interface\"" "$tmp_file_path"
   $yq_cmd -i ".unicast_src_ip = \"$unicast_src_ip\"" "$tmp_file_path"
   $yq_cmd -i ".priority = \"$priority\"" "$tmp_file_path"
@@ -151,20 +149,19 @@ create_keepalived_conf_file() {
   rm "$tmp_file_path"
 }
 
-get_state() {
-  local master_node_ih
-  local backup_node_ih_list
-  local is_backup_node
-  master_node_ih=$(get_ki_cp_master_node_ih)
-  backup_node_ih_list=$(get_ki_cp_backup_node_ih_list)
-  is_backup_node=$($yq_cmd --null-input "$backup_node_ih_list | contains([\"$inventory_hostname\"])")
-  if [[ $inventory_hostname = "$master_node_ih" ]]; then
-    echo "MASTER"
-  elif [[ $is_backup_node = "true" ]]; then
-    echo "BACKUP"
-  else
-    die "[ERROR] Node[\"$inventory_hostname\"] not belong to ki_cp_node group"
-  fi
+# Every node writes the same state, so nothing here derives one any more. What
+# the derivation also did was reject a node that is not a member, and that is
+# still worth doing before the rest of the render reads the node out of a list
+# it is not in
+require_ki_cp_node() {
+  local ih=$1
+
+  local is_member
+  is_member=$($yq_cmd --null-input "$(get_ki_cp_ih_list) | contains([\"$ih\"])")
+  [[ $is_member = "true" ]] ||
+    die "[ERROR] Node[\"$ih\"] not belong to ki_cp_node group"
+
+  return 0
 }
 
 get_if() {
@@ -214,14 +211,6 @@ get_ki_cp_ih_list() {
   else
     die "[ERROR] Invalid variable[\"\target_node\"] or Invalid variable[\"\target_node_op\"]"
   fi
-}
-
-get_ki_cp_master_node_ih() {
-  $yq_cmd --null-input "$(get_ki_cp_ih_list) | .[0]"
-}
-
-get_ki_cp_backup_node_ih_list() {
-  $yq_cmd -o json --null-input "$(get_ki_cp_ih_list) | .[1:]" -o json
 }
 
 service_exists() {
