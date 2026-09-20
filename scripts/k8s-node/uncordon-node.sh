@@ -4,11 +4,13 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path] <node>
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
 --vars-path     File path
+Arguments:
+node            The name the node has in the cluster
 EOF
   exit
 }
@@ -35,6 +37,7 @@ parse_params() {
   args=("$@")
 
   [[ -z "${vars_path-}" ]] && die "[ERROR] Missing required option: --vars-path"
+  [[ ${#args[@]} -lt 1 ]] && die "[ERROR] Missing required argument: node"
 
   return 0
 }
@@ -74,45 +77,32 @@ ki_opt_scripts_path=""
 ki_opt_bundle_path=""
 ki_opt_venv_path=""
 
-yq_cmd=""
-jinja2_cmd=""
-
+# Puts a node that was drained back into service. The counterpart of
+# drain-node.sh, and the thing that has to run after whatever the node was taken
+# out for, including after a drain that failed: a drain cordons the node before
+# it starts moving pods, so a node left behind by a drain that timed out takes
+# no new work until this runs
 main() {
   require_file_exists "$vars_path"
   import_ki_opt_vars
-  setup_cmd_vars
   require_directory_exists "$ki_opt_root_path"
   validate_ki_opt_directory
 
-  local name_lines
-  local name
-  name_lines=$(kubectl get nodes -o name)
+  local knn=${args[0]}
 
-  while read -r name; do
-    [[ ! $name =~ ^node/ ]] && continue
-    msg "[INFO] Deleting k8s node[\"$name\"]"
-    delete_k8s_node "$name"
-  done <<< "$name_lines"
+  uncordon_k8s_node "$knn"
 
   return 0
 }
 
-# Not drain-node.sh, and the eviction api is bypassed on purpose. This runs when
-# the whole cluster is being torn down, so there is nowhere for a pod to move to
-# and nothing to keep available. Going through eviction would only mean waiting
-# for a PodDisruptionBudget that can never be met again, and a reset that a
-# budget can block is a reset that leaves the cluster half deleted
-delete_k8s_node() {
-  node_name=$1
+uncordon_k8s_node() {
+  local knn=$1
 
-  kubectl drain "$node_name" \
-      --grace-period 10 \
-      --timeout 300s \
-      --disable-eviction \
-      --force \
-      --delete-emptydir-data \
-      --ignore-daemonsets
-  kubectl delete "$node_name"
+  msg "[INFO] Uncordoning k8s node[\"$knn\"]"
+  kubectl uncordon "$knn" ||
+    die "[ERROR] Failed to uncordon the k8s node[\"$knn\"]"
+
+  return 0
 }
 
 import_ki_opt_vars() {
@@ -120,11 +110,6 @@ import_ki_opt_vars() {
   ki_opt_scripts_path=$(grep -oP  "^ki_opt_scripts_path: \K(.+)" < "$vars_path")
   ki_opt_bundle_path=$(grep -oP  "^ki_opt_bundle_path: \K(.+)" < "$vars_path")
   ki_opt_venv_path=$(grep -oP  "^ki_opt_venv_path: \K(.+)" < "$vars_path")
-}
-
-setup_cmd_vars() {
-  yq_cmd="$ki_opt_bundle_path/bin/yq"
-  jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
 }
 
 validate_ki_opt_directory() {

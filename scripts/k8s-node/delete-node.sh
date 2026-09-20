@@ -239,13 +239,7 @@ delete_k8s_node() {
   # which would leave the etcd member behind. Deleting the node object is what
   # releases them: the control plane cleans up the pods of a node that is gone
   if [[ $playbook != "remove-broken-node" ]]; then
-    kubectl drain "$knn" \
-        --grace-period 10 \
-        --timeout 30s \
-        --disable-eviction \
-        --force \
-        --delete-emptydir-data \
-        --ignore-daemonsets
+    "$ki_opt_scripts_path"/k8s-node/drain-node.sh --vars-path "$vars_path" "$knn"
   fi
 
   kubectl delete node "$knn"
