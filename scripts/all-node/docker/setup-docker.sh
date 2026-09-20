@@ -69,10 +69,10 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
-ki_env_path=""
-ki_env_scripts_path=""
-ki_env_bin_path=""
-ki_env_ki_venv_path=""
+ki_opt_root_path=""
+ki_opt_scripts_path=""
+ki_opt_bin_path=""
+ki_opt_venv_path=""
 
 yq_cmd=""
 jinja2_cmd=""
@@ -81,10 +81,10 @@ nvidia_gpu=""
 
 main() {
   require_file_exists "$vars_path"
-  import_ki_env_vars
+  import_ki_opt_vars
   setup_cmd_vars
-  require_directory_exists "$ki_env_path"
-  validate_ki_env_directory
+  require_directory_exists "$ki_opt_root_path"
+  validate_ki_opt_directory
 
   nvidia_gpu=$($yq_cmd '.nvidia_gpu' < "$vars_path")
 
@@ -93,14 +93,14 @@ main() {
   [[ $nvidia_gpu = "true" ]] && require_nvidia_gpu_exists
 
   $jinja2_cmd --format yaml -o "/etc/docker/daemon.json" "$SCRIPT_DIR_PATH"/templates/daemon.json.j2 "$vars_path"
-  "$ki_env_scripts_path"/systemctl.sh enable docker
+  "$ki_opt_scripts_path"/systemctl.sh enable docker
 
   return 0
 }
 
 require_nvidia_gpu_exists() {
   local result
-  result=$("$ki_env_scripts_path"/preflight/nvidia-gpu-exists.sh)
+  result=$("$ki_opt_scripts_path"/preflight/nvidia-gpu-exists.sh)
 
   [[ $result = "false" ]] && die "[ERROR] Nvidia gpu not detected"
 
@@ -109,29 +109,29 @@ require_nvidia_gpu_exists() {
 
 require_docker_not_enabled() {
   local result
-  result=$("$ki_env_scripts_path"/systemctl.sh is-enabled docker)
+  result=$("$ki_opt_scripts_path"/systemctl.sh is-enabled docker)
 
   [[ $result = true ]] && die "[ERROR] Docker already enabled"
 
   return 0
 }
 
-import_ki_env_vars() {
-  ki_env_path=$(grep -oP  "^ki_env_path: \K(.+)" < "$vars_path")
-  ki_env_scripts_path=$(grep -oP  "^ki_env_scripts_path: \K(.+)" < "$vars_path")
-  ki_env_bin_path=$(grep -oP  "^ki_env_bin_path: \K(.+)" < "$vars_path")
-  ki_env_ki_venv_path=$(grep -oP  "^ki_env_ki_venv_path: \K(.+)" < "$vars_path")
+import_ki_opt_vars() {
+  ki_opt_root_path=$(grep -oP  "^ki_opt_root_path: \K(.+)" < "$vars_path")
+  ki_opt_scripts_path=$(grep -oP  "^ki_opt_scripts_path: \K(.+)" < "$vars_path")
+  ki_opt_bin_path=$(grep -oP  "^ki_opt_bin_path: \K(.+)" < "$vars_path")
+  ki_opt_venv_path=$(grep -oP  "^ki_opt_venv_path: \K(.+)" < "$vars_path")
 }
 
 setup_cmd_vars() {
-  yq_cmd="$ki_env_bin_path/bin/yq"
-  jinja2_cmd="$ki_env_ki_venv_path/bin/jinja2"
+  yq_cmd="$ki_opt_bin_path/bin/yq"
+  jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
 }
 
-validate_ki_env_directory() {
-  require_directory_exists "$ki_env_scripts_path"
-  require_directory_exists "$ki_env_bin_path"
-  require_directory_exists "$ki_env_ki_venv_path"
+validate_ki_opt_directory() {
+  require_directory_exists "$ki_opt_scripts_path"
+  require_directory_exists "$ki_opt_bin_path"
+  require_directory_exists "$ki_opt_venv_path"
 
   return 0
 }

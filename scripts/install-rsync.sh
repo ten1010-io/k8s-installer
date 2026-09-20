@@ -14,7 +14,7 @@ EOF
 }
 
 parse_params() {
-  ki_env_path=""
+  ki_opt_root_path=""
 
   while :; do
     case "${1-}" in
@@ -23,7 +23,7 @@ parse_params() {
     --no-color) NO_COLOR=1 ;;
     --ki-env-path)
       [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
-      ki_env_path="${2-}"
+      ki_opt_root_path="${2-}"
       shift
       ;;
     -?*) die "[ERROR] Unknown option: $1" ;;
@@ -34,7 +34,7 @@ parse_params() {
 
   args=("$@")
 
-  [[ -z "${ki_env_path-}" ]] && die "[ERROR] Missing required option: --ki-env-path"
+  [[ -z "${ki_opt_root_path-}" ]] && die "[ERROR] Missing required option: --ki-env-path"
 
   return 0
 }
@@ -73,11 +73,11 @@ UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
 
-KI_ENV_SCRIPTS_PATH="$ki_env_path"/scripts
-KI_ENV_BIN_PATH="$ki_env_path"/bin
-KI_ENV_KI_VENV_PATH="$ki_env_path"/ki-venv
+KI_OPT_SCRIPTS_PATH="$ki_opt_root_path"/scripts
+KI_OPT_BIN_PATH="$ki_opt_root_path"/bin
+KI_OPT_VENV_PATH="$ki_opt_root_path"/ki-venv
 
-YQ_CMD="$KI_ENV_BIN_PATH"/bin/yq
+YQ_CMD="$KI_OPT_BIN_PATH"/bin/yq
 
 os_info=""
 os_distribution=""
@@ -85,8 +85,8 @@ os_major_version=""
 os_minor_version=""
 
 main() {
-  require_directory_exists "$ki_env_path"
-  validate_ki_env_directory
+  require_directory_exists "$ki_opt_root_path"
+  validate_ki_opt_directory
   get_os_version
 
   if [[ $os_distribution = "ubuntu" && $os_major_version = "22.04" && $os_minor_version -le "$UBUNTU2204_SUPPORTED_MINOR_VERSION" ]]; then
@@ -110,7 +110,7 @@ main() {
 ubuntu2204_setup() {
   if [[ $(ubuntu2204_is_installed rsync) = "false" ]]; then
     export DEBIAN_FRONTEND=noninteractive
-    dpkg -R -i "$KI_ENV_BIN_PATH"/linux-packages/ubuntu22.04/rsync
+    dpkg -R -i "$KI_OPT_BIN_PATH"/linux-packages/ubuntu22.04/rsync
     export DEBIAN_FRONTEND=""
   fi
 
@@ -120,7 +120,7 @@ ubuntu2204_setup() {
 ubuntu2404_setup() {
   if [[ $(ubuntu2404_is_installed rsync) = "false" ]]; then
     export DEBIAN_FRONTEND=noninteractive
-    dpkg -R -i "$KI_ENV_BIN_PATH"/linux-packages/ubuntu24.04/rsync
+    dpkg -R -i "$KI_OPT_BIN_PATH"/linux-packages/ubuntu24.04/rsync
     export DEBIAN_FRONTEND=""
   fi
 
@@ -129,7 +129,7 @@ ubuntu2404_setup() {
 
 rhel8_setup() {
   if [[ $(rhel8_is_installed rsync) = "false" ]]; then
-    rpm --force -Uvh --oldpackage --replacepkgs "$KI_ENV_BIN_PATH/linux-packages/rhel8/rsync/*.rpm"
+    rpm --force -Uvh --oldpackage --replacepkgs "$KI_OPT_BIN_PATH/linux-packages/rhel8/rsync/*.rpm"
   fi
 
   return 0
@@ -169,22 +169,22 @@ rhel8_is_installed() {
 }
 
 get_os_version() {
-  os_info=$("$KI_ENV_SCRIPTS_PATH"/preflight/get-os-info.sh)
+  os_info=$("$KI_OPT_SCRIPTS_PATH"/preflight/get-os-info.sh)
 
   os_distribution=$($YQ_CMD .distribution <<< "$os_info")
   os_major_version=$($YQ_CMD .major_version <<< "$os_info")
   os_minor_version=$($YQ_CMD .minor_version <<< "$os_info")
 }
 
-validate_ki_env_directory() {
-  require_directory_exists "$KI_ENV_SCRIPTS_PATH"
-  require_directory_exists "$KI_ENV_BIN_PATH"
+validate_ki_opt_directory() {
+  require_directory_exists "$KI_OPT_SCRIPTS_PATH"
+  require_directory_exists "$KI_OPT_BIN_PATH"
 
   return 0
 }
 
-validate_ki_venv_directory() {
-  [[ ! -e $KI_ENV_KI_VENV_PATH/bin/activate ]] && die "[ERROR] Invalid ki-venv directory. activate script not exists"
+validate_venv_directory() {
+  [[ ! -e $KI_OPT_VENV_PATH/bin/activate ]] && die "[ERROR] Invalid ki-venv directory. activate script not exists"
 
   return 0
 }

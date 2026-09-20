@@ -84,13 +84,13 @@ declare -a failed_result_users=()
 declare -a failed_result_exit_code_list=()
 declare -a failed_result_stderr_list=()
 
-localhost_hostvars_ki_env_path=""
+localhost_hostvars_ki_opt_root_path=""
 
 declare -a all_group_hostvars_ih_list=()
 declare -a all_group_hostvars_ansible_hosts=()
 declare -a all_group_hostvars_ansible_ports=()
 declare -a all_group_hostvars_ansible_ssh_users=()
-declare -a all_group_hostvars_ki_env_paths=()
+declare -a all_group_hostvars_ki_opt_root_paths=()
 
 inventory=""
 constant_vars=""
@@ -115,10 +115,10 @@ import_hostvars() {
   local ansible_host
   local ansible_port
   local ansible_ssh_user
-  local ki_env_path
+  local ki_opt_root_path
 
-  localhost_hostvars_ki_env_path=$($YQ_CMD '.control_node.hosts.localhost.ki_env_path' <<< "$inventory")
-  [[ $localhost_hostvars_ki_env_path = "null" ]] && localhost_hostvars_ki_env_path=$($YQ_CMD '.ki_env_path' <<< "$constant_vars")
+  localhost_hostvars_ki_opt_root_path=$($YQ_CMD '.control_node.hosts.localhost.ki_opt_root_path' <<< "$inventory")
+  [[ $localhost_hostvars_ki_opt_root_path = "null" ]] && localhost_hostvars_ki_opt_root_path=$($YQ_CMD '.ki_opt_root_path' <<< "$constant_vars")
 
   for ih in $($YQ_CMD '.all.hosts | keys | join(" ")' <<< "$inventory"); do
     all_group_hostvars_ih_list+=("$ih")
@@ -134,27 +134,27 @@ import_hostvars() {
     [[ $ansible_ssh_user = "null" ]] && ansible_ssh_user=$($YQ_CMD '.ansible_ssh_user' <<< "$constant_vars")
     all_group_hostvars_ansible_ssh_users+=("$ansible_ssh_user")
 
-    ki_env_path=$($YQ_CMD '.all.hosts.'"$ih"'.ki_env_path' <<< "$inventory")
-    [[ $ki_env_path = "null" ]] && ki_env_path=$($YQ_CMD '.ki_env_path' <<< "$constant_vars")
-    all_group_hostvars_ki_env_paths+=("$ki_env_path")
+    ki_opt_root_path=$($YQ_CMD '.all.hosts.'"$ih"'.ki_opt_root_path' <<< "$inventory")
+    [[ $ki_opt_root_path = "null" ]] && ki_opt_root_path=$($YQ_CMD '.ki_opt_root_path' <<< "$constant_vars")
+    all_group_hostvars_ki_opt_root_paths+=("$ki_opt_root_path")
   done
 }
 
 validate_hostvars() {
-  validate_ki_env_path "localhost" "$localhost_hostvars_ki_env_path"
+  validate_ki_opt_root_path "localhost" "$localhost_hostvars_ki_opt_root_path"
 
   for i in "${!all_group_hostvars_ih_list[@]}"; do
     validate_ansible_host "${all_group_hostvars_ih_list[$i]}" "${all_group_hostvars_ansible_hosts[$i]}"
     validate_ansible_port "${all_group_hostvars_ih_list[$i]}" "${all_group_hostvars_ansible_ports[$i]}"
     validate_ansible_ssh_user "${all_group_hostvars_ih_list[$i]}" "${all_group_hostvars_ansible_ssh_users[$i]}"
-    validate_ki_env_path "${all_group_hostvars_ih_list[$i]}" "${all_group_hostvars_ki_env_paths[$i]}"
+    validate_ki_opt_root_path "${all_group_hostvars_ih_list[$i]}" "${all_group_hostvars_ki_opt_root_paths[$i]}"
   done
 }
 
 setup_all_group_nodes() {
   check_ssh_connection_with_ssh
   msg ""
-  create_ki_env_directory_with_ssh
+  create_ki_opt_directory_with_ssh
   msg ""
   copy_yq_with_scp
   msg ""
@@ -172,11 +172,11 @@ setup_all_group_nodes() {
 setup_localhost() {
   msg "[INFO] Started to setup localhost"
 
-  mkdir -p "$localhost_hostvars_ki_env_path"
-  cp -rn "$SCRIPTS_PATH" "$localhost_hostvars_ki_env_path"/
-  cp -rn "$BIN_PATH" "$localhost_hostvars_ki_env_path"/
-  "$SCRIPTS_PATH"/install-rsync.sh --ki-env-path "$localhost_hostvars_ki_env_path"
-  "$SCRIPTS_PATH"/setup-ki-venv.sh --ki-env-path "$localhost_hostvars_ki_env_path"
+  mkdir -p "$localhost_hostvars_ki_opt_root_path"
+  cp -rn "$SCRIPTS_PATH" "$localhost_hostvars_ki_opt_root_path"/
+  cp -rn "$BIN_PATH" "$localhost_hostvars_ki_opt_root_path"/
+  "$SCRIPTS_PATH"/install-rsync.sh --ki-env-path "$localhost_hostvars_ki_opt_root_path"
+  "$SCRIPTS_PATH"/setup-ki-venv.sh --ki-env-path "$localhost_hostvars_ki_opt_root_path"
 
   return 0
 }
@@ -203,7 +203,7 @@ check_ssh_connection_with_ssh() {
   return 0
 }
 
-create_ki_env_directory_with_ssh() {
+create_ki_opt_directory_with_ssh() {
   msg "[INFO] Started to create ki-env directory for all group nodes"
   msg ""
 
@@ -215,11 +215,11 @@ create_ki_env_directory_with_ssh() {
       "${all_group_hostvars_ansible_ports[$i]}" \
       "${all_group_hostvars_ansible_ssh_users[$i]}" \
       "handle_ssh" \
-      "mkdir -p ${all_group_hostvars_ki_env_paths[$i]};
-       mkdir -p ${all_group_hostvars_ki_env_paths[$i]}/bin/bin;
-       mkdir -p ${all_group_hostvars_ki_env_paths[$i]}/bin/linux-packages/ubuntu22.04;
-       mkdir -p ${all_group_hostvars_ki_env_paths[$i]}/bin/linux-packages/ubuntu24.04;
-       mkdir -p ${all_group_hostvars_ki_env_paths[$i]}/bin/linux-packages/rhel8"
+      "mkdir -p ${all_group_hostvars_ki_opt_root_paths[$i]};
+       mkdir -p ${all_group_hostvars_ki_opt_root_paths[$i]}/bin/bin;
+       mkdir -p ${all_group_hostvars_ki_opt_root_paths[$i]}/bin/linux-packages/ubuntu22.04;
+       mkdir -p ${all_group_hostvars_ki_opt_root_paths[$i]}/bin/linux-packages/ubuntu24.04;
+       mkdir -p ${all_group_hostvars_ki_opt_root_paths[$i]}/bin/linux-packages/rhel8"
   done
 
   print_result
@@ -242,7 +242,7 @@ copy_yq_with_scp() {
       "${all_group_hostvars_ansible_ssh_users[$i]}" \
       "handle_scp" \
       "$BIN_PATH/bin/yq" \
-      "${all_group_hostvars_ki_env_paths[$i]}/bin/bin/yq"
+      "${all_group_hostvars_ki_opt_root_paths[$i]}/bin/bin/yq"
   done
 
   print_result
@@ -265,7 +265,7 @@ copy_scripts_directory_with_scp() {
       "${all_group_hostvars_ansible_ssh_users[$i]}" \
       "handle_scp" \
       "$SCRIPTS_PATH" \
-      "${all_group_hostvars_ki_env_paths[$i]}/"
+      "${all_group_hostvars_ki_opt_root_paths[$i]}/"
   done
 
   print_result
@@ -288,7 +288,7 @@ copy_rsync_directory_with_scp() {
       "${all_group_hostvars_ansible_ssh_users[$i]}" \
       "handle_scp" \
       "$BIN_PATH/linux-packages/ubuntu22.04/rsync" \
-      "${all_group_hostvars_ki_env_paths[$i]}/bin/linux-packages/ubuntu22.04/"
+      "${all_group_hostvars_ki_opt_root_paths[$i]}/bin/linux-packages/ubuntu22.04/"
   done
 
   print_result
@@ -307,7 +307,7 @@ copy_rsync_directory_with_scp() {
       "${all_group_hostvars_ansible_ssh_users[$i]}" \
       "handle_scp" \
       "$BIN_PATH/linux-packages/ubuntu24.04/rsync" \
-      "${all_group_hostvars_ki_env_paths[$i]}/bin/linux-packages/ubuntu24.04/"
+      "${all_group_hostvars_ki_opt_root_paths[$i]}/bin/linux-packages/ubuntu24.04/"
   done
 
   print_result
@@ -326,7 +326,7 @@ copy_rsync_directory_with_scp() {
       "${all_group_hostvars_ansible_ssh_users[$i]}" \
       "handle_scp" \
       "$BIN_PATH/linux-packages/rhel8/rsync" \
-      "${all_group_hostvars_ki_env_paths[$i]}/bin/linux-packages/rhel8/"
+      "${all_group_hostvars_ki_opt_root_paths[$i]}/bin/linux-packages/rhel8/"
   done
 
   print_result
@@ -348,7 +348,7 @@ execute_install_rsync_sh_with_ssh() {
       "${all_group_hostvars_ansible_ports[$i]}" \
       "${all_group_hostvars_ansible_ssh_users[$i]}" \
       "handle_ssh" \
-      "${all_group_hostvars_ki_env_paths[$i]}/scripts/install-rsync.sh --ki-env-path ${all_group_hostvars_ki_env_paths[$i]}"
+      "${all_group_hostvars_ki_opt_root_paths[$i]}/scripts/install-rsync.sh --ki-env-path ${all_group_hostvars_ki_opt_root_paths[$i]}"
   done
 
   print_result
@@ -371,7 +371,7 @@ copy_bin_directory_with_rsync() {
       "${all_group_hostvars_ansible_ssh_users[$i]}" \
       "handle_rsync" \
       "$BIN_PATH" \
-      "${all_group_hostvars_ki_env_paths[$i]}/"
+      "${all_group_hostvars_ki_opt_root_paths[$i]}/"
   done
 
   print_result
@@ -393,7 +393,7 @@ execute_setup_ki_venv_sh_with_ssh() {
       "${all_group_hostvars_ansible_ports[$i]}" \
       "${all_group_hostvars_ansible_ssh_users[$i]}" \
       "handle_ssh" \
-      "${all_group_hostvars_ki_env_paths[$i]}/scripts/setup-ki-venv.sh --ki-env-path ${all_group_hostvars_ki_env_paths[$i]}"
+      "${all_group_hostvars_ki_opt_root_paths[$i]}/scripts/setup-ki-venv.sh --ki-env-path ${all_group_hostvars_ki_opt_root_paths[$i]}"
   done
 
   print_result
@@ -696,13 +696,13 @@ validate_ansible_ssh_user() {
   return 0
 }
 
-validate_ki_env_path() {
+validate_ki_opt_root_path() {
   local ih=$1
-  local ki_env_path=$2
+  local ki_opt_root_path=$2
 
   absolute_path_regex="^/|(/[\\w-]+)+$"
 
-  [[ ! $ki_env_path =~ $absolute_path_regex ]] && die "[ERROR] Invalid ki_env_path variable[\"$ki_env_path\"] for host[\"$ih\"]"
+  [[ ! $ki_opt_root_path =~ $absolute_path_regex ]] && die "[ERROR] Invalid ki_opt_root_path variable[\"$ki_opt_root_path\"] for host[\"$ih\"]"
 
   return 0
 }

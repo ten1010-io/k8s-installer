@@ -30,7 +30,7 @@
           become: yes
 
         - name: Execute create-internal-network-interfaces.py
-          shell: "sudo {{ ansible_python_interpreter }} {{ ki_env_scripts_path }}/preflight/create-internal-network-interfaces.py {{ inventory_hostname }} < {{ tmp_input_path }}"
+          shell: "sudo {{ ansible_python_interpreter }} {{ ki_opt_scripts_path }}/preflight/create-internal-network-interfaces.py {{ inventory_hostname }} < {{ tmp_input_path }}"
           register: shell_result
 
         - name: Set_fact variable[\"internal_network_interfaces\"]
@@ -47,7 +47,7 @@
     - name: Setup variable[\"node_resources\"]
       block:
         - name: Execute get-node-resources.sh
-          shell: "sudo {{ ki_env_scripts_path }}/preflight/get-node-resources.sh {{ imagefs_path_arg }}"
+          shell: "sudo {{ ki_opt_scripts_path }}/preflight/get-node-resources.sh {{ imagefs_path_arg }}"
           vars:
             imagefs_path_arg: "--imagefs-path {{ containerd_root_path }}"
           register: shell_result
@@ -69,7 +69,7 @@
           become: yes
 
         - name: Execute create-kubelet-reservations.py
-          shell: "sudo {{ ansible_python_interpreter }} {{ ki_env_scripts_path }}/preflight/create-kubelet-reservations.py {{ inventory_hostname }} < {{ tmp_input_path }}"
+          shell: "sudo {{ ansible_python_interpreter }} {{ ki_opt_scripts_path }}/preflight/create-kubelet-reservations.py {{ inventory_hostname }} < {{ tmp_input_path }}"
           register: shell_result
 
         - name: Set_fact variable[\"kubelet_reservations\"]
@@ -115,7 +115,7 @@
           become: yes
 
         - name: Execute create_ih_to_hostname_dict.py
-          shell: "sudo {{ ansible_python_interpreter }} {{ ki_env_scripts_path }}/preflight/create_ih_to_hostname_dict.py < {{ tmp_input_path }}"
+          shell: "sudo {{ ansible_python_interpreter }} {{ ki_opt_scripts_path }}/preflight/create_ih_to_hostname_dict.py < {{ tmp_input_path }}"
           register: shell_result
 
         - name: Set_fact variable[\"ih_to_hostname_dict\"]
@@ -142,7 +142,7 @@
           become: yes
 
         - name: Execute create-internal-network-hosts.py
-          shell: "sudo {{ ansible_python_interpreter }} {{ ki_env_scripts_path }}/preflight/create-internal-network-hosts.py < {{ tmp_input_path }}"
+          shell: "sudo {{ ansible_python_interpreter }} {{ ki_opt_scripts_path }}/preflight/create-internal-network-hosts.py < {{ tmp_input_path }}"
           register: shell_result
 
         - name: Set_fact variable[\"internal_network_hosts\"]
@@ -165,7 +165,7 @@
           become: yes
 
         - name: Execute create-k8s-cp-nodes.py
-          shell: "sudo {{ ansible_python_interpreter }} {{ ki_env_scripts_path }}/preflight/create-k8s-cp-nodes.py < {{ tmp_input_path }}"
+          shell: "sudo {{ ansible_python_interpreter }} {{ ki_opt_scripts_path }}/preflight/create-k8s-cp-nodes.py < {{ tmp_input_path }}"
           register: shell_result
 
         - name: Set_fact variable[\"k8s_cp_nodes\"]
@@ -182,7 +182,7 @@
     - name: Setup variable[\"ki_cp_k8s_cp_lb_stats_admin_pw\"]
       block:
         - name: Execute generate-password.sh
-          shell: "sudo {{ ki_env_scripts_path }}/preflight/generate-password.sh"
+          shell: "sudo {{ ki_opt_scripts_path }}/preflight/generate-password.sh"
           register: shell_result
 
         - name: Set_fact variable[\"ki_cp_k8s_cp_lb_stats_admin_pw\"]

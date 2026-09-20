@@ -12,7 +12,7 @@
     vars_path_arg: "--vars-path {{ ki_tmp_localhost_vars_path }}"
   tasks:
     - name: Execute create-pki.sh
-      shell: "sudo {{ ki_env_scripts_path }}/localhost-node/create-pki.sh {{ vars_path_arg }}"
+      shell: "sudo {{ ki_opt_scripts_path }}/localhost-node/create-pki.sh {{ vars_path_arg }}"
 
     - name: Copy pki to nodes of ki_cp_node group
       shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"

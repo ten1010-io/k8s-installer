@@ -74,10 +74,10 @@ parse_params "$@"
 
 SVC_NAME=ki-cp-dns-server
 
-ki_env_path=""
-ki_env_scripts_path=""
-ki_env_bin_path=""
-ki_env_ki_venv_path=""
+ki_opt_root_path=""
+ki_opt_scripts_path=""
+ki_opt_bin_path=""
+ki_opt_venv_path=""
 
 yq_cmd=""
 jinja2_cmd=""
@@ -94,10 +94,10 @@ svc_root_path=""
 
 main() {
   require_file_exists "$vars_path"
-  import_ki_env_vars
+  import_ki_opt_vars
   setup_cmd_vars
-  require_directory_exists "$ki_env_path"
-  validate_ki_env_directory
+  require_directory_exists "$ki_opt_root_path"
+  validate_ki_opt_directory
 
   ki_etc_services_path=$($yq_cmd '.ki_etc_services_path' < "$vars_path")
   ki_tmp_root_path=$($yq_cmd .ki_tmp_root_path < "$vars_path")
@@ -113,7 +113,7 @@ main() {
 
   disable_resolved
 
-  docker load -i "$ki_env_bin_path"/images/bind9/*.tar
+  docker load -i "$ki_opt_bin_path"/images/bind9/*.tar
 
   mkdir -p "$svc_root_path"
   $jinja2_cmd --format yaml -o "$svc_root_path""/compose.yml" "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$vars_path"
@@ -237,28 +237,28 @@ require_not_setup() {
 
 disable_resolved() {
   local result
-  result=$("$ki_env_scripts_path"/systemctl.sh exists "systemd-resolved")
-  [[ $result = true ]] && "$ki_env_scripts_path"/systemctl.sh disable systemd-resolved
+  result=$("$ki_opt_scripts_path"/systemctl.sh exists "systemd-resolved")
+  [[ $result = true ]] && "$ki_opt_scripts_path"/systemctl.sh disable systemd-resolved
 
   return 0
 }
 
-import_ki_env_vars() {
-  ki_env_path=$(grep -oP  "^ki_env_path: \K(.+)" < "$vars_path")
-  ki_env_scripts_path=$(grep -oP  "^ki_env_scripts_path: \K(.+)" < "$vars_path")
-  ki_env_bin_path=$(grep -oP  "^ki_env_bin_path: \K(.+)" < "$vars_path")
-  ki_env_ki_venv_path=$(grep -oP  "^ki_env_ki_venv_path: \K(.+)" < "$vars_path")
+import_ki_opt_vars() {
+  ki_opt_root_path=$(grep -oP  "^ki_opt_root_path: \K(.+)" < "$vars_path")
+  ki_opt_scripts_path=$(grep -oP  "^ki_opt_scripts_path: \K(.+)" < "$vars_path")
+  ki_opt_bin_path=$(grep -oP  "^ki_opt_bin_path: \K(.+)" < "$vars_path")
+  ki_opt_venv_path=$(grep -oP  "^ki_opt_venv_path: \K(.+)" < "$vars_path")
 }
 
 setup_cmd_vars() {
-  yq_cmd="$ki_env_bin_path/bin/yq"
-  jinja2_cmd="$ki_env_ki_venv_path/bin/jinja2"
+  yq_cmd="$ki_opt_bin_path/bin/yq"
+  jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
 }
 
-validate_ki_env_directory() {
-  require_directory_exists "$ki_env_scripts_path"
-  require_directory_exists "$ki_env_bin_path"
-  require_directory_exists "$ki_env_ki_venv_path"
+validate_ki_opt_directory() {
+  require_directory_exists "$ki_opt_scripts_path"
+  require_directory_exists "$ki_opt_bin_path"
+  require_directory_exists "$ki_opt_venv_path"
 
   return 0
 }

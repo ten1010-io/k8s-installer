@@ -69,10 +69,10 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
-ki_env_path=""
-ki_env_scripts_path=""
-ki_env_bin_path=""
-ki_env_ki_venv_path=""
+ki_opt_root_path=""
+ki_opt_scripts_path=""
+ki_opt_bin_path=""
+ki_opt_venv_path=""
 
 yq_cmd=""
 jinja2_cmd=""
@@ -85,10 +85,10 @@ ih_to_hostname_dict=""
 
 main() {
   require_file_exists "$vars_path"
-  import_ki_env_vars
+  import_ki_opt_vars
   setup_cmd_vars
-  require_directory_exists "$ki_env_path"
-  validate_ki_env_directory
+  require_directory_exists "$ki_opt_root_path"
+  validate_ki_opt_directory
 
   target_node=$($yq_cmd '.target_node' < "$vars_path")
   target_node_op=$($yq_cmd '.target_node_op' < "$vars_path")
@@ -212,23 +212,23 @@ delete_k8s_node() {
   kubectl delete node "$knn"
 }
 
-import_ki_env_vars() {
-  ki_env_path=$(grep -oP  "^ki_env_path: \K(.+)" < "$vars_path")
-  ki_env_scripts_path=$(grep -oP  "^ki_env_scripts_path: \K(.+)" < "$vars_path")
-  ki_env_bin_path=$(grep -oP  "^ki_env_bin_path: \K(.+)" < "$vars_path")
-  ki_env_ki_venv_path=$(grep -oP  "^ki_env_ki_venv_path: \K(.+)" < "$vars_path")
+import_ki_opt_vars() {
+  ki_opt_root_path=$(grep -oP  "^ki_opt_root_path: \K(.+)" < "$vars_path")
+  ki_opt_scripts_path=$(grep -oP  "^ki_opt_scripts_path: \K(.+)" < "$vars_path")
+  ki_opt_bin_path=$(grep -oP  "^ki_opt_bin_path: \K(.+)" < "$vars_path")
+  ki_opt_venv_path=$(grep -oP  "^ki_opt_venv_path: \K(.+)" < "$vars_path")
 }
 
 setup_cmd_vars() {
-  yq_cmd="$ki_env_bin_path/bin/yq"
-  jinja2_cmd="$ki_env_ki_venv_path/bin/jinja2"
+  yq_cmd="$ki_opt_bin_path/bin/yq"
+  jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
   etcdctl_cmd="etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/peer.crt --key=/etc/kubernetes/pki/etcd/peer.key"
 }
 
-validate_ki_env_directory() {
-  require_directory_exists "$ki_env_scripts_path"
-  require_directory_exists "$ki_env_bin_path"
-  require_directory_exists "$ki_env_ki_venv_path"
+validate_ki_opt_directory() {
+  require_directory_exists "$ki_opt_scripts_path"
+  require_directory_exists "$ki_opt_bin_path"
+  require_directory_exists "$ki_opt_venv_path"
 
   return 0
 }

@@ -5,7 +5,7 @@
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
     - name: Execute delete-all-nodes.sh
-      shell: "sudo {{ ki_env_scripts_path }}/k8s-node/delete-all-nodes.sh {{ vars_path_arg }}"
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/delete-all-nodes.sh {{ vars_path_arg }}"
       when:
         - inventory_hostname == k8s_cp_nodes[0]
         - skip_deleting_from_cluster is undefined
@@ -17,19 +17,19 @@
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
     - name: Execute reset-k8s-node-kubelet.sh on k8s worker nodes
-      shell: "sudo {{ ki_env_scripts_path }}/k8s-node/reset-k8s-node-kubelet.sh {{ vars_path_arg }}"
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/reset-k8s-node-kubelet.sh {{ vars_path_arg }}"
       when: inventory_hostname not in k8s_cp_nodes
 
     - name: Execute reset-k8s-node-cni.sh on k8s worker nodes
-      shell: "sudo {{ ki_env_scripts_path }}/k8s-node/reset-k8s-node-cni.sh {{ vars_path_arg }}"
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/reset-k8s-node-cni.sh {{ vars_path_arg }}"
       when: inventory_hostname not in k8s_cp_nodes
 
     - name: Execute reset-k8s-node-kubelet.sh on k8s cp nodes
-      shell: "sudo {{ ki_env_scripts_path }}/k8s-node/reset-k8s-node-kubelet.sh {{ vars_path_arg }}"
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/reset-k8s-node-kubelet.sh {{ vars_path_arg }}"
       throttle: 1
       when: inventory_hostname in k8s_cp_nodes
 
     - name: Execute reset-k8s-node-cni.sh on k8s cp nodes
-      shell: "sudo {{ ki_env_scripts_path }}/k8s-node/reset-k8s-node-cni.sh {{ vars_path_arg }}"
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/reset-k8s-node-cni.sh {{ vars_path_arg }}"
       throttle: 1
       when: inventory_hostname in k8s_cp_nodes

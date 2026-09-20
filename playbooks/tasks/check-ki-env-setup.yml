@@ -3,13 +3,13 @@
   any_errors_fatal: true
   tasks:
     - name: "Check ki-env directory exists"
-      shell: "sudo ls {{ ki_env_path }}"
+      shell: "sudo ls {{ ki_opt_root_path }}"
 
     - name: "Check ki-env scripts directory exists"
-      shell: "sudo ls {{ ki_env_scripts_path }}"
+      shell: "sudo ls {{ ki_opt_scripts_path }}"
 
     - name: "Check ki-env bin directory exists"
-      shell: "sudo ls {{ ki_env_bin_path }}"
+      shell: "sudo ls {{ ki_opt_bin_path }}"
 
     - name: "Check ki-env ki-venv directory exists"
-      shell: "sudo ls {{ ki_env_ki_venv_path }}"
+      shell: "sudo ls {{ ki_opt_venv_path }}"

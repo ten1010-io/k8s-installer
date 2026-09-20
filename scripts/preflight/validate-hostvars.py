@@ -218,10 +218,10 @@ class VarsModel(BaseModel):
 class ConstantVarsModel(BaseModel):
     @field_validator(
         "ansible_python_interpreter",
-        "ki_env_path",
-        "ki_env_scripts_path",
-        "ki_env_bin_path",
-        "ki_env_ki_venv_path",
+        "ki_opt_root_path",
+        "ki_opt_scripts_path",
+        "ki_opt_bin_path",
+        "ki_opt_venv_path",
         "ki_tmp_root_path",
         "ki_tmp_localhost_vars_path",
         "ki_tmp_vars_path",
@@ -244,10 +244,10 @@ class ConstantVarsModel(BaseModel):
     ansible_port: int = Field(ge=0, le=65535)
     ansible_ssh_user: Annotated[str, StringConstraints(pattern=r"^[a-z_]([a-z0-9_-]{0,31}|[a-z0-9_-]{0,30}\$)$")]
 
-    ki_env_path: Path
-    ki_env_scripts_path: Path
-    ki_env_bin_path: Path
-    ki_env_ki_venv_path: Path
+    ki_opt_root_path: Path
+    ki_opt_scripts_path: Path
+    ki_opt_bin_path: Path
+    ki_opt_venv_path: Path
 
     ki_tmp_root_path: Path
     ki_tmp_localhost_vars_path: Path

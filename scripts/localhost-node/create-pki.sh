@@ -69,10 +69,10 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
-ki_env_path=""
-ki_env_scripts_path=""
-ki_env_bin_path=""
-ki_env_ki_venv_path=""
+ki_opt_root_path=""
+ki_opt_scripts_path=""
+ki_opt_bin_path=""
+ki_opt_venv_path=""
 
 yq_cmd=""
 jinja2_cmd=""
@@ -82,17 +82,17 @@ internal_network_ki_cp_dns_name=""
 
 main() {
   require_file_exists "$vars_path"
-  import_ki_env_vars
+  import_ki_opt_vars
   setup_cmd_vars
-  require_directory_exists "$ki_env_path"
-  validate_ki_env_directory
+  require_directory_exists "$ki_opt_root_path"
+  validate_ki_opt_directory
 
   ki_tmp_pki_path=$($yq_cmd '.ki_tmp_pki_path' < "$vars_path")
   internal_network_ki_cp_dns_name=$($yq_cmd '.internal_network_ki_cp_dns_name' < "$vars_path")
 
   mkdir -p "$ki_tmp_pki_path"/tmp
-  "$ki_env_scripts_path"/tls-crt-issue-tool/create-ca-crt.sh --cn k8s-installer -o "$ki_tmp_pki_path"/tmp
-  "$ki_env_scripts_path"/tls-crt-issue-tool/create-tls-crt.sh --dn "$internal_network_ki_cp_dns_name" -o "$ki_tmp_pki_path"/tmp --days 3650
+  "$ki_opt_scripts_path"/tls-crt-issue-tool/create-ca-crt.sh --cn k8s-installer -o "$ki_tmp_pki_path"/tmp
+  "$ki_opt_scripts_path"/tls-crt-issue-tool/create-tls-crt.sh --dn "$internal_network_ki_cp_dns_name" -o "$ki_tmp_pki_path"/tmp --days 3650
   mv "$ki_tmp_pki_path/tmp/ca.crt" "$ki_tmp_pki_path/ki-ca.crt"
   mv "$ki_tmp_pki_path/tmp/ca.key" "$ki_tmp_pki_path/ki-ca.key"
   mv "$ki_tmp_pki_path/tmp/$internal_network_ki_cp_dns_name/tls.crt" "$ki_tmp_pki_path/ki-cp-tls.crt"
@@ -102,22 +102,22 @@ main() {
   return 0
 }
 
-import_ki_env_vars() {
-  ki_env_path=$(grep -oP  "^ki_env_path: \K(.+)" < "$vars_path")
-  ki_env_scripts_path=$(grep -oP  "^ki_env_scripts_path: \K(.+)" < "$vars_path")
-  ki_env_bin_path=$(grep -oP  "^ki_env_bin_path: \K(.+)" < "$vars_path")
-  ki_env_ki_venv_path=$(grep -oP  "^ki_env_ki_venv_path: \K(.+)" < "$vars_path")
+import_ki_opt_vars() {
+  ki_opt_root_path=$(grep -oP  "^ki_opt_root_path: \K(.+)" < "$vars_path")
+  ki_opt_scripts_path=$(grep -oP  "^ki_opt_scripts_path: \K(.+)" < "$vars_path")
+  ki_opt_bin_path=$(grep -oP  "^ki_opt_bin_path: \K(.+)" < "$vars_path")
+  ki_opt_venv_path=$(grep -oP  "^ki_opt_venv_path: \K(.+)" < "$vars_path")
 }
 
 setup_cmd_vars() {
-  yq_cmd="$ki_env_bin_path/bin/yq"
-  jinja2_cmd="$ki_env_ki_venv_path/bin/jinja2"
+  yq_cmd="$ki_opt_bin_path/bin/yq"
+  jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
 }
 
-validate_ki_env_directory() {
-  require_directory_exists "$ki_env_scripts_path"
-  require_directory_exists "$ki_env_bin_path"
-  require_directory_exists "$ki_env_ki_venv_path"
+validate_ki_opt_directory() {
+  require_directory_exists "$ki_opt_scripts_path"
+  require_directory_exists "$ki_opt_bin_path"
+  require_directory_exists "$ki_opt_venv_path"
 
   return 0
 }

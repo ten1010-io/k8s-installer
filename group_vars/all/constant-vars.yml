@@ -1,15 +1,15 @@
-ansible_python_interpreter: "{{ ki_env_ki_venv_path }}/bin/python3"
+ansible_python_interpreter: "{{ ki_opt_venv_path }}/bin/python3"
 ansible_port: 22
 ansible_ssh_user: root
 
-# Jinja2 template can not be used for ki_env_path. since it is used without jinja2 engine
-ki_env_path: "/var/lib/ki-env"
-# Don't modify ki_env_scripts_path. since it is hardcoded in setup-ki-env.sh, setup-ki-venv.sh
-ki_env_scripts_path: "{{ ki_env_path }}/scripts"
-# Don't modify ki_env_bin_path. since it is hardcoded in setup-ki-env.sh, setup-ki-venv.sh
-ki_env_bin_path: "{{ ki_env_path }}/bin"
-# Don't modify ki_env_ki_venv_path. since it is hardcoded in setup-ki-env.sh, setup-ki-venv.sh
-ki_env_ki_venv_path: "{{ ki_env_path }}/ki-venv"
+# Jinja2 template can not be used for ki_opt_root_path. since it is used without jinja2 engine
+ki_opt_root_path: "/var/lib/ki-env"
+# Don't modify ki_opt_scripts_path. since it is hardcoded in setup-ki-env.sh, setup-ki-venv.sh
+ki_opt_scripts_path: "{{ ki_opt_root_path }}/scripts"
+# Don't modify ki_opt_bin_path. since it is hardcoded in setup-ki-env.sh, setup-ki-venv.sh
+ki_opt_bin_path: "{{ ki_opt_root_path }}/bin"
+# Don't modify ki_opt_venv_path. since it is hardcoded in setup-ki-env.sh, setup-ki-venv.sh
+ki_opt_venv_path: "{{ ki_opt_root_path }}/ki-venv"
 
 ki_tmp_root_path: "/tmp/k8s-installer"
 ki_tmp_localhost_vars_path: "{{ ki_tmp_root_path }}/localhost-vars.yml"

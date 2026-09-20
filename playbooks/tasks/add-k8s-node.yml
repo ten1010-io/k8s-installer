@@ -6,12 +6,12 @@
   tasks:
     - when: inventory_hostname == k8s_cp_nodes | community.general.lists_difference([target_node]) | first
       name: Execute create-join-credentials-file.sh
-      shell: "sudo {{ ki_env_scripts_path }}/k8s-node/create-join-credentials-file.sh {{ vars_path_arg }}"
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/create-join-credentials-file.sh {{ vars_path_arg }}"
 
     - when: inventory_hostname == target_node
       block:
         - name: Execute configure-linux.sh
-          shell: "sudo {{ ki_env_scripts_path }}/k8s-node/configure-linux.sh {{ vars_path_arg }}"
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/configure-linux.sh {{ vars_path_arg }}"
 
         - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
           shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
@@ -49,7 +49,7 @@
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
     - name: Execute join-k8s-cluster.sh
-      shell: "sudo {{ ki_env_scripts_path }}/k8s-node/join-k8s-cluster.sh {{ vars_path_arg }}"
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/join-k8s-cluster.sh {{ vars_path_arg }}"
       when: inventory_hostname == target_node
 
 - hosts: ki_cp_node
@@ -59,7 +59,7 @@
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
     - name: Execute setup-k8s-cp-lb.sh --update
-      shell: "sudo {{ ki_env_scripts_path }}/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh {{ vars_path_arg }} --update"
+      shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh {{ vars_path_arg }} --update"
       when: hostvars[target_node]['k8s_cp']
 
 - hosts: all
