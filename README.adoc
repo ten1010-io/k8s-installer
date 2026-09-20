@@ -99,7 +99,7 @@ LVM 논리 볼륨이면 `/dev/<vg>/<lv>` 도 재부팅에 안정적인 경로입
 지정하지 않으면(`null`) 아무것도 하지 않고 기존처럼 루트 디스크를 씁니다.
 설계 판단은 link:docs/impl-notes.adoc[구현 노트]에 있습니다.
 
-=== 설치기 업그레이드
+=== K8S Installer 업그레이드
 
 [source,shell,subs="+attributes"]
 ----
