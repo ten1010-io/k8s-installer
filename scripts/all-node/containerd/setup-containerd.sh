@@ -4,17 +4,19 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path] [--update]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
 --vars-path     File path
+--update
 EOF
   exit
 }
 
 parse_params() {
   vars_path=""
+  update="false"
 
   while :; do
     case "${1-}" in
@@ -26,6 +28,7 @@ parse_params() {
       vars_path="${2-}"
       shift
       ;;
+    --update) update="true" ;;
     -?*) die "[ERROR] Unknown option: $1" ;;
     *) break ;;
     esac
@@ -88,15 +91,28 @@ main() {
 
   nvidia_gpu=$($yq_cmd '.nvidia_gpu' < "$vars_path")
 
-  require_containerd_not_enabled
+  [[ $update = "false" ]] && require_containerd_not_enabled
 
   [[ $nvidia_gpu = "true" ]] && require_nvidia_gpu_exists
 
   mkdir -p /etc/containerd/config.d
   $jinja2_cmd --format yaml -o "/etc/containerd/config.toml" "$SCRIPT_DIR_PATH"/templates/config.toml.j2 "$vars_path"
+  # Deleted rather than left alone when the node has no gpu, because config.toml
+  # imports the whole directory. A drop in an earlier run wrote would otherwise keep
+  # the nvidia runtime as the default of a node that no longer has a gpu
+  rm -f /etc/containerd/config.d/99-nvidia.toml
   [[ $nvidia_gpu = "true" ]] &&
     $jinja2_cmd --format yaml -o "/etc/containerd/config.d/99-nvidia.toml" "$SCRIPT_DIR_PATH"/templates/config.d/99-nvidia.toml.j2 "$vars_path"
-  "$ki_opt_scripts_path"/systemctl.sh enable containerd
+
+  # Restarting containerd tears down every container of the node, so an update is
+  # meant to run against a node that has been drained first. A node that does not
+  # have containerd enabled yet is set up rather than restarted, so that an update
+  # which failed part way through the cluster can simply be repeated
+  if [[ $update = "true" && $("$ki_opt_scripts_path"/systemctl.sh is-enabled containerd) = "true" ]]; then
+    "$ki_opt_scripts_path"/systemctl.sh restart containerd
+  else
+    "$ki_opt_scripts_path"/systemctl.sh enable containerd
+  fi
 
   return 0
 }

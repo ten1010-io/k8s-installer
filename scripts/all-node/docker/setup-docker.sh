@@ -4,17 +4,19 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path] [--update]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
 --vars-path     File path
+--update
 EOF
   exit
 }
 
 parse_params() {
   vars_path=""
+  update="false"
 
   while :; do
     case "${1-}" in
@@ -26,6 +28,7 @@ parse_params() {
       vars_path="${2-}"
       shift
       ;;
+    --update) update="true" ;;
     -?*) die "[ERROR] Unknown option: $1" ;;
     *) break ;;
     esac
@@ -91,13 +94,24 @@ main() {
 
   nvidia_gpu=$($yq_cmd '.nvidia_gpu' < "$vars_path")
 
-  require_docker_not_enabled
+  [[ $update = "false" ]] && require_docker_not_enabled
 
   [[ $nvidia_gpu = "true" ]] && require_nvidia_gpu_exists
 
   $jinja2_cmd --format yaml -o "/etc/docker/daemon.json" "$SCRIPT_DIR_PATH"/templates/daemon.json.j2 "$vars_path"
   create_drop_in_file
-  "$ki_opt_scripts_path"/systemctl.sh enable docker
+
+  # Restarting docker restarts every container of the node, so an update is meant to
+  # run against a node that has been drained first. Note that a changed
+  # docker_root_path also leaves the images behind at the old path, which the ki cp
+  # services of the node need to be set up again to get back. A node that does not
+  # have docker enabled yet is set up rather than restarted, so that an update which
+  # failed part way through the cluster can simply be repeated
+  if [[ $update = "true" && $("$ki_opt_scripts_path"/systemctl.sh is-enabled docker) = "true" ]]; then
+    "$ki_opt_scripts_path"/systemctl.sh restart docker
+  else
+    "$ki_opt_scripts_path"/systemctl.sh enable docker
+  fi
 
   return 0
 }
