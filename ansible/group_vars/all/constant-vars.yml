@@ -49,9 +49,9 @@ ki_tmp_vars_path: "{{ ki_tmp_root_path }}/vars.yml"
 ki_tmp_pki_path: "{{ ki_tmp_root_path }}/pki"
 ki_tmp_ki_ca_crt_path: "{{ ki_tmp_root_path }}/ki-ca.crt"
 ki_tmp_join_credentials_path: "{{ ki_tmp_root_path }}/join-credentials.yml"
-# The source and the destination of the payload are named apart on purpose. A
-# control node that is also a managed node would otherwise have scp copy a file
-# onto itself, which truncates it
+# The source and the destination of an archive are named apart so that each side
+# owns the file it cleans up. A control node that is also a managed node holds
+# both, and the names say which play is responsible for which
 ki_tmp_payload_src_path: "{{ ki_tmp_root_path }}/payload-src.tar"
 ki_tmp_payload_path: "{{ ki_tmp_root_path }}/payload.tar"
 ki_tmp_ansible_src_path: "{{ ki_tmp_root_path }}/ansible-src.tar"
@@ -71,6 +71,8 @@ ki_cp_k8s_cp_lb_stats_port: 18404
 ki_cp_k8s_registry_port: 5000
 
 k8s_version: "v1.34.1"
+# Where kubeadm keeps the certificates of the cluster. Fixed by kubeadm
+k8s_pki_path: "/etc/kubernetes/pki"
 k8s_apiserver_port: 6443
 k8s_service_subnet: "10.96.0.0/12"
 k8s_pod_subnet: "10.244.0.0/16"
@@ -78,6 +80,13 @@ k8s_ca_certificate_validity_period: "87600h" # 87600h = 10 year
 k8s_cp: false
 
 nvidia_gpu: false
+
+# How long before a certificate expires it starts being reported. Generous on
+# purpose: the certificates kubeadm issues last three years and are renewed,
+# while the ki pki lasts ten and its ca and its leaf expire together, which makes
+# rebuilding the cluster the answer rather than a rotation. Both deadlines are
+# only useful if they are seen coming
+ki_cert_expiry_warning_days: 180
 
 target_node: null
 target_node_op: null

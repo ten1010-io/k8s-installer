@@ -122,6 +122,38 @@ sudo /opt/k8s-installer/ansible/reset-control-node-ssh.sh   # 출력된 안내�
 sudo /opt/k8s-installer/reset.sh
 ----
 
+=== 인증서 만료 확인
+
+만료가 임박한 인증서를 보고합니다. `add-node`, `remove-node` 끝에서 자동으로 돌고, 따로 돌릴 수도 있습니다.
+
+[source,shell]
+----
+source /opt/k8s-installer/venv/bin/activate
+cd /opt/k8s-installer/ansible
+ansible-playbook -i inventory.yml playbooks/tasks/check-cert-expiry.yml
+----
+
+기본 임계치는 180일이며 `ki_cert_expiry_warning_days`로 바꿉니다. 보고만 하고 실패시키지는 않습니다.
+
+|===
+|인증서 |유효기간 |만료 시 대응
+
+|kubeadm 인증서 (`/etc/kubernetes/pki`)
+|3년
+|`kubeadm certs renew`. `kubeadm upgrade` 시 자동 갱신됨
+
+|kubeadm CA
+|10년
+|클러스터 재구축
+
+|ki PKI (`/etc/k8s-installer/pki`)
+|10년
+|*클러스터 재구축.* CA와 리프가 같은 날 만료되므로 리프만 재발급하는 경로가 성립하지 않습니다
+|===
+
+ki PKI가 만료되면 레지스트리 TLS가 깨져 모든 노드에서 이미지 pull이 실패합니다.
+설치 시점 + 10년이 이 배포의 하드 리밋이고, 재설치할 때마다 초기화됩니다.
+
 == 지원하는 운영체제
 
 * Ubuntu 22.04

@@ -1,0 +1,25 @@
+# Reports certificates that are close to expiring. It only reports: a playbook
+# that could renew one has to be able to run, and the ki pki has no rotation at
+# all, so what an operator needs from here is notice rather than a failure.
+#
+# Runnable on its own whenever the question comes up:
+#
+#   ansible-playbook -i inventory.yml playbooks/tasks/check-cert-expiry.yml
+- hosts: all:!localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    # A path that does not exist is skipped, so the same call covers a worker
+    # holding only the cluster ca and a ki cp node holding the installer pki too
+    - name: Execute check-cert-expiry.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/all-node/check-cert-expiry.sh --days {{ ki_cert_expiry_warning_days }} {{ k8s_pki_path }} {{ ki_etc_pki_path }}"
+      register: shell_result
+
+    - name: Report certificates that are close to expiring
+      debug:
+        msg: "{{ shell_result.stdout_lines }}"
+      when: shell_result.stdout | trim | length > 0
+
+    - name: "Remove temporary variable[\"shell_result\"]"
+      set_fact:
+        shell_result: null
