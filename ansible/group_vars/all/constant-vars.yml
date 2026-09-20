@@ -43,6 +43,12 @@ ki_release_upgradable_from: "{{ (lookup('file', ki_opt_release_meta_path) | from
 # See release.yml. Kept in sync with SNAPSHOT_SUFFIX of setup.sh and upgrade.sh
 ki_release_snapshot_suffix: "-SNAPSHOT"
 
+# The nodes that can no longer be reached, declared as the broken_node group of
+# inventory.yml. Every play excludes that group by pattern, which has to name it
+# literally because a host pattern is resolved before any variable exists, and
+# everything else that walks the inventory subtracts this list
+ki_broken_nodes: "{{ groups['broken_node'] | default([]) }}"
+
 ki_tmp_root_path: "/tmp/k8s-installer"
 ki_tmp_localhost_vars_path: "{{ ki_tmp_root_path }}/localhost-vars.yml"
 ki_tmp_vars_path: "{{ ki_tmp_root_path }}/vars.yml"
@@ -61,6 +67,12 @@ ki_etc_root_path: "/etc/k8s-installer"
 ki_etc_pki_path: "{{ ki_etc_root_path }}/pki"
 ki_etc_services_path: "{{ ki_etc_root_path }}/services"
 ki_etc_kubeadm_path: "{{ ki_etc_root_path }}/kubeadm"
+# What every node of the inventory reported the last time gather-facts reached
+# it. Held by every node of the ki_cp_node group and rewritten on every run, so
+# that a node that can no longer be reached can still be named by the playbooks
+# that have to clean up after it. Nothing is derived from it while a node
+# answers, since what the node itself reports is always the fresher answer
+ki_etc_nodes_path: "{{ ki_etc_root_path }}/nodes.yml"
 
 # Where the ephemeral storage device of a node is mounted. /var/lib/kubelet,
 # /var/log/pods and /var/lib/containerd are fixed paths and one device can not be

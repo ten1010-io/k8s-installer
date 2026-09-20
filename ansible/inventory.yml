@@ -41,3 +41,10 @@ k8s_node:
       # The device given here holds everything kubelet accounts as ephemeral
       # storage. It gets formatted, so it has to be a disk with nothing on it
       #ephemeral_storage_device: "/dev/disk/by-id/nvme-eui.0123456789abcdef"
+
+# Nodes that can no longer be reached. Every playbook leaves them alone, so that
+# losing one node does not stop the installer from working on the others. A node
+# is put here while it is down and taken out once it has been rebuilt, and
+# remove-broken-node.yml is what takes it out of the cluster in the meantime
+broken_node:
+  hosts: {}

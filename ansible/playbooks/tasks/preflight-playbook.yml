@@ -1,4 +1,4 @@
-- hosts: all
+- hosts: all:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -40,6 +40,21 @@
             - node not in groups['ki_cp_node']
             - node not in groups['k8s_node']
 
+        # Both playbooks work on the node itself, which is the one thing a node of
+        # the broken_node group can not be asked to do
+        - name: Validate variable[\"node\"]
+          fail:
+            msg: >-
+              Node["{{ node }}"] is in the broken_node group, so this playbook can not
+              reach it.
+              {% if playbook == "remove-node" %}
+              Run the remove-broken-node.yml playbook instead, which takes it out of the
+              cluster from the nodes that are still up
+              {% else %}
+              Rebuild it and take it out of the broken_node group of inventory.yml first
+              {% endif %}
+          when: node in ki_broken_nodes
+
         - name: Set_fact variable[\"target_node\"] and variable[\"target_node_op\"]
           set_fact:
             target_node: "{{ node }}"
@@ -51,3 +66,29 @@
             target_node: "{{ node }}"
             target_node_op: remove
           when: playbook == "remove-node"
+
+    # The node is named by the inventory rather than by a variable on the command
+    # line. It has to be in the broken_node group for the plays to leave it out,
+    # and naming it a second place would be a second place to get it wrong
+    - when: playbook == "remove-broken-node"
+      block:
+        - name: "Validate group[\"broken_node\"]"
+          fail:
+            msg: >-
+              The broken_node group holds {{ ki_broken_nodes | length }} nodes,
+              but this playbook removes exactly one. Declare the group in inventory.yml and put
+              the node that can no longer be reached in it. Nodes are removed one at a time,
+              because each removal takes the nodes that are left through a reconfiguration
+          when: ki_broken_nodes | length != 1
+
+        - name: "Validate group[\"broken_node\"]"
+          fail:
+            msg: "Node[\"{{ ki_broken_nodes[0] }}\"] must belong to ki_cp_node or k8s_node group"
+          when:
+            - ki_broken_nodes[0] not in groups['ki_cp_node']
+            - ki_broken_nodes[0] not in groups['k8s_node']
+
+        - name: Set_fact variable[\"target_node\"] and variable[\"target_node_op\"]
+          set_fact:
+            target_node: "{{ ki_broken_nodes[0] }}"
+            target_node_op: remove

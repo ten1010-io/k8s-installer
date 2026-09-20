@@ -1,4 +1,4 @@
-- hosts: k8s_node
+- hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
@@ -42,7 +42,7 @@
         src_arg: "{{ ki_tmp_join_credentials_path }}"
         dst_arg: "{{ hostvars[target_node]['ansible_ssh_user'] }}@{{ hostvars[target_node]['ansible_host'] }}:{{ ki_tmp_join_credentials_path }}"
 
-- hosts: k8s_node
+- hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
@@ -52,7 +52,7 @@
       shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/join-k8s-cluster.sh {{ vars_path_arg }}"
       when: inventory_hostname == target_node
 
-- hosts: ki_cp_node
+- hosts: ki_cp_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
@@ -62,7 +62,7 @@
       shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh {{ vars_path_arg }} --update"
       when: hostvars[target_node]['k8s_cp']
 
-- hosts: all
+- hosts: all:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:

@@ -76,6 +76,7 @@ ki_opt_venv_path=""
 
 yq_cmd=""
 jinja2_cmd=""
+etcdctl_cmd=""
 
 playbook=""
 inventory_hostname=""
@@ -122,6 +123,74 @@ main() {
 
     return 0
   fi
+
+  # The node being removed is not in the play, so this never runs on it. What it
+  # checks instead is that the nodes that are left can carry out the removal:
+  # deleting the node from the cluster and taking its etcd member out are both
+  # writes, and a cluster that has lost quorum can not take either
+  if [[ $playbook = "remove-broken-node" ]]; then
+    require_linux_packages_installed
+    if [[ $(is_ki_cp_node "$inventory_hostname") = "true" ]]; then
+      require_ki_cp_node
+    else
+      require_not_ki_cp_node
+    fi
+
+    if [[ $(is_k8s_cp_node "$inventory_hostname") = "true" ]]; then
+      require_k8s_cluster_reachable
+      require_etcd_quorum
+      require_hostname_known "$target_node"
+      check_k8s_cluster_matches_inventory
+    fi
+
+    return 0
+  fi
+
+  return 0
+}
+
+require_k8s_cluster_reachable() {
+  local output
+  local exit_code=0
+  output=$(kubectl get --raw /readyz 2>&1) || exit_code=$?
+
+  [[ $exit_code != 0 ]] && die "[ERROR] K8s cluster not reachable from this node\n$output"
+
+  return 0
+}
+
+# A linearizable read, so it answers whether the cluster can still be written to
+# rather than whether this member is up. Removing a node is a write, and a
+# cluster that has lost quorum takes none: with two members one loss is already
+# too many, and no playbook can recover from that. Restoring etcd comes first
+require_etcd_quorum() {
+  local output
+  local exit_code=0
+  output=$($etcdctl_cmd --endpoints=https://127.0.0.1:2379 --command-timeout=10s endpoint health 2>&1) || exit_code=$?
+
+  [[ $exit_code != 0 ]] &&
+    die "[ERROR] Etcd cluster has no quorum, so no node can be removed from it. Restore etcd first\n$output"
+
+  return 0
+}
+
+# The node of the cluster a node of the inventory is, is matched by hostname, and
+# a node that can not be reached did not report one. gather-facts.yml fills it in
+# from what the last run recorded, so the only way to be without it is for the
+# node to have been out of reach ever since that record began
+require_hostname_known() {
+  local ih=$1
+
+  [[ $(is_k8s_node "$ih") = "false" ]] && return 0
+
+  local hostname
+  hostname=$($yq_cmd ".ih_to_hostname_dict.$ih" < "$vars_path")
+  [[ -n $hostname && $hostname != "null" ]] && return 0
+
+  local msg="[ERROR] Hostname of node[\"$ih\"] is not known, so which node of the k8s cluster it is"
+  msg+=" can not be established. No run of gather-facts has reached it since the node record began."
+  msg+=" Add it to the ih_to_hostname_dict of the node record file and run this again"
+  die "$msg"
 
   return 0
 }
@@ -350,6 +419,12 @@ is_k8s_cp_node() {
   $yq_cmd ".k8s_cp_nodes | contains([\"$ih\"])" < "$vars_path"
 }
 
+is_k8s_node() {
+  ih=$1
+
+  $yq_cmd ".groups.k8s_node | contains([\"$ih\"])" < "$vars_path"
+}
+
 import_ki_opt_vars() {
   ki_opt_root_path=$(grep -oP  "^ki_opt_root_path: \K(.+)" < "$vars_path")
   ki_opt_scripts_path=$(grep -oP  "^ki_opt_scripts_path: \K(.+)" < "$vars_path")
@@ -360,6 +435,7 @@ import_ki_opt_vars() {
 setup_cmd_vars() {
   yq_cmd="$ki_opt_bundle_path/bin/yq"
   jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
+  etcdctl_cmd="etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/peer.crt --key=/etc/kubernetes/pki/etcd/peer.key"
 }
 
 validate_ki_opt_directory() {

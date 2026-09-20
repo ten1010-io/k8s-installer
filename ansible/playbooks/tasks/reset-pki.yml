@@ -1,4 +1,4 @@
-- hosts: ki_cp_node
+- hosts: ki_cp_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:

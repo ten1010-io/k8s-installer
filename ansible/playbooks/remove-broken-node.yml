@@ -1,0 +1,61 @@
+# Takes a node that can no longer be reached out of the cluster, working only
+# from the nodes that are left.
+#
+# remove-node.yml can not do this. Most of what it does it does on the node being
+# removed, and a node that does not answer fails the play before any of it is
+# reached. What is left once those steps are dropped is the part that never
+# needed the node in the first place: deleting it from the cluster, and
+# reconfiguring the ki cp services of the nodes that remain so that they stop
+# expecting it.
+#
+# The node is named by putting it in the broken_node group of inventory.yml,
+# which is also what makes every other playbook leave it alone. It stays there
+# until it has been rebuilt, and rebuilding means a fresh install: the machine
+# still holds the pki, the installer and a kubelet whose certificates are still
+# valid, so bringing it back as it is would put it back into the cluster this
+# playbook just took it out of.
+#
+#   # inventory.yml
+#   broken_node:
+#     hosts:
+#       node2: {}
+#
+#   ansible-playbook -i inventory.yml playbooks/remove-broken-node.yml -e fenced=
+#
+# What is left behind on purpose: nothing is uninstalled, because there is
+# nothing to uninstall it from
+- import_playbook: tasks/check-k8s-installer-setup.yml
+
+- import_playbook: tasks/sync-ansible.yml
+
+- import_playbook: tasks/preflight-playbook.yml
+  vars:
+    playbook: "remove-broken-node"
+
+- import_playbook: tasks/check-broken-node.yml
+
+- import_playbook: tasks/gather-facts.yml
+
+- import_playbook: tasks/validate-hostvars.yml
+
+- import_playbook: tasks/setup-vars-file.yml
+
+- import_playbook: tasks/check-node-state.yml
+
+# Before the ki cp services are reconfigured rather than after. Both of these
+# need a working control plane, and reconfiguring the services restarts the load
+# balancer and the keepalived that carries the virtual ip, which takes the path
+# to the api server down for as long as it takes to come back up
+- import_playbook: tasks/remove-k8s-node.yml
+  when: target_node in groups['k8s_node']
+
+- import_playbook: tasks/remove-ki-cp-node.yml
+  when: target_node in groups['ki_cp_node']
+
+- import_playbook: tasks/setup-all-node-resolv-conf.yml
+
+- import_playbook: tasks/reset-vars-file.yml
+
+- import_playbook: tasks/check-cert-expiry.yml
+
+- import_playbook: tasks/report-broken-node-removed.yml

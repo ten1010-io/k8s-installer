@@ -8,7 +8,7 @@
 # The control node is left out. upgrade.sh already brought its installer to this
 # release, and replacing it from here would pull the virtual environment out from
 # under the ansible run
-- hosts: all:!localhost
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -53,7 +53,7 @@
         - item != ki_control_node_ih
         - hostvars[item]['node_release'] not in ki_release_upgradable_from
         - hostvars[item]['node_release'] != ki_release_version
-      with_items: "{{ groups['all'] | community.general.lists_difference(['localhost']) }}"
+      with_items: "{{ groups['all'] | community.general.lists_difference(['localhost']) | difference(ki_broken_nodes) }}"
 
     - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
       shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
@@ -61,7 +61,7 @@
     - name: Create payload archive
       shell: "sudo tar cf {{ ki_tmp_payload_src_path }} -C {{ ki_opt_root_path }} bundle scripts"
 
-- hosts: all:!localhost
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:

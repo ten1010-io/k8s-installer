@@ -6,7 +6,7 @@
 #
 # That puts it before setup-vars-file.yml too, so the script takes its input as
 # arguments rather than reading the vars file. See docs/impl-notes.adoc
-- hosts: all:!localhost
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:

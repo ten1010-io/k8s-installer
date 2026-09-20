@@ -5,7 +5,7 @@
 # Runnable on its own whenever the question comes up:
 #
 #   ansible-playbook -i inventory.yml playbooks/tasks/check-cert-expiry.yml
-- hosts: all:!localhost
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:

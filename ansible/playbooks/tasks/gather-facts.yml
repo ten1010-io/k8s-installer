@@ -1,4 +1,4 @@
-- hosts: all:!localhost
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
@@ -131,6 +131,41 @@
           set_fact:
             shell_result: null
 
+    # A node of the broken_node group is left out of every play, so it reports
+    # nothing and its hostname is missing from what was just gathered. It is
+    # filled in from what the last run recorded, because delete-node.sh and
+    # check-node-state.sh identify a node of the cluster by its hostname and have
+    # nothing to match it against otherwise.
+    #
+    # What the nodes reported now wins over the record, and the record is pruned
+    # to the inventory, so an entry only survives while its node is still declared
+    # and still out of reach
+    - name: Setup the part of variable[\"ih_to_hostname_dict\"] the nodes could not report
+      block:
+        - name: "Read file[\"{{ ki_etc_nodes_path }}\"]"
+          shell: "sudo cat {{ ki_etc_nodes_path }} 2>/dev/null || true"
+          register: shell_result
+
+        - name: Set_fact variable[\"recorded_ih_to_hostname_dict\"]
+          set_fact:
+            recorded_ih_to_hostname_dict: "{{ (shell_result.stdout | from_yaml | default({}, true)).get('ih_to_hostname_dict', {}) }}"
+
+        - name: Set_fact variable[\"ih_to_hostname_dict\"]
+          set_fact:
+            ih_to_hostname_dict: "{{ recorded_ih_to_hostname_dict | combine(ih_to_hostname_dict) | dict2items | selectattr('key', 'in', groups['all']) | items2dict }}"
+
+        - name: Set_fact variable[\"hostname_to_ih_dict\"]
+          set_fact:
+            hostname_to_ih_dict: "{{ ih_to_hostname_dict | dict2items | items2dict(key_name='value', value_name='key') }}"
+
+        - name: Remove temporary variable[\"recorded_ih_to_hostname_dict\"]
+          set_fact:
+            recorded_ih_to_hostname_dict: null
+
+        - name: Remove temporary variable[\"shell_result\"]
+          set_fact:
+            shell_result: null
+
     - name: Setup variable[\"internal_network_hosts\"]
       block:
         - name: Write temporary file for cli input
@@ -197,7 +232,7 @@
           set_fact:
             localhost_ih: "{{ hostname_to_ih_dict[hostname] | default(None) }}"
 
-- hosts: all:!localhost
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -224,3 +259,21 @@
     - name: Set_fact variable[\"localhost_ih\"]
       set_fact:
         localhost_ih: "{{ hostvars['localhost']['localhost_ih'] }}"
+
+# Recorded after the facts are gathered, so that what is written is what the
+# nodes reported on this run. Every node of the ki_cp_node group holds it, for
+# the same reason every one of them holds the ansible directory: the record is
+# only ever needed once a node is gone, and the control node may be the node that
+# is gone
+- hosts: ki_cp_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: "Create directory[\"{{ ki_etc_root_path }}\"]"
+      shell: "sudo mkdir -p {{ ki_etc_root_path }}"
+
+    - name: "Record the nodes of the inventory in file[\"{{ ki_etc_nodes_path }}\"]"
+      copy:
+        content: "{{ { 'ih_to_hostname_dict': hostvars['localhost']['ih_to_hostname_dict'] } | to_nice_yaml }}"
+        dest: "{{ ki_etc_nodes_path }}"
+      become: yes

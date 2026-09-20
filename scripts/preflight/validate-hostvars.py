@@ -34,6 +34,7 @@ def main():
 
     check_type(hostvars_errors, hostvars)
     validate_removed_vars(hostvars_errors, hostvars)
+    validate_broken_node_group(hostvars_errors, hostvars)
     validate_control_node(hostvars_errors, hostvars)
     validate_ki_cp_ha_mode_vip(hostvars_errors, hostvars)
     validate_internal_network_subnets(hostvars_errors, hostvars)
@@ -77,6 +78,46 @@ def validate_removed_vars(hostvars_errors: List[HostvarsError], hostvars):
 
             error = HostvarsError(ih, (var_name,), str(hostvars[ih][var_name]), msg)
             hostvars_errors.append(error)
+
+
+def get_broken_node_ihs(hostvars) -> List[str]:
+    """The nodes every play leaves out, because they can no longer be reached.
+
+    They report nothing, so anything derived from what a node reports has no entry
+    for them and the checks over those have to skip them
+    """
+    return hostvars["localhost"].get("groups", {}).get("broken_node", [])
+
+
+def validate_broken_node_group(hostvars_errors: List[HostvarsError], hostvars):
+    """Requires the inventory to declare the broken_node group.
+
+    Every play excludes that group, and a pattern excluding a group that is not
+    declared excludes nothing while looking like it does. An inventory kept across
+    an upgrade predates the group, so the absence is reported rather than assumed
+    to mean that no node is broken
+    """
+    if "broken_node" in hostvars["localhost"].get("groups", {}):
+        control_node_ih = hostvars["localhost"].get("control_node_ih")
+        if control_node_ih in get_broken_node_ihs(hostvars):
+            error = HostvarsError("localhost",
+                                  ("control_node_ih",),
+                                  str(control_node_ih),
+                                  f"Node[\"{control_node_ih}\"] is declared as the control node and as a"
+                                  " broken node. The control node is the node the playbooks run from, so it"
+                                  " can not be one of the nodes they leave out. Hand the control node over"
+                                  " to another node of the ki_cp_node group first. See README.adoc")
+            hostvars_errors.append(error)
+        return
+
+    error = HostvarsError("localhost",
+                          ("groups", "broken_node"),
+                          "None",
+                          "Inventory does not declare the broken_node group. Every playbook"
+                          " excludes it so that a node that can no longer be reached does not"
+                          " stop the others from being worked on. Add it to inventory.yml:"
+                          "\n\nbroken_node:\n  hosts: {}")
+    hostvars_errors.append(error)
 
 
 def validate_control_node(hostvars_errors: List[HostvarsError], hostvars):
@@ -157,7 +198,8 @@ def validate_internal_network_subnets(hostvars_errors: List[HostvarsError], host
     ki_cp_ha_mode: bool = lo_hostvars["ki_cp_ha_mode"]
     ki_cp_ha_mode_vip = lo_hostvars["ki_cp_ha_mode_vip"]
 
-    ki_cp_nodes = lo_hostvars["groups"]["ki_cp_node"]
+    broken_node_ihs = get_broken_node_ihs(hostvars)
+    ki_cp_nodes = [ih for ih in lo_hostvars["groups"]["ki_cp_node"] if ih not in broken_node_ihs]
     internal_network_hosts = lo_hostvars["internal_network_hosts"]
 
     for ih in internal_network_hosts:
@@ -196,8 +238,13 @@ def validate_kubelet_reservations(hostvars_errors: List[HostvarsError], hostvars
     A wrong value here makes kubelet fail to start, which is hard to diagnose
     afterwards, so it is caught before kubeadm is run
     """
+    broken_node_ihs = get_broken_node_ihs(hostvars)
+
     for ih in hostvars.keys():
         if ih == "localhost":
+            continue
+
+        if ih in broken_node_ihs:
             continue
 
         if "kubelet_reservations" not in hostvars[ih]:

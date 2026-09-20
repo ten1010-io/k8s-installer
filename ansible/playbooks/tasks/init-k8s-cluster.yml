@@ -1,4 +1,4 @@
-- hosts: k8s_node
+- hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
@@ -43,9 +43,9 @@
         port_opt: "-P {{ hostvars[item]['ansible_port'] }}"
         src_arg: "{{ ki_tmp_join_credentials_path }}"
         dst_arg: "{{ hostvars[item]['ansible_ssh_user'] }}@{{ hostvars[item]['ansible_host'] }}:{{ ki_tmp_join_credentials_path }}"
-      with_items: "{{ groups['k8s_node'] }}"
+      with_items: "{{ groups['k8s_node'] | difference(ki_broken_nodes) }}"
 
-- hosts: k8s_node
+- hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
@@ -60,7 +60,7 @@
       shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/join-k8s-cluster.sh {{ vars_path_arg }}"
       when: inventory_hostname not in k8s_cp_nodes
 
-- hosts: all
+- hosts: all:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:

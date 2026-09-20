@@ -10,13 +10,13 @@
     - name: Copy ki-ca.crt to ansible control node
       shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
       vars:
-        src_ih: "{{ groups['ki_cp_node'] | first }}"
+        src_ih: "{{ groups['ki_cp_node'] | difference(ki_broken_nodes) | first }}"
         ssh_opt: "-o StrictHostKeyChecking=no"
         port_opt: "-P {{ hostvars[src_ih]['ansible_port'] }}"
         src_arg: "{{ hostvars[src_ih]['ansible_ssh_user'] }}@{{ hostvars[src_ih]['ansible_host'] }}:{{ ki_etc_pki_path }}/ki-ca.crt"
         dst_arg: "{{ ki_tmp_ki_ca_crt_path }}"
 
-- hosts: all:!localhost
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
@@ -40,9 +40,9 @@
         port_opt: "-P {{ hostvars[item]['ansible_port'] }}"
         src_arg: "{{ ki_tmp_ki_ca_crt_path }}"
         dst_arg: "{{ hostvars[item]['ansible_ssh_user'] }}@{{ hostvars[item]['ansible_host'] }}:{{ ki_tmp_ki_ca_crt_path }}"
-      with_items: "{{ groups['all'] | community.general.lists_difference(['localhost']) }}"
+      with_items: "{{ groups['all'] | community.general.lists_difference(['localhost']) | difference(ki_broken_nodes) }}"
 
-- hosts: all:!localhost
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
@@ -53,7 +53,7 @@
         - name: Execute setup-ki-ca-crt.sh
           shell: "sudo {{ ki_opt_scripts_path }}/all-node/ki-ca-crt/setup-ki-ca-crt.sh {{ vars_path_arg }}"
 
-- hosts: all
+- hosts: all:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:

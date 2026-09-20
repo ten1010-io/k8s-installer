@@ -116,6 +116,10 @@ ansible-playbook -i inventory.yml playbooks/upgrade-k8s-installer.yml
 
 NOTE: 클러스터 업그레이드(`upgrade-cluster.yml`)와 인증서 갱신(`renew-certs.yml`)은 아직 제공되지 않습니다.
 
+`inventory.yml` 도 보존되므로 새 릴리스가 추가한 그룹이 빠져 있을 수 있습니다. 마찬가지로
+플레이북이 알려주고 중단합니다. 접속되지 않는 노드를 선언하는 `broken_node` 그룹이 여기
+해당하며, 비어 있어도 선언은 있어야 합니다. 아래 <<고장난 노드 제거>> 를 보세요.
+
 `vars.yml` 은 보존되므로 제거된 변수가 남아 있을 수 있습니다. 플레이북이 시작 단계에서
 어느 변수를 지워야 하는지 알려주고 중단하므로, 안내대로 지우고 다시 실행하세요.
 `containerd_root_path` 가 여기 해당합니다. 컨테이너 런타임 루트는 더 이상 설정할 수 없고,
@@ -147,6 +151,56 @@ NOTE: 클러스터 업그레이드(`upgrade-cluster.yml`)와 인증서 갱신(`r
 # 릴리스         version: "1.1.0"   → commit → git tag v1.1.0
 # 다음 개발      version: "1.2.0-SNAPSHOT"
 ----
+
+=== 고장난 노드 제거
+
+접속이 되지 않는 노드는 `remove-node` 로 뺄 수 없습니다. 그 플레이북이 하는 일의 대부분이
+빼려는 노드 위에서 이뤄지기 때문입니다. 접속되지 않는 노드는 `inventory.yml` 의 `broken_node`
+그룹에 넣습니다.
+
+[source,yaml]
+----
+broken_node:
+  hosts:
+    node2: {}
+----
+
+그룹에 넣는 것만으로 *모든 플레이북이 그 노드를 건너뜁니다.* 노드 한 대가 죽었다고 해서
+나머지 노드에 대한 작업까지 막히지 않게 하는 것이 이 그룹의 목적이고, 클러스터에서 빼는 것은
+그 다음 문제입니다.
+
+[source,shell]
+----
+source /opt/k8s-installer/venv/bin/activate
+cd /opt/k8s-installer/ansible
+ansible-playbook -i inventory.yml playbooks/remove-broken-node.yml -e fenced=
+----
+
+살아있는 노드들에서만 동작합니다. 클러스터에서 노드와 etcd 멤버를 지우고, 남은 `ki_cp_node`
+들의 서비스를 그 노드가 없는 구성으로 다시 만듭니다. 노드 자체는 아무것도 정리하지 않습니다.
+정리할 대상에 닿을 수 없기 때문입니다.
+
+.전제 조건
+* *전원을 내리거나 네트워크에서 격리한 뒤* 실행해야 합니다. 접속이 안 될 뿐 살아있는 노드는
+  여전히 가상 IP를 주장하고 레지스트리를 서빙합니다. 플레이북은 접속 불가까지만 확인할 수
+  있으므로, 격리했다는 사실은 `-e fenced=` 로 사람이 선언합니다
+* 고장난 노드가 제어 노드라면 *다른 `ki_cp_node` 로 제어 노드를 먼저 인계*하세요
+* 고장난 노드가 `k8s_cp` 라면 *etcd 쿼럼이 남아 있어야 합니다.* 노드를 지우는 것도 etcd 멤버를
+  빼는 것도 쓰기 작업입니다. cp 노드가 2대인 구성에서는 1대만 잃어도 쿼럼이 깨지므로 이 경로로는
+  고칠 수 없고, etcd 복구가 먼저입니다
+* 남은 `ki_cp_node` 가 한 대뿐이라면 서비스를 다시 만드는 동안 가상 IP가 잠깐 사라집니다.
+  넘겨받을 상대가 없기 때문입니다
+
+[IMPORTANT]
+====
+*제거한 머신을 그대로 다시 켜지 마세요.* kubelet이 이 클러스터가 받아주는 인증서를 그대로
+들고 있어서 노드 등록을 계속 시도합니다. 워커였다면 성공해서 설치기가 모르는 노드로 되살아나고,
+컨트롤 플레인이었다면 kubelet이 자기 노드의 apiserver를 보는데 그 apiserver에 붙을 etcd가
+없어서 크래시루프만 돕니다. 어느 쪽이든 재투입은 OS 재설치부터입니다.
+====
+
+되돌릴 때는 노드를 재설치하고 `broken_node` 그룹에서 뺀 뒤 `setup-k8s-installer.yml`,
+`add-node.yml` 순으로 실행합니다. ki PKI는 살아있는 `ki_cp_node` 에서 복사됩니다.
 
 === 클러스터 제거
 

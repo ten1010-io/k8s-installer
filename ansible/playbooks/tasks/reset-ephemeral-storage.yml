@@ -5,7 +5,7 @@
 # Not conditioned on ephemeral_storage_device, so that a node still carrying the
 # mounts is taken apart even after the variable was cleared. The script is a no op
 # on a node that has nothing set up
-- hosts: all:!localhost
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:

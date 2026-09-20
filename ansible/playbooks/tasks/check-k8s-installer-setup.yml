@@ -1,4 +1,4 @@
-- hosts: all
+- hosts: all:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -26,7 +26,7 @@
 
 # Only the ki cp nodes hold the ansible directory, and all of them do, so that any
 # of them can be used as the control node after the one in use is lost
-- hosts: ki_cp_node
+- hosts: ki_cp_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -46,4 +46,6 @@
           but the source tree is release["{{ ki_release_version }}"].
           Run the upgrade-k8s-installer.yml playbook to bring every node to the same release
       when: hostvars[item]['node_release'] != ki_release_version
-      with_items: "{{ groups['all'] }}"
+      # A node of the broken_node group was not asked, so there is nothing of it
+      # to compare. It is also the one node no upgrade could bring into line
+      with_items: "{{ groups['all'] | difference(ki_broken_nodes) }}"

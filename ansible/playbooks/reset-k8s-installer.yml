@@ -7,7 +7,7 @@
 # The control node is left out, because deleting the directory ansible is running
 # out of would take the run down with it. reset.sh removes that one, and hands the
 # process over to rm for the same reason
-- hosts: all:!localhost
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:

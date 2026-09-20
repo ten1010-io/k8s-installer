@@ -1,4 +1,4 @@
-- hosts: k8s_node
+- hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
@@ -18,7 +18,7 @@
       shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/reset-k8s-node-cni.sh {{ vars_path_arg }}"
       when: inventory_hostname == target_node
 
-- hosts: ki_cp_node
+- hosts: ki_cp_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:

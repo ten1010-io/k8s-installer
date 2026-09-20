@@ -7,7 +7,7 @@
 # tasks. Within a play the order across hosts is a property of the linear
 # strategy, which is merely the default and can be changed in ansible.cfg, while
 # plays always run one after the other. Do not merge them
-- hosts: all:!localhost
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
@@ -19,7 +19,7 @@
         - target_node is none or inventory_hostname == target_node
         - inventory_hostname != ki_control_node_ih
 
-- hosts: all:!localhost
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:

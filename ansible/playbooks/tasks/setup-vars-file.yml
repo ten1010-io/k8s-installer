@@ -11,7 +11,7 @@
         dest: "{{ ki_tmp_localhost_vars_path }}"
       become: yes
 
-- hosts: all:!localhost
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:

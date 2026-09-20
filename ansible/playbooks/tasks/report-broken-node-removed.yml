@@ -1,0 +1,37 @@
+# What is left to do once the node is out of the cluster. None of it can be done
+# from here, and all of it is easy to leave undone, so it is said rather than
+# left to be remembered
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    remaining_ki_cp_nodes: "{{ groups['ki_cp_node'] | difference([target_node]) }}"
+  tasks:
+    - name: "Report what is left to do for node[\"{{ target_node }}\"]"
+      debug:
+        msg:
+          - >-
+            Node["{{ target_node }}"] is out of the cluster. It stays in the broken_node group
+            of inventory.yml, which is what keeps the other playbooks from trying to reach it
+          - >-
+            Do not bring the machine back as it is. Its kubelet still holds certificates this
+            cluster accepts and goes on trying to register the node. A worker succeeds and comes
+            back as a node nothing here knows about; a control plane node fails only because its
+            kubelet talks to its own api server, which no longer has an etcd to run against.
+            Reinstall it
+          - >-
+            To put it back: reinstall the node, take it out of the broken_node group, run
+            setup-k8s-installer.yml and then add-node.yml
+
+    # The pki of the installer is only ever held by the nodes of the ki_cp_node
+    # group, is copied from one of them when a node joins, and can not be
+    # reissued. One copy left is one node away from rebuilding the cluster
+    - name: "Report the copies left of the pki"
+      debug:
+        msg: >-
+          WARNING: the ki pki now has one copy, on node["{{ remaining_ki_cp_nodes[0] }}"]. It can
+          not be reissued, so losing that node means rebuilding the cluster. Put a node back in
+          the ki_cp_node group
+      when:
+        - target_node in groups['ki_cp_node']
+        - remaining_ki_cp_nodes | length == 1

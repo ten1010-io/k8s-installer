@@ -8,7 +8,7 @@
 # The control node is left out. Its installer directory is the one setup.sh built
 # and the one this play copies from, and it is also the directory ansible itself
 # is running out of
-- hosts: all:!localhost
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -28,7 +28,7 @@
     - name: Create payload archive
       shell: "sudo tar cf {{ ki_tmp_payload_src_path }} -C {{ ki_opt_root_path }} bundle scripts"
 
-- hosts: all:!localhost
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:

@@ -16,7 +16,7 @@
     - name: Create ansible archive
       shell: "sudo tar cf {{ ki_tmp_ansible_src_path }} -C {{ ki_opt_root_path }} ansible"
 
-- hosts: ki_cp_node
+- hosts: ki_cp_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:

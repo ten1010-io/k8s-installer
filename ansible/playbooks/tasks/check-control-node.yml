@@ -38,7 +38,7 @@
 
 # Read over the connection ansible would use for that node, so that a declaration
 # naming a different machine is caught rather than assumed
-- hosts: all:!localhost
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   tasks:

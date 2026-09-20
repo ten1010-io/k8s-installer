@@ -78,6 +78,7 @@ yq_cmd=""
 jinja2_cmd=""
 etcdctl_cmd=""
 
+playbook=""
 target_node=""
 target_node_op=""
 k8s_cp_nodes=""
@@ -90,6 +91,7 @@ main() {
   require_directory_exists "$ki_opt_root_path"
   validate_ki_opt_directory
 
+  playbook=$($yq_cmd '.playbook' < "$vars_path")
   target_node=$($yq_cmd '.target_node' < "$vars_path")
   target_node_op=$($yq_cmd '.target_node_op' < "$vars_path")
   k8s_cp_nodes=$($yq_cmd -o json '.k8s_cp_nodes' < "$vars_path")
@@ -97,6 +99,14 @@ main() {
 
   [[ -z $target_node ]] && exit 0
   [[ $target_node_op != "remove" ]] && exit 0
+
+  # Established before anything is looked up rather than left to the lookups. Both
+  # of those answer through a command substitution, where a die would end the
+  # subshell and leave the caller reading an empty answer as "does not exist", so
+  # an unreachable api server or an etcd without quorum would read as a node that
+  # is already gone and the removal would report success having done nothing
+  require_k8s_cluster_reachable
+  require_etcd_quorum
 
   local target_node_knn
   target_node_knn=$(get_knn "$target_node")
@@ -137,6 +147,28 @@ get_hostname() {
   [[ -z $hostname || $hostname = "null" ]] && die "[ERROR] Fail to get hostname for ih[\"$ih\"]"
 
   echo "$hostname"
+}
+
+require_k8s_cluster_reachable() {
+  local output
+  local exit_code=0
+  output=$(kubectl get --raw /readyz 2>&1) || exit_code=$?
+
+  [[ $exit_code != 0 ]] && die "[ERROR] K8s cluster not reachable from this node\n$output"
+
+  return 0
+}
+
+# A linearizable read, so it answers whether the cluster can still be written to.
+# Deleting the node and removing its etcd member are both writes
+require_etcd_quorum() {
+  local output
+  local exit_code=0
+  output=$($etcdctl_cmd --endpoints=https://127.0.0.1:2379 --command-timeout=10s endpoint health 2>&1) || exit_code=$?
+
+  [[ $exit_code != 0 ]] && die "[ERROR] Etcd cluster has no quorum. Restore etcd first\n$output"
+
+  return 0
 }
 
 k8s_node_exists() {
@@ -202,13 +234,20 @@ delete_etcd_member() {
 delete_k8s_node() {
   knn=$1
 
-  kubectl drain "$knn" \
-      --grace-period 10 \
-      --timeout 30s \
-      --disable-eviction \
-      --force \
-      --delete-emptydir-data \
-      --ignore-daemonsets
+  # A node that can no longer be reached has no kubelet left to terminate its
+  # pods, so a drain waits for pods that nothing is going to remove and times out,
+  # which would leave the etcd member behind. Deleting the node object is what
+  # releases them: the control plane cleans up the pods of a node that is gone
+  if [[ $playbook != "remove-broken-node" ]]; then
+    kubectl drain "$knn" \
+        --grace-period 10 \
+        --timeout 30s \
+        --disable-eviction \
+        --force \
+        --delete-emptydir-data \
+        --ignore-daemonsets
+  fi
+
   kubectl delete node "$knn"
 }
 
