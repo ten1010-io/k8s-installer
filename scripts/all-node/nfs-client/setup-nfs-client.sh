@@ -79,7 +79,7 @@ DROP_IN_PATH="$DROP_IN_DIR_PATH"/override.conf
 
 ki_opt_root_path=""
 ki_opt_scripts_path=""
-ki_opt_bin_path=""
+ki_opt_bundle_path=""
 ki_opt_venv_path=""
 
 yq_cmd=""
@@ -157,12 +157,12 @@ require_svc_installed() {
 import_ki_opt_vars() {
   ki_opt_root_path=$(grep -oP  "^ki_opt_root_path: \K(.+)" < "$vars_path")
   ki_opt_scripts_path=$(grep -oP  "^ki_opt_scripts_path: \K(.+)" < "$vars_path")
-  ki_opt_bin_path=$(grep -oP  "^ki_opt_bin_path: \K(.+)" < "$vars_path")
+  ki_opt_bundle_path=$(grep -oP  "^ki_opt_bundle_path: \K(.+)" < "$vars_path")
   ki_opt_venv_path=$(grep -oP  "^ki_opt_venv_path: \K(.+)" < "$vars_path")
 }
 
 setup_cmd_vars() {
-  yq_cmd="$ki_opt_bin_path/bin/yq"
+  yq_cmd="$ki_opt_bundle_path/bin/yq"
   jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
 }
 
@@ -176,7 +176,7 @@ get_os_version() {
 
 validate_ki_opt_directory() {
   require_directory_exists "$ki_opt_scripts_path"
-  require_directory_exists "$ki_opt_bin_path"
+  require_directory_exists "$ki_opt_bundle_path"
   require_directory_exists "$ki_opt_venv_path"
 
   return 0

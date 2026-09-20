@@ -24,7 +24,7 @@ build/
 .metadata/
 .factorypath
 
-/bin/
+/bundle/
 
 ### Claude ###
 .claude/

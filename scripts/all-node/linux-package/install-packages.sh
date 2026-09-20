@@ -75,7 +75,7 @@ RHEL8_SUPPORTED_MINOR_VERSION=10
 
 ki_opt_root_path=""
 ki_opt_scripts_path=""
-ki_opt_bin_path=""
+ki_opt_bundle_path=""
 ki_opt_venv_path=""
 
 yq_cmd=""
@@ -133,23 +133,23 @@ ubuntu2204_install() {
       chrony
   fi
 
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu22.04/nfs-common
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/nfs-common
 
-  dpkg -R -i --force-confnew "$ki_opt_bin_path"/linux-packages/ubuntu22.04/systemd
+  dpkg -R -i --force-confnew "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/systemd
 
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu22.04/libltdl7
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu22.04/pigz
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu22.04/slirp
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu22.04/containerd
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu22.04/conntrack
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu22.04/ebtables
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu22.04/docker
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/libltdl7
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/pigz
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/slirp
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/containerd
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/conntrack
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/ebtables
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/docker
 
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu22.04/nvidia-container-toolkit
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/nvidia-container-toolkit
 
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu22.04/ethtool
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu22.04/socat
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu22.04/k8s
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/ethtool
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/socat
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/k8s
 
   export DEBIAN_FRONTEND=""
 
@@ -185,22 +185,22 @@ ubuntu2404_install() {
       chrony
   fi
 
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu24.04/nfs-common
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/nfs-common
 
-  dpkg -R -i --force-confnew "$ki_opt_bin_path"/linux-packages/ubuntu24.04/systemd
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu24.04/dbus
+  dpkg -R -i --force-confnew "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/systemd
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/dbus
 
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu24.04/pigz
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu24.04/slirp
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu24.04/containerd
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu24.04/iptables
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu24.04/conntrack
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu24.04/docker
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/pigz
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/slirp
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/containerd
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/iptables
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/conntrack
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/docker
 
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu24.04/nvidia-container-toolkit
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/nvidia-container-toolkit
 
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu24.04/ethtool
-  dpkg -R -i "$ki_opt_bin_path"/linux-packages/ubuntu24.04/k8s
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/ethtool
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/k8s
 
   export DEBIAN_FRONTEND=""
 
@@ -231,54 +231,54 @@ rhel8_install() {
     runc \
     systemd-container
 
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/nfs-utils/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/nfs-utils/*.rpm
 
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/p11-kit/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/autogen-libopts/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/gmp/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/libidn2/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/libtasn1/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/nettle/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/gnutls/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/chrony/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/p11-kit/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/autogen-libopts/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/gmp/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libidn2/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libtasn1/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/nettle/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/gnutls/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/chrony/*.rpm
 
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/audit/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/libsepol/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/pcre2/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/libselinux/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/libsemanage/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/python3-setools/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/checkpolicy/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/mcstrans/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/policycoreutils/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/selinux-policy/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/container-selinux/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/libseccomp/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/containerd/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/audit/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libsepol/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/pcre2/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libselinux/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libsemanage/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/python3-setools/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/checkpolicy/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/mcstrans/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/policycoreutils/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/selinux-policy/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/container-selinux/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libseccomp/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/containerd/*.rpm
 
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/systemd/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/systemd/*.rpm
   kill -TERM 1
   wait_systemd_ready 300
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/libaio/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/device-mapper/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/fuse3/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/fuse-overlayfs/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/libcgroup/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/slirp/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/conntrack/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libaio/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/device-mapper/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/fuse3/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/fuse-overlayfs/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libcgroup/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/slirp/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/conntrack/*.rpm
   if [[ $(rhel8_is_installed "^libibverbs\.") = "false" ]]; then
-    rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/libibverbs/*.rpm
+    rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libibverbs/*.rpm
   fi
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/ebtables/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/docker/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/ebtables/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/docker/*.rpm
 
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/nvidia-container-toolkit/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/nvidia-container-toolkit/*.rpm
 
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/ethtool/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/libbpf/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/iproute/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/socat/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bin_path"/linux-packages/rhel8/k8s/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/ethtool/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libbpf/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/iproute/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/socat/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/k8s/*.rpm
 
   "$ki_opt_scripts_path/systemctl.sh" reload
 
@@ -342,12 +342,12 @@ is_systemd_ready() {
 import_ki_opt_vars() {
   ki_opt_root_path=$(grep -oP  "^ki_opt_root_path: \K(.+)" < "$vars_path")
   ki_opt_scripts_path=$(grep -oP  "^ki_opt_scripts_path: \K(.+)" < "$vars_path")
-  ki_opt_bin_path=$(grep -oP  "^ki_opt_bin_path: \K(.+)" < "$vars_path")
+  ki_opt_bundle_path=$(grep -oP  "^ki_opt_bundle_path: \K(.+)" < "$vars_path")
   ki_opt_venv_path=$(grep -oP  "^ki_opt_venv_path: \K(.+)" < "$vars_path")
 }
 
 setup_cmd_vars() {
-  yq_cmd="$ki_opt_bin_path/bin/yq"
+  yq_cmd="$ki_opt_bundle_path/bin/yq"
   jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
 }
 
@@ -361,7 +361,7 @@ get_os_version() {
 
 validate_ki_opt_directory() {
   require_directory_exists "$ki_opt_scripts_path"
-  require_directory_exists "$ki_opt_bin_path"
+  require_directory_exists "$ki_opt_bundle_path"
   require_directory_exists "$ki_opt_venv_path"
 
   return 0

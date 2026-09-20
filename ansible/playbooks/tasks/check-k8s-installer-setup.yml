@@ -8,8 +8,8 @@
     - name: "Check directory[\"{{ ki_opt_scripts_path }}\"] exists"
       shell: "sudo ls {{ ki_opt_scripts_path }}"
 
-    - name: "Check directory[\"{{ ki_opt_bin_path }}\"] exists"
-      shell: "sudo ls {{ ki_opt_bin_path }}"
+    - name: "Check directory[\"{{ ki_opt_bundle_path }}\"] exists"
+      shell: "sudo ls {{ ki_opt_bundle_path }}"
 
     - name: "Check directory[\"{{ ki_opt_venv_path }}\"] exists"
       shell: "sudo ls {{ ki_opt_venv_path }}"

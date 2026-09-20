@@ -76,7 +76,7 @@ SVC_NAME=ki-cp-ntp-server
 
 ki_opt_root_path=""
 ki_opt_scripts_path=""
-ki_opt_bin_path=""
+ki_opt_bundle_path=""
 ki_opt_venv_path=""
 
 yq_cmd=""
@@ -100,7 +100,7 @@ main() {
   etc_svc_root_path="$ki_etc_services_path"/$SVC_NAME
   [[ $update = "false" ]] && require_not_setup $SVC_NAME
 
-  docker load -i "$ki_opt_bin_path"/images/ntp/*.tar
+  docker load -i "$ki_opt_bundle_path"/images/ntp/*.tar
 
   mkdir -p "$etc_svc_root_path"
   create_compose_yml_file
@@ -150,18 +150,18 @@ require_not_setup() {
 import_ki_opt_vars() {
   ki_opt_root_path=$(grep -oP  "^ki_opt_root_path: \K(.+)" < "$vars_path")
   ki_opt_scripts_path=$(grep -oP  "^ki_opt_scripts_path: \K(.+)" < "$vars_path")
-  ki_opt_bin_path=$(grep -oP  "^ki_opt_bin_path: \K(.+)" < "$vars_path")
+  ki_opt_bundle_path=$(grep -oP  "^ki_opt_bundle_path: \K(.+)" < "$vars_path")
   ki_opt_venv_path=$(grep -oP  "^ki_opt_venv_path: \K(.+)" < "$vars_path")
 }
 
 setup_cmd_vars() {
-  yq_cmd="$ki_opt_bin_path/bin/yq"
+  yq_cmd="$ki_opt_bundle_path/bin/yq"
   jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
 }
 
 validate_ki_opt_directory() {
   require_directory_exists "$ki_opt_scripts_path"
-  require_directory_exists "$ki_opt_bin_path"
+  require_directory_exists "$ki_opt_bundle_path"
   require_directory_exists "$ki_opt_venv_path"
 
   return 0

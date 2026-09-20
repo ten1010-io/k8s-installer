@@ -10,8 +10,8 @@ ansible_ssh_user: root
 ki_opt_root_path: "/opt/k8s-installer"
 # Don't modify ki_opt_scripts_path. since it is hardcoded in setup.sh, setup-venv.sh
 ki_opt_scripts_path: "{{ ki_opt_root_path }}/scripts"
-# Don't modify ki_opt_bin_path. since it is hardcoded in setup.sh, setup-venv.sh
-ki_opt_bin_path: "{{ ki_opt_root_path }}/bin"
+# Don't modify ki_opt_bundle_path. since it is hardcoded in setup.sh, setup-venv.sh
+ki_opt_bundle_path: "{{ ki_opt_root_path }}/bundle"
 # Don't modify ki_opt_venv_path. since it is hardcoded in setup.sh, setup-venv.sh
 ki_opt_venv_path: "{{ ki_opt_root_path }}/venv"
 # Holds nothing but the release version. Written as the last step of

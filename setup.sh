@@ -64,18 +64,18 @@ parse_params "$@"
 # what this script installs
 KI_OPT_ROOT_PATH="/opt/k8s-installer"
 KI_OPT_SCRIPTS_PATH="$KI_OPT_ROOT_PATH"/scripts
-KI_OPT_BIN_PATH="$KI_OPT_ROOT_PATH"/bin
+KI_OPT_BUNDLE_PATH="$KI_OPT_ROOT_PATH"/bundle
 KI_OPT_ANSIBLE_PATH="$KI_OPT_ROOT_PATH"/ansible
 KI_OPT_VENV_PATH="$KI_OPT_ROOT_PATH"/venv
 KI_OPT_RELEASE_PATH="$KI_OPT_ROOT_PATH"/release
 KI_OPT_RELEASE_META_PATH="$KI_OPT_ROOT_PATH"/release.yml
 
-SRC_BIN_PATH="$SCRIPT_DIR_PATH"/bin
+SRC_BUNDLE_PATH="$SCRIPT_DIR_PATH"/bundle
 SRC_SCRIPTS_PATH="$SCRIPT_DIR_PATH"/scripts
 SRC_ANSIBLE_PATH="$SCRIPT_DIR_PATH"/ansible
 SRC_RELEASE_META_PATH="$SCRIPT_DIR_PATH"/release.yml
 
-YQ_CMD="$SRC_BIN_PATH"/bin/yq
+YQ_CMD="$SRC_BUNDLE_PATH"/bin/yq
 
 # Kept in sync with ki_release_snapshot_suffix of group_vars/all/constant-vars.yml
 SNAPSHOT_SUFFIX="-SNAPSHOT"
@@ -141,9 +141,9 @@ require_not_setup() {
 }
 
 require_bin_downloaded() {
-  [[ ! -e $SRC_BIN_PATH ]] && die "[ERROR] Directory[\"$SRC_BIN_PATH\"] not exists. execute \"download-bin.sh\" first"
-  [[ ! -d $SRC_BIN_PATH ]] && die "[ERROR] File[\"$SRC_BIN_PATH\"] is not a directory"
-  [[ ! -f $YQ_CMD ]] && die "[ERROR] File[\"$YQ_CMD\"] not exists. execute \"download-bin.sh\" first"
+  [[ ! -e $SRC_BUNDLE_PATH ]] && die "[ERROR] Directory[\"$SRC_BUNDLE_PATH\"] not exists. execute \"download-bundle.sh\" first"
+  [[ ! -d $SRC_BUNDLE_PATH ]] && die "[ERROR] File[\"$SRC_BUNDLE_PATH\"] is not a directory"
+  [[ ! -f $YQ_CMD ]] && die "[ERROR] File[\"$YQ_CMD\"] not exists. execute \"download-bundle.sh\" first"
 
   return 0
 }
@@ -157,8 +157,8 @@ copy_installer() {
   rm -rf "$KI_OPT_SCRIPTS_PATH"
   cp -r "$SRC_SCRIPTS_PATH" "$KI_OPT_SCRIPTS_PATH"
 
-  rm -rf "$KI_OPT_BIN_PATH"
-  cp -r "$SRC_BIN_PATH" "$KI_OPT_BIN_PATH"
+  rm -rf "$KI_OPT_BUNDLE_PATH"
+  cp -r "$SRC_BUNDLE_PATH" "$KI_OPT_BUNDLE_PATH"
 
   cp -f "$SRC_RELEASE_META_PATH" "$KI_OPT_RELEASE_META_PATH"
 

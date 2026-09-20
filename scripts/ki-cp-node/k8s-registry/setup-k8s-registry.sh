@@ -76,7 +76,7 @@ SVC_NAME=ki-cp-k8s-registry
 
 ki_opt_root_path=""
 ki_opt_scripts_path=""
-ki_opt_bin_path=""
+ki_opt_bundle_path=""
 ki_opt_venv_path=""
 
 yq_cmd=""
@@ -102,10 +102,10 @@ main() {
   var_svc_root_path="$ki_var_root_path"/$SVC_NAME
   [[ $update = "false" ]] && require_not_setup $SVC_NAME
 
-  docker load -i "$ki_opt_bin_path"/images/registry/*.tar
+  docker load -i "$ki_opt_bundle_path"/images/registry/*.tar
 
   mkdir -p "$var_svc_root_path"
-  tar xzf "$ki_opt_bin_path/registry-data/$SVC_NAME.tgz" -C "$var_svc_root_path"
+  tar xzf "$ki_opt_bundle_path/registry-data/$SVC_NAME.tgz" -C "$var_svc_root_path"
 
   mkdir -p "$etc_svc_root_path"
   $jinja2_cmd -D var_svc_root_path="$var_svc_root_path" \
@@ -140,18 +140,18 @@ require_not_setup() {
 import_ki_opt_vars() {
   ki_opt_root_path=$(grep -oP  "^ki_opt_root_path: \K(.+)" < "$vars_path")
   ki_opt_scripts_path=$(grep -oP  "^ki_opt_scripts_path: \K(.+)" < "$vars_path")
-  ki_opt_bin_path=$(grep -oP  "^ki_opt_bin_path: \K(.+)" < "$vars_path")
+  ki_opt_bundle_path=$(grep -oP  "^ki_opt_bundle_path: \K(.+)" < "$vars_path")
   ki_opt_venv_path=$(grep -oP  "^ki_opt_venv_path: \K(.+)" < "$vars_path")
 }
 
 setup_cmd_vars() {
-  yq_cmd="$ki_opt_bin_path/bin/yq"
+  yq_cmd="$ki_opt_bundle_path/bin/yq"
   jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
 }
 
 validate_ki_opt_directory() {
   require_directory_exists "$ki_opt_scripts_path"
-  require_directory_exists "$ki_opt_bin_path"
+  require_directory_exists "$ki_opt_bundle_path"
   require_directory_exists "$ki_opt_venv_path"
 
   return 0

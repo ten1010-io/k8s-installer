@@ -52,7 +52,7 @@
         # Replaced rather than merged, so a node can not end up holding files of
         # two releases at once
         - name: Extract payload
-          raw: "sudo rm -rf {{ ki_opt_bin_path }} {{ ki_opt_scripts_path }} && sudo tar xf {{ ki_tmp_payload_path }} -C {{ ki_opt_root_path }}"
+          raw: "sudo rm -rf {{ ki_opt_bundle_path }} {{ ki_opt_scripts_path }} && sudo tar xf {{ ki_tmp_payload_path }} -C {{ ki_opt_root_path }}"
 
         - name: Delete temporary payload archive
           raw: "sudo rm -f {{ ki_tmp_payload_path }}"

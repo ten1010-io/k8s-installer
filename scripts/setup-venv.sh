@@ -77,10 +77,10 @@ UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
 
 KI_OPT_SCRIPTS_PATH="$ki_opt_root_path"/scripts
-KI_OPT_BIN_PATH="$ki_opt_root_path"/bin
+KI_OPT_BUNDLE_PATH="$ki_opt_root_path"/bundle
 KI_OPT_VENV_PATH="$ki_opt_root_path"/venv
 
-YQ_CMD="$KI_OPT_BIN_PATH"/bin/yq
+YQ_CMD="$KI_OPT_BUNDLE_PATH"/bin/yq
 
 os_info=""
 os_distribution=""
@@ -127,11 +127,11 @@ remove_venv_if_forced() {
 ubuntu2204_setup() {
   if [[ $(ubuntu2204_is_installed python3\.10-venv) = "false" ]]; then
     export DEBIAN_FRONTEND=noninteractive
-    dpkg -R -i "$KI_OPT_BIN_PATH"/linux-packages/ubuntu22.04/python3.10
-    dpkg -i "$KI_OPT_BIN_PATH"/linux-packages/ubuntu22.04/python3/python3-minimal*
-    dpkg -R -i "$KI_OPT_BIN_PATH"/linux-packages/ubuntu22.04/python3
-    dpkg -R -i "$KI_OPT_BIN_PATH"/linux-packages/ubuntu22.04/python3-distutils
-    dpkg -R -i "$KI_OPT_BIN_PATH"/linux-packages/ubuntu22.04/python3.10-venv
+    dpkg -R -i "$KI_OPT_BUNDLE_PATH"/linux-packages/ubuntu22.04/python3.10
+    dpkg -i "$KI_OPT_BUNDLE_PATH"/linux-packages/ubuntu22.04/python3/python3-minimal*
+    dpkg -R -i "$KI_OPT_BUNDLE_PATH"/linux-packages/ubuntu22.04/python3
+    dpkg -R -i "$KI_OPT_BUNDLE_PATH"/linux-packages/ubuntu22.04/python3-distutils
+    dpkg -R -i "$KI_OPT_BUNDLE_PATH"/linux-packages/ubuntu22.04/python3.10-venv
     export DEBIAN_FRONTEND=""
   fi
 
@@ -141,10 +141,10 @@ ubuntu2204_setup() {
     msg "[INFO] K8s installer will create virtual environment[\"venv\"]"
 
     python3.10 -m venv "$KI_OPT_VENV_PATH"
-    "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BIN_PATH"/python-packages/python3.10/netifaces netifaces
-    "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BIN_PATH"/python-packages/python3.10/jinja2-cli jinja2-cli PyYAML
-    "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BIN_PATH"/python-packages/python3.10/ansible ansible jmespath
-    "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BIN_PATH"/python-packages/python3.10/pydantic pydantic
+    "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.10/netifaces netifaces
+    "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.10/jinja2-cli jinja2-cli PyYAML
+    "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.10/ansible ansible jmespath
+    "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.10/pydantic pydantic
   fi
 
   validate_venv_directory
@@ -159,8 +159,8 @@ ubuntu2204_setup() {
 ubuntu2404_setup() {
   if [[ $(ubuntu2404_is_installed python3\.12-venv) = "false" ]]; then
     export DEBIAN_FRONTEND=noninteractive
-    dpkg -R -i "$KI_OPT_BIN_PATH"/linux-packages/ubuntu24.04/python3.12
-    dpkg -R -i "$KI_OPT_BIN_PATH"/linux-packages/ubuntu24.04/python3.12-venv
+    dpkg -R -i "$KI_OPT_BUNDLE_PATH"/linux-packages/ubuntu24.04/python3.12
+    dpkg -R -i "$KI_OPT_BUNDLE_PATH"/linux-packages/ubuntu24.04/python3.12-venv
     export DEBIAN_FRONTEND=""
   fi
 
@@ -170,10 +170,10 @@ ubuntu2404_setup() {
     msg "[INFO] K8s installer will create virtual environment[\"venv\"]"
 
     python3.12 -m venv "$KI_OPT_VENV_PATH"
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BIN_PATH"/python-packages/python3.12/netifaces netifaces
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BIN_PATH"/python-packages/python3.12/jinja2-cli jinja2-cli PyYAML
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BIN_PATH"/python-packages/python3.12/ansible ansible jmespath
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BIN_PATH"/python-packages/python3.12/pydantic pydantic
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/netifaces netifaces
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/jinja2-cli jinja2-cli PyYAML
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/ansible ansible jmespath
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/pydantic pydantic
   fi
 
   validate_venv_directory
@@ -187,8 +187,8 @@ ubuntu2404_setup() {
 
 rhel8_setup() {
   if [[ $(rhel8_is_installed python3\.12) = "false" ]]; then
-    rpm --force -Uvh --oldpackage --replacepkgs "$KI_OPT_BIN_PATH/linux-packages/rhel8/chkconfig/*.rpm"
-    rpm --force -Uvh --oldpackage --replacepkgs "$KI_OPT_BIN_PATH/linux-packages/rhel8/python3.12/*.rpm"
+    rpm --force -Uvh --oldpackage --replacepkgs "$KI_OPT_BUNDLE_PATH/linux-packages/rhel8/chkconfig/*.rpm"
+    rpm --force -Uvh --oldpackage --replacepkgs "$KI_OPT_BUNDLE_PATH/linux-packages/rhel8/python3.12/*.rpm"
   fi
 
   if [[ -e $KI_OPT_VENV_PATH ]]; then
@@ -197,10 +197,10 @@ rhel8_setup() {
     msg "[INFO] K8s installer will create virtual environment[\"venv\"]"
 
     python3.12 -m venv "$KI_OPT_VENV_PATH"
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BIN_PATH"/python-packages/python3.12/netifaces netifaces
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BIN_PATH"/python-packages/python3.12/jinja2-cli jinja2-cli PyYAML
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BIN_PATH"/python-packages/python3.12/ansible ansible jmespath
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BIN_PATH"/python-packages/python3.12/pydantic pydantic
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/netifaces netifaces
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/jinja2-cli jinja2-cli PyYAML
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/ansible ansible jmespath
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/pydantic pydantic
   fi
 
   validate_venv_directory
@@ -255,7 +255,7 @@ get_os_version() {
 
 validate_ki_opt_directory() {
   require_directory_exists "$KI_OPT_SCRIPTS_PATH"
-  require_directory_exists "$KI_OPT_BIN_PATH"
+  require_directory_exists "$KI_OPT_BUNDLE_PATH"
 
   return 0
 }

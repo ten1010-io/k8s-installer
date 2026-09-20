@@ -317,7 +317,7 @@ class ConstantVarsModel(BaseModel):
         "ansible_python_interpreter",
         "ki_opt_root_path",
         "ki_opt_scripts_path",
-        "ki_opt_bin_path",
+        "ki_opt_bundle_path",
         "ki_opt_venv_path",
         "ki_tmp_root_path",
         "ki_tmp_localhost_vars_path",
@@ -343,7 +343,7 @@ class ConstantVarsModel(BaseModel):
 
     ki_opt_root_path: Path
     ki_opt_scripts_path: Path
-    ki_opt_bin_path: Path
+    ki_opt_bundle_path: Path
     ki_opt_venv_path: Path
 
     ki_tmp_root_path: Path

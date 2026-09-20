@@ -64,7 +64,7 @@ kubelet 이 nodefs 와 imagefs 를 같은 파일시스템으로 보게 되는데
 === 파일시스템을 ext4 로 고정한 이유
 
 overlayfs 상성과 프로젝트 쿼타만 보면 XFS 가 낫지만 쓸 수 없습니다. K8S Installer는 패키지를
-`bin/linux-packages/` 에 번들해서 설치하는 오프라인 구조인데, 디스크를 마운트하는 시점은
+`bundle/linux-packages/` 에 번들해서 설치하는 오프라인 구조인데, 디스크를 마운트하는 시점은
 `install-packages` 보다 *앞* 입니다. 즉 `xfsprogs` 가 스톡 이미지에 없으면 그 시점에
 설치할 방법이 없습니다. RHEL 8 은 기본 탑재지만 Ubuntu 는 보장되지 않습니다.
 

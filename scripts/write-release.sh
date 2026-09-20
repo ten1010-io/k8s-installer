@@ -78,7 +78,7 @@ parse_params "$@"
 # --- End of CLI template ---
 
 KI_OPT_SCRIPTS_PATH="$ki_opt_root_path"/scripts
-KI_OPT_BIN_PATH="$ki_opt_root_path"/bin
+KI_OPT_BUNDLE_PATH="$ki_opt_root_path"/bundle
 KI_OPT_VENV_PATH="$ki_opt_root_path"/venv
 KI_OPT_RELEASE_PATH="$ki_opt_root_path"/release
 
@@ -99,7 +99,7 @@ main() {
 
 validate_ki_opt_directory() {
   require_directory_exists "$KI_OPT_SCRIPTS_PATH"
-  require_directory_exists "$KI_OPT_BIN_PATH"
+  require_directory_exists "$KI_OPT_BUNDLE_PATH"
   require_directory_exists "$KI_OPT_VENV_PATH"
 
   return 0

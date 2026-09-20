@@ -67,9 +67,9 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
-YQ_CMD=$SCRIPT_DIR_PATH/bin/bin/yq
+YQ_CMD=$SCRIPT_DIR_PATH/bundle/bin/yq
 TMP_REGISTRY_PORT=57636
-OUTPUT_PATH="$SCRIPT_DIR_PATH/bin/registry-data"
+OUTPUT_PATH="$SCRIPT_DIR_PATH/bundle/registry-data"
 
 registry_image=""
 registries=""
@@ -77,7 +77,7 @@ registries=""
 tmp_dir=""
 
 main() {
-  [[ ! -e $SCRIPT_DIR_PATH/bin ]] && die "[ERROR] Directory \"bin\" not exists. execute \"download-bin.sh\" first"
+  [[ ! -e $SCRIPT_DIR_PATH/bundle ]] && die "[ERROR] Directory \"bundle\" not exists. execute \"download-bundle.sh\" first"
   [[ $(has_command docker) = "false" ]] && die "[ERROR] Command[\"docker\"] not exists"
 
   registry_image=$($YQ_CMD '.registry_image' < "$SCRIPT_DIR_PATH/registry-images.yml")

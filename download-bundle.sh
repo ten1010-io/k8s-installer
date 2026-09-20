@@ -59,18 +59,19 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
-DOWNLOAD_URL="https://k8s-installer-bin.s3.ap-northeast-2.amazonaws.com/1.0.x/bin.tgz"
+DOWNLOAD_URL="https://k8s-installer-bin.s3.ap-northeast-2.amazonaws.com/1.0.x/bundle.tgz"
 
 KI_ROOT_PATH=$SCRIPT_DIR_PATH
-BIN_PATH="$KI_ROOT_PATH"/bin
+BUNDLE_PATH="$KI_ROOT_PATH"/bundle
+BUNDLE_ARCHIVE_PATH="$KI_ROOT_PATH"/bundle.tgz
 
 main() {
-  [[ -e $BIN_PATH && -d $BIN_PATH ]] && die "[ERROR] Directory \"bin\" already exists"
-  [[ -e $BIN_PATH ]] && die "[ERROR] File of which name is \"bin\" exists"
+  [[ -e $BUNDLE_PATH && -d $BUNDLE_PATH ]] && die "[ERROR] Directory \"bundle\" already exists"
+  [[ -e $BUNDLE_PATH ]] && die "[ERROR] File of which name is \"bundle\" exists"
 
-  download_bin_tgz
-  tar xzfv "$KI_ROOT_PATH/bin.tgz" --directory "$KI_ROOT_PATH"
-  rm -f "$KI_ROOT_PATH/bin.tgz"
+  download_bundle_tgz
+  tar xzfv "$BUNDLE_ARCHIVE_PATH" --directory "$KI_ROOT_PATH"
+  rm -f "$BUNDLE_ARCHIVE_PATH"
 }
 
 has_command() {
@@ -84,23 +85,23 @@ has_command() {
   return 0
 }
 
-download_bin_tgz() {
+download_bundle_tgz() {
   local has_curl
   has_curl=$(has_command curl)
   local has_wget
   has_wget=$(has_command wget)
 
   if [[ "${has_curl}" = "true" ]]; then
-    curl -L "$DOWNLOAD_URL" -o "$KI_ROOT_PATH/bin.tgz"
+    curl -L "$DOWNLOAD_URL" -o "$BUNDLE_ARCHIVE_PATH"
     return 0
   fi
 
   if [[ "${has_wget}" = "true" ]]; then
-    wget "$DOWNLOAD_URL" -O "$KI_ROOT_PATH/bin.tgz"
+    wget "$DOWNLOAD_URL" -O "$BUNDLE_ARCHIVE_PATH"
     return 0
   fi
 
-  msg "[ERROR] Fail to download bin.tgz. either curl or wget must be installed"
+  msg "[ERROR] Fail to download bundle.tgz. either curl or wget must be installed"
   return 1
 }
 
