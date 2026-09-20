@@ -51,6 +51,15 @@ backend backend
 frontend stats
     mode http
     bind 0.0.0.0:{{ ki_cp_k8s_cp_lb_stats_port }}
+    # What keepalived has to know is whether this node can still serve the
+    # control plane, and this answers it in one request: the port refuses a
+    # connection while the load balancer is gone, and 503 comes back while it is
+    # there with no apiserver left to send work to. Ahead of the stats
+    # authentication on purpose, since a health check carries no credentials and
+    # the answer says nothing a caller could not learn by trying the vip
+    monitor-uri /lb-healthz
+    acl no_backend nbsrv(backend) eq 0
+    monitor fail if no_backend
     stats enable
     stats uri /
     stats refresh 10s

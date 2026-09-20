@@ -1,7 +1,15 @@
 vrrp_script check_node {
   script "/etc/keepalived/check_node.sh"
   interval 3
-  weight -2
+  # Enough to lose to any healthy peer. Priorities are handed out one apart, so
+  # -2 only held while a single node was failing: with two of them down the
+  # second one landed on the same priority as a healthy third and the tie was
+  # broken by address, which could leave the vip on a node that serves nothing
+  weight -50
+  # Thirty seconds before the vip moves, which is slow for an outage and is
+  # meant to be. Moving it kills every connection through it, on both nodes, and
+  # the load balancer is restarted whenever the set of control plane nodes
+  # changes. A shorter fall would turn each of those restarts into an outage
   fall 10
   rise 2
 }

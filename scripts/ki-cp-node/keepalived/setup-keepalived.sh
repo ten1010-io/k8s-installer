@@ -114,7 +114,8 @@ main() {
   docker load -i "$ki_opt_bundle_path"/ki-cp-service-images/$SVC_NAME.tar
 
   mkdir -p "$svc_root_path"
-  cp -f "$SCRIPT_DIR_PATH"/templates/check_node.sh "$svc_root_path/"
+  $jinja2_cmd --format yaml -o "$svc_root_path""/check_node.sh" "$SCRIPT_DIR_PATH"/templates/check_node.sh.j2 "$vars_path"
+  chmod +x "$svc_root_path""/check_node.sh"
   $jinja2_cmd --format yaml -o "$svc_root_path""/compose.yml" "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$vars_path"
   create_keepalived_conf_file
 
