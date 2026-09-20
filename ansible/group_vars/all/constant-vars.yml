@@ -101,6 +101,18 @@ ki_cp_k8s_cp_lb_stats_port: 18404
 # user owns, and deliberately not published: reaching it means being able to
 # talk to the docker daemon, which on these nodes is root already
 ki_cp_k8s_cp_lb_admin_socket_path: "/var/lib/haproxy/admin.sock"
+# Where the load balancer writes the state of its backends before a reload and
+# reads it back after one, so that a node taken out of rotation stays out
+# across a re-render of the configuration. Inside the container beside the
+# admin socket, and gone when the container is replaced, which is right: a
+# replacement starts from the configuration rather than from old state
+ki_cp_k8s_cp_lb_server_state_path: "/var/lib/haproxy/server-state"
+# Where the password of the stats page is kept, so that a run of the playbooks
+# reuses the one the cluster already has rather than minting another. Every ki
+# cp node holds the same one, which is what lets the control node move: the
+# node reading it is always one that was given it. Inside the service
+# directory, so that resetting the service takes it with everything else
+ki_cp_k8s_cp_lb_stats_password_path: "{{ ki_etc_services_path }}/ki-cp-k8s-cp-lb/stats-password"
 ki_cp_k8s_registry_port: 5000
 
 k8s_version: "v1.34.1"

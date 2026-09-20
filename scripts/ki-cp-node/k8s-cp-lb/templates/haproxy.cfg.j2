@@ -8,6 +8,21 @@ global
     # backend. lb-admin.sh gets to it with the socat the image carries
     stats socket {{ ki_cp_k8s_cp_lb_admin_socket_path }} mode 660 level admin
     stats timeout 30s
+    # A reload hands the listeners to a new worker and leaves the old one alive
+    # until the connections it is holding end. A watch on the apiserver does not
+    # end: client-go pings it every thirty seconds, so it never goes idle, and
+    # the worker of every reload would stay for good. Measured after two
+    # reloads, the worker from before the first one was still running. Thirty
+    # minutes is what the client and server timeouts already allow, so nothing
+    # this proxy would hold on to anyway outlives it
+    hard-stop-after 30m
+    # Where the state of the backends is carried across a reload. A reload
+    # otherwise starts from the configuration and forgets which backends were
+    # taken out of rotation by hand, so anything that re-renders the
+    # configuration while a node is being worked on would quietly put that node
+    # back in. setup-k8s-cp-lb.sh writes this file before it reloads, and the
+    # backend below is what reads it back
+    server-state-file {{ ki_cp_k8s_cp_lb_server_state_path }}
 
 defaults
     log                     global
@@ -32,6 +47,10 @@ frontend frontend
 backend backend
     mode tcp
     balance roundrobin
+    # Reads back what the global server-state-file holds. The word is the
+    # source, not a section: it says to take the one file named globally rather
+    # than a per backend one
+    load-server-state-from-file global
     option httpchk
     http-check connect ssl
     # /readyz rather than /healthz. An apiserver that is shutting down keeps

@@ -212,19 +212,41 @@
           set_fact:
             shell_result: null
 
+    # The password of the stats page is minted once and kept, not made again on
+    # every run. A new one on every run changes compose.yml, which makes compose
+    # replace the load balancer container, which drops every connection to the
+    # apiserver through it: adding or removing a node cost an outage of the
+    # whole control plane for that reason alone. It also left the operator with
+    # a credential that stopped working the next time anything was run.
+    #
+    # Read from this node, which the playbooks require to be a ki cp node. Every
+    # ki cp node is given the same password, so whichever of them is the control
+    # node reads the same value and the cluster keeps one password
     - name: Setup variable[\"ki_cp_k8s_cp_lb_stats_admin_pw\"]
       block:
+        - name: Read the password of the stats page this cluster already has
+          shell: "sudo cat {{ ki_cp_k8s_cp_lb_stats_password_path }} 2>/dev/null || true"
+          register: existing_password_result
+
+        - name: Set_fact variable[\"ki_cp_k8s_cp_lb_stats_admin_pw\"] from the one it has
+          set_fact:
+            ki_cp_k8s_cp_lb_stats_admin_pw: "{{ existing_password_result.stdout | trim }}"
+          when: existing_password_result.stdout | trim | length > 0
+
         - name: Execute generate-password.sh
           shell: "sudo {{ ki_opt_scripts_path }}/preflight/generate-password.sh"
           register: shell_result
+          when: existing_password_result.stdout | trim | length == 0
 
-        - name: Set_fact variable[\"ki_cp_k8s_cp_lb_stats_admin_pw\"]
+        - name: Set_fact variable[\"ki_cp_k8s_cp_lb_stats_admin_pw\"] from a new one
           set_fact:
             ki_cp_k8s_cp_lb_stats_admin_pw: "{{ shell_result.stdout }}"
+          when: existing_password_result.stdout | trim | length == 0
 
         - name: Remove temporary variable[\"shell_result\"]
           set_fact:
             shell_result: null
+            existing_password_result: null
 
     - name: Setup variable[\"localhost_ih\"]
       block:
