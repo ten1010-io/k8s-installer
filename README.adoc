@@ -14,7 +14,10 @@ K8S Installer는 오프라인 환경에서 쿠버네티스 클러스터를 구�
 K8S Installer는 제어 노드의 `/opt/k8s-installer`에 설치되며, 릴리스 단위로 관리됩니다.
 설치된 릴리스는 `/opt/k8s-installer/release` 파일에 기록되고, 모든 관리 노드가 동일한 릴리스를 갖습니다.
 
-플레이북은 제어 노드 자신을 건드리면 실행 중인 설치기를 무너뜨리므로 그 노드만 제외합니다.
+*제어 노드는 반드시 `ki_cp_node` 그룹에 속해야 합니다.* `/opt/k8s-installer/ansible` 디렉토리는
+`ki_cp_node` 그룹의 노드에만 배치되고 플레이북 실행 시마다 제어 노드 기준으로 동기화되므로,
+제어 노드를 잃어도 다른 `ki_cp_node`에서 그대로 작업을 이어갈 수 있습니다.
+
 제어 노드가 인벤토리의 어느 노드인지는 `inventory.yml`의 `control_node_ih`로 선언합니다.
 
 [source,yaml]
@@ -24,6 +27,18 @@ control_node:
     localhost:
       ansible_connection: local
       control_node_ih: node1
+----
+
+=== 제어 노드 인계
+
+인계받을 `ki_cp_node`에서 `control_node_ih`를 그 노드로 바꾸고, 그 노드의 SSH 키를 관리 노드에 심으면 됩니다.
+SSH 설정 스크립트는 ansible 디렉토리에 함께 동기화되므로 소스 트리를 다시 받을 필요가 없습니다.
+
+[source,shell]
+----
+# 인계받을 ki_cp_node 에서
+vi /opt/k8s-installer/ansible/inventory.yml    # control_node_ih: node2
+sudo /opt/k8s-installer/ansible/configure-control-node-ssh.sh   # 출력된 안내에 따라 모든 관리 노드에 SSH 설정
 ----
 
 선언이 실제로 플레이북을 실행하는 노드를 가리키지 않으면 모든 플레이북이 시작 단계에서 중단됩니다.

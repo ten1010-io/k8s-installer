@@ -69,3 +69,5 @@
   tasks:
     - name: Delete temporary payload archive
       shell: "sudo rm -f {{ ki_tmp_payload_src_path }}"
+
+- import_playbook: tasks/sync-ansible.yml

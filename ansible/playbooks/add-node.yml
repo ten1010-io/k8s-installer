@@ -1,5 +1,7 @@
 - import_playbook: tasks/check-k8s-installer-setup.yml
 
+- import_playbook: tasks/sync-ansible.yml
+
 - import_playbook: tasks/preflight-playbook.yml
   vars:
     playbook: "add-node"

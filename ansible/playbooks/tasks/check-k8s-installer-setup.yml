@@ -24,6 +24,15 @@
       set_fact:
         node_release: "{{ release_result.stdout | trim }}"
 
+# Only the ki cp nodes hold the ansible directory, and all of them do, so that any
+# of them can be used as the control node after the one in use is lost
+- hosts: ki_cp_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: "Check directory[\"{{ ki_opt_ansible_path }}\"] exists"
+      shell: "sudo ls {{ ki_opt_ansible_path }}"
+
 # A cluster is described by one release, so a node that drifted away from it is
 # rejected here rather than discovered later by whichever task it breaks
 - hosts: localhost

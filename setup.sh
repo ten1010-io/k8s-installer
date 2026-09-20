@@ -171,7 +171,9 @@ copy_installer() {
 # upgrade.sh leaves both alone
 #
 # The ssh scripts live in it rather than at the root of the deployment, because
-# what they configure is the transport ansible runs over
+# what they configure is the transport ansible runs over. sync-ansible.yml then
+# carries them to every ki cp node with the rest of the directory, so a node
+# taking over as the control node can put its own key on the managed nodes
 copy_ansible() {
   rm -rf "$KI_OPT_ANSIBLE_PATH"
   cp -r "$SRC_ANSIBLE_PATH" "$KI_OPT_ANSIBLE_PATH"

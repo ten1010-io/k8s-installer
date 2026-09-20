@@ -1,6 +1,7 @@
-# The bootstrap playbooks single out one node of the inventory as the control
-# node and leave it alone, because what they do to the other nodes would pull
-# the installer or the virtual environment out from under the run. That only holds while control_node_ih of
+# The bootstrap playbooks and sync-ansible.yml single out one node of the
+# inventory as the control node and leave it alone, because what they do to the
+# other nodes would pull the installer, the virtual environment or the ansible
+# directory out from under the run. That only holds while control_node_ih of
 # inventory.yml names the node the playbooks are actually being run from, so a
 # declaration pointing anywhere else is rejected before anything is touched
 - hosts: localhost

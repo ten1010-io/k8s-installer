@@ -21,6 +21,10 @@ ki_opt_release_path: "{{ ki_opt_root_path }}/release"
 # Release metadata of the source tree, placed by setup.sh. Only the control node
 # needs it, since it is what decides whether the managed nodes are upgradable
 ki_opt_release_meta_path: "{{ ki_opt_root_path }}/release.yml"
+# Held by every node of the ki_cp_node group, so that any of them can be used as
+# the control node after the one in use is lost. The control node is required to
+# be a member of that group for exactly this reason
+ki_opt_ansible_path: "{{ ki_opt_root_path }}/ansible"
 
 # The node of the inventory that the control node is, declared in inventory.yml
 # and read here so that every host can compare itself against it. What the
@@ -50,6 +54,8 @@ ki_tmp_join_credentials_path: "{{ ki_tmp_root_path }}/join-credentials.yml"
 # onto itself, which truncates it
 ki_tmp_payload_src_path: "{{ ki_tmp_root_path }}/payload-src.tar"
 ki_tmp_payload_path: "{{ ki_tmp_root_path }}/payload.tar"
+ki_tmp_ansible_src_path: "{{ ki_tmp_root_path }}/ansible-src.tar"
+ki_tmp_ansible_path: "{{ ki_tmp_root_path }}/ansible.tar"
 
 ki_etc_root_path: "/etc/k8s-installer"
 ki_etc_pki_path: "{{ ki_etc_root_path }}/pki"

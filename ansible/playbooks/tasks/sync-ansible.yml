@@ -1,0 +1,52 @@
+- import_playbook: check-control-node.yml
+
+# Keeps the ansible directory of every ki cp node the same as the one of the
+# control node. Losing the control node then costs nothing more than pointing
+# control_node_ih at another ki cp node and running the ssh script this directory
+# carries, which is why the control node is required to be a member of that group
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
+      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+    # Bundled so that the inventory, the variables and the playbooks land on the
+    # other nodes as one unit rather than file by file
+    - name: Create ansible archive
+      shell: "sudo tar cf {{ ki_tmp_ansible_src_path }} -C {{ ki_opt_root_path }} ansible"
+
+- hosts: ki_cp_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    # Copying the control node's ansible directory onto itself would only
+    # truncate it, so that node is the one this leaves alone
+    - when: inventory_hostname != ki_control_node_ih
+      block:
+        - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
+          shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+        - name: Copy ansible archive to the node
+          delegate_to: localhost
+          shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
+          vars:
+            ssh_opt: "-o StrictHostKeyChecking=no"
+            port_opt: "-P {{ ansible_port }}"
+            src_arg: "{{ ki_tmp_ansible_src_path }}"
+            dst_arg: "{{ ansible_ssh_user }}@{{ ansible_host }}:{{ ki_tmp_ansible_path }}"
+
+        # Replaced rather than merged, so that a playbook or a variable file the
+        # release dropped does not survive on the node that may have to take over
+        - name: Extract ansible archive
+          shell: "sudo rm -rf {{ ki_opt_ansible_path }} && sudo tar xf {{ ki_tmp_ansible_path }} -C {{ ki_opt_root_path }}"
+
+        - name: Delete temporary ansible archive
+          shell: "sudo rm -f {{ ki_tmp_ansible_path }}"
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Delete temporary ansible archive
+      shell: "sudo rm -f {{ ki_tmp_ansible_src_path }}"
