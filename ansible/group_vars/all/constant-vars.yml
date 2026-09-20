@@ -72,6 +72,16 @@ internal_network_ip: null
 internal_network_zone: "ki.local"
 internal_network_ki_cp_dns_name: "ki-cp.{{ internal_network_zone }}"
 
+# The image of each ki cp service, named after the service that runs it. Both the
+# compose file of the service and the tool that puts the image in the bundle read
+# it from here, so that the bundle can not end up holding a version the service
+# does not ask for
+ki_cp_dns_server_image: "ubuntu/bind9:9.18-22.04_beta"
+ki_cp_k8s_cp_lb_image: "haproxy:2.6"
+ki_cp_keepalived_image: "osixia/keepalived:2.0.20"
+ki_cp_ntp_server_image: "cturra/ntp:latest"
+ki_cp_k8s_registry_image: "registry:2.8"
+
 ki_cp_k8s_cp_lb_port: 16443
 ki_cp_k8s_cp_lb_stats_port: 18404
 ki_cp_k8s_registry_port: 5000

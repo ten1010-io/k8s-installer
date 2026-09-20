@@ -1,6 +1,6 @@
 services:
   registry:
-    image: registry:2.8
+    image: {{ ki_cp_k8s_registry_image }}
     ports:
       - "{{ ki_cp_k8s_registry_port }}:5000"
     volumes:

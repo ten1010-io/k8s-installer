@@ -1,6 +1,6 @@
 services:
   keepalived:
-    image: osixia/keepalived:2.0.20
+    image: {{ ki_cp_keepalived_image }}
     command: [--copy-service]
     volumes:
       - /run/docker.sock:/run/docker.sock

@@ -125,6 +125,7 @@ create_compose_yml_file() {
   tmp_file_path="$ki_tmp_root_path"/tmp-templates-vars.yml
   touch "$tmp_file_path"
   $yq_cmd -i ".ntp_servers = \"$ntp_servers\"" "$tmp_file_path"
+  $yq_cmd -i ".ki_cp_ntp_server_image = load(\"$vars_path\").ki_cp_ntp_server_image" "$tmp_file_path"
   $jinja2_cmd --format yaml -o "$etc_svc_root_path""/compose.yml" "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$tmp_file_path"
   rm "$tmp_file_path"
 }

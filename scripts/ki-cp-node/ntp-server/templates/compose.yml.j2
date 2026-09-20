@@ -1,6 +1,6 @@
 services:
   ntp:
-    image: cturra/ntp:latest
+    image: {{ ki_cp_ntp_server_image }}
     ports:
       - 123:123/udp
     environment:
