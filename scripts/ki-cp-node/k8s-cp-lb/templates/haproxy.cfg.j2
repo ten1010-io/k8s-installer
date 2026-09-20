@@ -7,9 +7,14 @@ defaults
     option                  dontlognull
     timeout queue           20s
     timeout connect         5s
-    timeout client          35s
-    timeout server          35s
-    timeout check           10s
+    # A watch on the apiserver is open for hours and mostly silent, and this is a
+    # tcp proxy, so an idle timeout cuts it. client-go pings over http/2 every 30s,
+    # which the old 35s cleared by five seconds
+    timeout client          30m
+    timeout server          30m
+    # Kept at or below inter, so that a check against an apiserver that hangs
+    # rather than refusing still fails within a bounded number of intervals
+    timeout check           2s
 
 frontend frontend
     mode tcp
@@ -22,11 +27,19 @@ backend backend
     balance roundrobin
     option httpchk
     http-check connect ssl
-    http-check send meth GET uri /healthz
+    # /readyz rather than /healthz. An apiserver that is shutting down keeps
+    # answering /healthz until it stops listening, while /readyz turns negative as
+    # soon as the shutdown begins, which is the notice this needs to take a node
+    # out before it stops serving
+    http-check send meth GET uri /readyz
     http-check expect status 200
+    # Six seconds to notice an apiserver that is gone, and sessions held against
+    # one that has been marked down are cut rather than left to hang on it until
+    # they time out
+    default-server inter 2s fall 3 rise 2 on-marked-down shutdown-sessions
 
 {% for ih in backend_server_ih_list -%}
-{{"    "}}server server{{ loop.index }} {{ internal_network_hosts[ih]["interfaces"][0]["ip"] }}:{{ k8s_apiserver_port }} check verify none
+{{"    "}}server {{ ih }} {{ internal_network_hosts[ih]["interfaces"][0]["ip"] }}:{{ k8s_apiserver_port }} check verify none
 {% endfor %}
 frontend stats
     mode http
