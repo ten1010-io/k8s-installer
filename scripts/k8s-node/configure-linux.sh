@@ -141,7 +141,9 @@ rhel8_configure() {
 
 disable_swap() {
   swapoff -a
-  sed -i '/[ \t]swap[ \t]/ s/^\(.*\)$/#\1/g' /etc/fstab
+  # Already commented out lines are skipped, so that running this again does not
+  # stack another "#" onto every swap entry of a node it has run on before
+  sed -i '/^[[:space:]]*#/! { /[[:space:]]swap[[:space:]]/ s/^/#/; }' /etc/fstab
 
   return 0
 }
