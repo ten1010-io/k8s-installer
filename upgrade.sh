@@ -67,29 +67,35 @@ KI_OPT_VENV_PATH="$KI_OPT_ROOT_PATH"/venv
 KI_OPT_RELEASE_PATH="$KI_OPT_ROOT_PATH"/release
 KI_OPT_RELEASE_META_PATH="$KI_OPT_ROOT_PATH"/release.yml
 
-SRC_BUNDLE_PATH="$SCRIPT_DIR_PATH"/bundle
 SRC_SCRIPTS_PATH="$SCRIPT_DIR_PATH"/scripts
 SRC_ANSIBLE_PATH="$SCRIPT_DIR_PATH"/ansible
 SRC_RELEASE_META_PATH="$SCRIPT_DIR_PATH"/release.yml
 
-YQ_CMD="$SRC_BUNDLE_PATH"/bin/yq
+# The bundle of the release being installed is still an archive at this point, so
+# this is the yq of the release being replaced. Everything read with it is read
+# before that bundle is unpacked over it
+YQ_CMD="$KI_OPT_BUNDLE_PATH"/bin/yq
 
 # Kept in sync with ki_release_snapshot_suffix of group_vars/all/constant-vars.yml
 SNAPSHOT_SUFFIX="-SNAPSHOT"
 
 version=""
 installed_version=""
+src_bundle_archive_path=""
 
 main() {
   require_root
   require_setup
-  require_bin_downloaded
   require_file_exists "$SRC_RELEASE_META_PATH"
 
-  version=$($YQ_CMD '.version' < "$SRC_RELEASE_META_PATH")
-  [[ -z $version || $version = "null" ]] && die "[ERROR] File[\"$SRC_RELEASE_META_PATH\"] has no version"
+  # Read the way download-bundle.sh reads it, since which archive to look for has
+  # to be known before anything is unpacked
+  version=$(grep -oP '^version: "\K[^"]+' < "$SRC_RELEASE_META_PATH")
+  [[ -z $version ]] && die "[ERROR] File[\"$SRC_RELEASE_META_PATH\"] has no version"
   installed_version=$(<"$KI_OPT_RELEASE_PATH")
 
+  src_bundle_archive_path="$SCRIPT_DIR_PATH/bundle-$(get_bundle_version "$version").tgz"
+  require_bundle_archive
   require_upgradable
 
   if [[ $installed_version = "$version" ]]; then
@@ -178,10 +184,26 @@ require_upgradable() {
   die "[ERROR] Releases that it can be upgraded from are $upgradable_from"
 }
 
-require_bin_downloaded() {
-  [[ ! -e $SRC_BUNDLE_PATH ]] && die "[ERROR] Directory[\"$SRC_BUNDLE_PATH\"] not exists. execute \"download-bundle.sh\" first"
-  [[ ! -d $SRC_BUNDLE_PATH ]] && die "[ERROR] File[\"$SRC_BUNDLE_PATH\"] is not a directory"
-  [[ ! -f $YQ_CMD ]] && die "[ERROR] File[\"$YQ_CMD\"] not exists. execute \"download-bundle.sh\" first"
+# A patch release exists to fix what is in this repository, and republishing a
+# gigabyte of packages and images to carry a corrected shell script is waste. The
+# releases of one minor line therefore share one bundle, which in turn means the
+# bundle of a minor line can never change: anything that needs a different package
+# or image is a minor bump rather than a patch. See release.yml
+get_bundle_version() {
+  local version=$1
+
+  echo "${version%.*}.x"
+
+  return 0
+}
+
+# The bundle is expected as the archive it is published as, named after the minor
+# line it belongs to. Two releases of one line share an archive, so an upgrade
+# within a line finds the one that is already there
+require_bundle_archive() {
+  [[ ! -e $src_bundle_archive_path ]] &&
+    die "[ERROR] File[\"$src_bundle_archive_path\"] not exists. execute \"download-bundle.sh\", or place the bundle of this release there"
+  [[ ! -f $src_bundle_archive_path ]] && die "[ERROR] File[\"$src_bundle_archive_path\"] is not a regular file"
 
   return 0
 }
@@ -191,7 +213,8 @@ copy_installer() {
   cp -r "$SRC_SCRIPTS_PATH" "$KI_OPT_SCRIPTS_PATH"
 
   rm -rf "$KI_OPT_BUNDLE_PATH"
-  cp -r "$SRC_BUNDLE_PATH" "$KI_OPT_BUNDLE_PATH"
+  tar xzf "$src_bundle_archive_path" -C "$KI_OPT_ROOT_PATH"
+  require_directory_exists "$KI_OPT_BUNDLE_PATH"
 
   cp -f "$SRC_RELEASE_META_PATH" "$KI_OPT_RELEASE_META_PATH"
 
@@ -262,6 +285,15 @@ print_next_steps() {
   msg "source $KI_OPT_VENV_PATH/bin/activate"
   msg "cd $KI_OPT_ANSIBLE_PATH"
   msg "ansible-playbook -i inventory.yml playbooks/upgrade-k8s-installer.yml"
+
+  return 0
+}
+
+require_directory_exists() {
+  local path=$1
+
+  [[ ! -e $path ]] && die "[ERROR] No such file or directory of which path is \"$path\""
+  [[ ! -d $path ]] && die "[ERROR] File[\"$path\"] is not a directory"
 
   return 0
 }

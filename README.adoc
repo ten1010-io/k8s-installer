@@ -1,6 +1,7 @@
 = K8S Installer
 :github: https://github.com/ten1010-io/k8s-installer
 :version: 1.0.0
+:bundle-version: 1.0.x
 
 == 개요
 
@@ -63,6 +64,24 @@ cd /opt/k8s-installer/ansible
 ansible-playbook -i inventory.yml playbooks/setup-k8s-installer.yml
 ansible-playbook -i inventory.yml playbooks/setup-cluster.yml
 ----
+
+=== 인터넷이 없는 제어 노드
+
+`download-bundle.sh`는 번들을 받아 프로젝트 루트에 `bundle-<마이너>.tgz` 로 둘 뿐이고,
+`setup.sh`가 그 파일을 풀어 설치합니다. 제어 노드에 인터넷이 없으면 다운로드만 밖에서 하고
+파일을 그대로 옮기면 됩니다.
+
+[source,shell,subs="+attributes"]
+----
+# 인터넷이 되는 머신에서
+./download-bundle.sh          # bundle-{bundle-version}.tgz 생성
+
+# 매체로 옮긴 뒤, 에어갭 제어 노드의 프로젝트 루트에 같은 이름으로 배치하고
+sudo ./setup.sh
+----
+
+파일명은 `release.yml`의 버전에서 정해집니다. 다른 마이너 라인의 번들을 가져오면 이름이 맞지
+않아 `setup.sh`가 시작 단계에서 중단됩니다.
 
 === ephemeral-storage 전용 디스크
 

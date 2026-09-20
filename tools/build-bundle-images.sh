@@ -67,6 +67,9 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
+# This fills the image half of a bundle that is being built, so it works on an
+# unpacked bundle directory rather than on the archive the installer consumes.
+# The archive is made from that directory once this has run
 KI_ROOT_PATH=$SCRIPT_DIR_PATH/..
 BUNDLE_PATH="$KI_ROOT_PATH"/bundle
 YQ_CMD="$BUNDLE_PATH"/bin/yq
@@ -93,7 +96,7 @@ main() {
 }
 
 require_bundle() {
-  [[ ! -d $BUNDLE_PATH ]] && die "[ERROR] Directory[\"$BUNDLE_PATH\"] not exists. execute \"download-bundle.sh\" first"
+  [[ ! -d $BUNDLE_PATH ]] && die "[ERROR] Directory[\"$BUNDLE_PATH\"] not exists. unpack the bundle being built there first"
   [[ ! -x $YQ_CMD ]] && die "[ERROR] File[\"$YQ_CMD\"] not exists or is not executable"
   [[ ! -x $CRANE_CMD ]] && die "[ERROR] File[\"$CRANE_CMD\"] not exists or is not executable"
   [[ ! -f $CONSTANT_VARS_PATH ]] && die "[ERROR] No such file or directory of which path is \"$CONSTANT_VARS_PATH\""

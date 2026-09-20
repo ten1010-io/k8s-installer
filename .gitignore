@@ -25,6 +25,7 @@ build/
 .factorypath
 
 /bundle/
+/bundle-*.tgz
 
 ### Claude ###
 .claude/

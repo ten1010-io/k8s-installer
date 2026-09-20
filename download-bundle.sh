@@ -62,31 +62,35 @@ parse_params "$@"
 DOWNLOAD_BASE_URL="https://k8s-installer-bundle.s3.ap-northeast-2.amazonaws.com"
 
 KI_ROOT_PATH=$SCRIPT_DIR_PATH
-BUNDLE_PATH="$KI_ROOT_PATH"/bundle
-BUNDLE_ARCHIVE_PATH="$KI_ROOT_PATH"/bundle.tgz
 RELEASE_META_PATH="$KI_ROOT_PATH"/release.yml
 
 version=""
 bundle_version=""
+bundle_archive_path=""
 download_url=""
 
 main() {
-  [[ -e $BUNDLE_PATH && -d $BUNDLE_PATH ]] && die "[ERROR] Directory \"bundle\" already exists"
-  [[ -e $BUNDLE_PATH ]] && die "[ERROR] File of which name is \"bundle\" exists"
   [[ ! -f $RELEASE_META_PATH ]] && die "[ERROR] No such file or directory of which path is \"$RELEASE_META_PATH\""
 
   # yq is in the bundle this is about to download, so the one key needed here is
   # read the way the node scripts read their vars file
   version=$(grep -oP '^version: "\K[^"]+' < "$RELEASE_META_PATH")
   [[ -z $version ]] && die "[ERROR] File[\"$RELEASE_META_PATH\"] has no version"
+
   bundle_version=$(get_bundle_version "$version")
-  download_url="$DOWNLOAD_BASE_URL/$bundle_version/bundle.tgz"
+  bundle_archive_path="$KI_ROOT_PATH/bundle-$bundle_version.tgz"
+  download_url="$DOWNLOAD_BASE_URL/bundle-$bundle_version.tgz"
 
-  msg "[INFO] Downloading the bundle[\"$bundle_version\"] of release[\"$version\"] from \"$download_url\""
+  [[ -e $bundle_archive_path ]] && die "[ERROR] File[\"$bundle_archive_path\"] already exists"
 
+  msg "[INFO] Downloading the bundle of release[\"$version\"] from \"$download_url\""
+
+  # Left as the archive it arrived as. setup.sh unpacks it straight into the
+  # installer directory, and an air gapped control node never runs this script at
+  # all: the archive is carried in on media and dropped here under the same name
   download_bundle_tgz
-  tar xzfv "$BUNDLE_ARCHIVE_PATH" --directory "$KI_ROOT_PATH"
-  rm -f "$BUNDLE_ARCHIVE_PATH"
+
+  msg "[INFO] Bundle saved to \"$bundle_archive_path\""
 }
 
 # A patch release exists to fix what is in this repository, and republishing a
@@ -124,12 +128,12 @@ download_bundle_tgz() {
   has_wget=$(has_command wget)
 
   if [[ "${has_curl}" = "true" ]]; then
-    curl -fL "$download_url" -o "$BUNDLE_ARCHIVE_PATH"
+    curl -fL "$download_url" -o "$bundle_archive_path"
     return 0
   fi
 
   if [[ "${has_wget}" = "true" ]]; then
-    wget "$download_url" -O "$BUNDLE_ARCHIVE_PATH"
+    wget "$download_url" -O "$bundle_archive_path"
     return 0
   fi
 
