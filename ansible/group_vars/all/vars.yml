@@ -1,6 +1,19 @@
 ki_var_root_path: "/var/lib/k8s-installer"
-containerd_root_path: "/var/lib/containerd"
 docker_root_path: "/var/lib/docker"
+
+# Block device holding everything kubelet accounts as ephemeral storage, so that
+# an image or a pod log can not fill the filesystem the operating system runs on.
+# Leave it null to keep those paths on the root filesystem
+# To give a single node a device, set this variable for that node in inventory.yml
+#
+# The device is formatted, so it must be one with nothing on it, and it is only
+# applied while a node is being provisioned. An existing node is taken out with
+# remove-node and added back with add-node
+#
+# Do not point this at a disk whose contents do not survive a reboot. The name
+# says ephemeral, but /var/lib/kubelet also holds state kubelet expects to find
+# again after a restart. See docs/impl-notes.adoc
+ephemeral_storage_device: null
 
 internal_network_subnets:
   - "192.168.0.0/24"

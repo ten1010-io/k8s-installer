@@ -17,12 +17,23 @@ STORAGE_SIZE_PATTERN = r"^[0-9]+[EPTGMK]i$"
 CPU_QUANTITY_PATTERN = r"^([0-9]+m|[0-9]+(\.[0-9]+)?)$"
 EVICTION_THRESHOLD_PATTERN = r"^([0-9]+(\.[0-9]+)?%|[0-9]+[EPTGMK]i)$"
 
+# Variables a release removed, and what to do with the line that is left behind
+REMOVED_VARS = {
+    "containerd_root_path":
+        "Variable[\"containerd_root_path\"] has been removed."
+        " The container runtime root is no longer configurable, a node that needs it"
+        " off the root filesystem sets variable[\"ephemeral_storage_device\"] instead,"
+        " which bind mounts /var/lib/containerd onto that device."
+        " Remove the line from vars.yml. See docs/impl-notes.adoc",
+}
+
 
 def main():
     hostvars = yaml.safe_load(sys.stdin)
     hostvars_errors: List[HostvarsError] = []
 
     check_type(hostvars_errors, hostvars)
+    validate_removed_vars(hostvars_errors, hostvars)
     validate_control_node(hostvars_errors, hostvars)
     validate_ki_cp_ha_mode_vip(hostvars_errors, hostvars)
     validate_internal_network_subnets(hostvars_errors, hostvars)
@@ -48,6 +59,24 @@ def check_type(hostvars_errors: List[HostvarsError], hostvars):
         except ValidationError as e:
             for error in e.errors():
                 hostvars_errors.append(build_hostvars_error(ih, error))
+
+
+def validate_removed_vars(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects a variable that a release has removed.
+
+    An upgrade keeps the vars.yml of the user, so a variable that is gone stays in
+    it. VarsModel ignores keys it does not know, which would leave the value
+    looking like it still applies while nothing reads it any more. Saying so is
+    the difference between a line to delete and a node that quietly behaves
+    differently than the file it is configured by
+    """
+    for ih in hostvars.keys():
+        for var_name, msg in REMOVED_VARS.items():
+            if var_name not in hostvars[ih]:
+                continue
+
+            error = HostvarsError(ih, (var_name,), str(hostvars[ih][var_name]), msg)
+            hostvars_errors.append(error)
 
 
 def validate_control_node(hostvars_errors: List[HostvarsError], hostvars):
@@ -203,7 +232,6 @@ def build_hostvars_error(ih, error) -> HostvarsError:
 class VarsModel(BaseModel):
     @field_validator(
         "ki_var_root_path",
-        "containerd_root_path",
         "docker_root_path")
     @classmethod
     def must_be_absolute(cls, path: Path) -> Path:
@@ -211,11 +239,20 @@ class VarsModel(BaseModel):
             raise ValueError("path must be absolute")
         return path
 
+    @field_validator("ephemeral_storage_device")
+    @classmethod
+    def must_be_absolute_when_set(cls, path: Optional[Path]) -> Optional[Path]:
+        if path is not None and not path.is_absolute():
+            raise ValueError("path must be absolute")
+        return path
+
     model_config = ConfigDict(regex_engine='python-re')
 
     ki_var_root_path: Path
-    containerd_root_path: Path
     docker_root_path: Path
+
+    # None means the node keeps its ephemeral storage on the root filesystem
+    ephemeral_storage_device: Optional[Path] = None
 
     internal_network_subnets: list[IPv4Network]
 

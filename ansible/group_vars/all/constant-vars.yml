@@ -62,6 +62,12 @@ ki_etc_pki_path: "{{ ki_etc_root_path }}/pki"
 ki_etc_services_path: "{{ ki_etc_root_path }}/services"
 ki_etc_kubeadm_path: "{{ ki_etc_root_path }}/kubeadm"
 
+# Where the ephemeral storage device of a node is mounted. /var/lib/kubelet,
+# /var/log/pods and /var/lib/containerd are fixed paths and one device can not be
+# mounted at all three, so it is mounted here once and its subdirectories are bind
+# mounted onto them. See docs/impl-notes.adoc
+ki_ephemeral_root_path: "{{ ki_var_root_path }}/ephemeral"
+
 internal_network_ip: null
 internal_network_zone: "ki.local"
 internal_network_ki_cp_dns_name: "ki-cp.{{ internal_network_zone }}"

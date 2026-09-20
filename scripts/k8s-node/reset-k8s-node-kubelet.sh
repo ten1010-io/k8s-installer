@@ -79,6 +79,8 @@ jinja2_cmd=""
 
 ki_etc_kubeadm_path=""
 
+POD_LOGS_PATH=/var/log/pods
+
 main() {
   require_file_exists "$vars_path"
   import_ki_opt_vars
@@ -94,6 +96,23 @@ main() {
   fi
   rm -rf ~/.kube
   rm -rf "$ki_etc_kubeadm_path"
+  clear_pod_logs
+
+  return 0
+}
+
+# kubeadm reset empties the kubelet directory but leaves the container logs
+# where they are, and nothing else cleans them either. They would be counted
+# against the ephemeral storage of the node the next time it joins, and on a node
+# being given an ephemeral storage device they would block the emptiness check of
+# setup-ephemeral-storage.sh, which is the path a node already in service takes
+# to get one
+#
+# Only the contents go. The directory itself may be a mount point
+clear_pod_logs() {
+  [[ ! -d $POD_LOGS_PATH ]] && return 0
+
+  find "$POD_LOGS_PATH" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 
   return 0
 }

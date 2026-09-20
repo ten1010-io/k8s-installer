@@ -38,3 +38,6 @@ k8s_node:
       k8s_cp: true
     node4:
       nvidia_gpu: true
+      # The device given here holds everything kubelet accounts as ephemeral
+      # storage. It gets formatted, so it has to be a disk with nothing on it
+      #ephemeral_storage_device: "/dev/disk/by-id/nvme-eui.0123456789abcdef"

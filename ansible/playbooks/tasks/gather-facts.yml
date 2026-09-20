@@ -47,9 +47,7 @@
     - name: Setup variable[\"node_resources\"]
       block:
         - name: Execute get-node-resources.sh
-          shell: "sudo {{ ki_opt_scripts_path }}/preflight/get-node-resources.sh {{ imagefs_path_arg }}"
-          vars:
-            imagefs_path_arg: "--imagefs-path {{ containerd_root_path }}"
+          shell: "sudo {{ ki_opt_scripts_path }}/preflight/get-node-resources.sh"
           register: shell_result
 
         - name: Set_fact variable[\"node_resources\"]

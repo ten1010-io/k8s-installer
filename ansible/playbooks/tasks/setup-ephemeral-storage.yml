@@ -1,0 +1,25 @@
+# Runs before gather-facts.yml, which measures the filesystem of nodefs and
+# imagefs to calculate the kubelet reservations. Mounting after that would size
+# the reservations of the node against the root disk instead of the disk the
+# pods actually get. install-packages.yml creates the directories this mounts
+# over, so it has to come before that as well
+#
+# That puts it before setup-vars-file.yml too, so the script takes its input as
+# arguments rather than reading the vars file. See docs/impl-notes.adoc
+- hosts: all:!localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    device_arg: "--device {{ ephemeral_storage_device }}"
+    mount_path_arg: "--mount-path {{ ki_ephemeral_root_path }}"
+  tasks:
+    # Defaulted rather than read outright, because this play runs before
+    # validate-hostvars.yml and an upgrade keeps the vars.yml of the user, which
+    # does not carry a variable the release added until it is merged in. A node
+    # that has not been given a device keeps its ephemeral storage where it was
+    - when:
+        - target_node is none or inventory_hostname == target_node
+        - ephemeral_storage_device | default(None) is not none
+      block:
+        - name: Execute setup-ephemeral-storage.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/all-node/ephemeral-storage/setup-ephemeral-storage.sh {{ device_arg }} {{ mount_path_arg }}"

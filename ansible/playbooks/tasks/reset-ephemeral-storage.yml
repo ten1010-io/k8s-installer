@@ -1,0 +1,17 @@
+# Runs before uninstall-packages.yml. That one does rm -rf on the container
+# runtime root, and with the bind mount still up the rmdir of the mount point
+# fails with EBUSY and ends the reset. See docs/impl-notes.adoc
+#
+# Not conditioned on ephemeral_storage_device, so that a node still carrying the
+# mounts is taken apart even after the variable was cleared. The script is a no op
+# on a node that has nothing set up
+- hosts: all:!localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    mount_path_arg: "--mount-path {{ ki_ephemeral_root_path }}"
+  tasks:
+    - when: target_node is none or inventory_hostname == target_node
+      block:
+        - name: Execute reset-ephemeral-storage.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/all-node/ephemeral-storage/reset-ephemeral-storage.sh {{ mount_path_arg }}"

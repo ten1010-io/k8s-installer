@@ -6,6 +6,8 @@
   vars:
     playbook: "setup-cluster"
 
+- import_playbook: tasks/setup-ephemeral-storage.yml
+
 - import_playbook: tasks/gather-facts.yml
 
 - import_playbook: tasks/validate-hostvars.yml

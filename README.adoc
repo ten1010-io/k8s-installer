@@ -64,6 +64,41 @@ ansible-playbook -i inventory.yml playbooks/setup-k8s-installer.yml
 ansible-playbook -i inventory.yml playbooks/setup-cluster.yml
 ----
 
+=== ephemeral-storage 전용 디스크
+
+노드의 컨테이너 데이터는 기본적으로 루트 디스크에 쌓입니다. 이미지 하나가 크거나 파드 로그가
+오래 쌓이면 루트 파일시스템이 차고 노드 전체가 불안정해집니다.
+
+`ephemeral_storage_device` 에 블록 디바이스를 지정하면 그 디스크를 포맷해서
+`/var/lib/kubelet`, `/var/log/pods`, `/var/lib/containerd` 를 전부 그 디스크로 옮깁니다.
+노드마다 다르므로 보통 `inventory.yml` 에서 노드별로 지정합니다.
+
+[source,yaml]
+----
+k8s_node:
+  hosts:
+    node4:
+      ephemeral_storage_device: "/dev/disk/by-id/nvme-eui.0123456789abcdef"
+----
+
+LVM 논리 볼륨이면 `/dev/<vg>/<lv>` 도 재부팅에 안정적인 경로입니다. 어느 쪽을 적든 fstab 에는
+파일시스템 UUID 로 기록되므로, 여기 적는 경로는 설치 시점에만 쓰입니다.
+
+[IMPORTANT]
+====
+* 디바이스는 *포맷됩니다.* 아무것도 들어있지 않은 디스크를 지정해야 하며, 파티션 테이블이
+  있거나 이미 마운트되어 있으면 플레이북이 중단됩니다
+* *노드를 프로비저닝할 때만* 적용됩니다. 이미 돌고 있는 노드에 지정하면 기존 데이터가 가려진
+  채 루트 디스크를 계속 점유하므로 거부합니다. 기존 노드에는 `remove-node` 후 `add-node` 로
+  적용하세요
+* 재부팅하면 내용이 사라지는 디스크(클라우드 instance store 등)를 지정하면 *안 됩니다.*
+  이름은 ephemeral 이지만 `/var/lib/kubelet` 에는 kubelet 이 재시작 후에도 찾아야 하는
+  상태가 들어 있습니다
+====
+
+지정하지 않으면(`null`) 아무것도 하지 않고 기존처럼 루트 디스크를 씁니다.
+설계 판단은 link:docs/impl-notes.adoc[구현 노트]에 있습니다.
+
 === 설치기 업그레이드
 
 [source,shell,subs="+attributes"]
@@ -80,6 +115,11 @@ ansible-playbook -i inventory.yml playbooks/upgrade-k8s-installer.yml
 ----
 
 NOTE: 클러스터 업그레이드(`upgrade-cluster.yml`)와 인증서 갱신(`renew-certs.yml`)은 아직 제공되지 않습니다.
+
+`vars.yml` 은 보존되므로 제거된 변수가 남아 있을 수 있습니다. 플레이북이 시작 단계에서
+어느 변수를 지워야 하는지 알려주고 중단하므로, 안내대로 지우고 다시 실행하세요.
+`containerd_root_path` 가 여기 해당합니다. 컨테이너 런타임 루트는 더 이상 설정할 수 없고,
+루트 디스크에서 떼어내려면 위의 `ephemeral_storage_device` 를 씁니다.
 
 === 스냅샷 릴리스
 

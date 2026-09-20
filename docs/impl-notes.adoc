@@ -1,0 +1,211 @@
+= 구현 노트
+
+여러 파일에 걸쳐 있어서 한 곳의 주석으로는 담기지 않는 설계 판단을 기록합니다.
+한 파일만 봐서는 왜 그렇게 되어 있는지 드러나지 않는 것만 남기고, 한 파일 안에서 설명되는
+내용은 그 파일의 주석에 둡니다.
+
+== ephemeral-storage 전용 디스크
+
+노드의 컨테이너 데이터가 전부 루트 디스크에 쌓이면 이미지 하나나 오래 쌓인 파드 로그가
+루트 파일시스템을 채우고, 그 시점에 노드 전체가 불안정해집니다. `ephemeral_storage_device`
+를 선언한 노드는 그 디스크를 포맷해 ephemeral-storage 회계 대상 경로 전체를 옮깁니다.
+
+=== 대상 경로
+
+kubelet이 파드의 ephemeral-storage 사용량으로 세는 것은 세 가지고, 그래서 옮기는 경로도
+셋입니다.
+
+[cols="2,3"]
+|===
+|경로 |담기는 것
+
+|`/var/lib/kubelet`
+|emptyDir (`pods/<uid>/volumes/kubernetes.io~empty-dir`)
+
+|`/var/log/pods`
+|컨테이너 로그. `/var/log/containers` 의 심볼릭 링크가 이 아래를 가리킵니다
+
+|`/var/lib/containerd`
+|컨테이너 writable layer 와 이미지
+|===
+
+디스크 하나를 세 경로에 동시에 마운트할 수는 없습니다. 베이스 마운트포인트
+(`ki_ephemeral_root_path`) 를 하나 두고 그 하위 디렉토리를 각 경로로 bind mount 합니다.
+
+----
+/dev/disk/by-uuid/<uuid>   →  <base>                  (실제 마운트)
+<base>/kubelet             →  /var/lib/kubelet        (bind)
+<base>/pod-logs            →  /var/log/pods           (bind)
+<base>/containerd          →  /var/lib/containerd     (bind)
+----
+
+`/var/log/pods` 는 kubelet이 처음 뜰 때 생기므로 마운트포인트를 미리 만들어 둡니다.
+
+=== root path 변경이 아니라 bind mount 인 이유
+
+*`/var/log/pods` 에는 kubelet 설정 플래그가 없습니다.* 하드코딩이라 bind mount 외에는 옮길
+방법이 없고, 이 항목 하나로 방식이 결정됩니다.
+
+`/var/lib/kubelet` 은 `--root-dir` 로 옮길 수 있지만 CSI 드라이버와 node-driver-registrar,
+로그 수집 DaemonSet 등 외부 매니페스트가 이 경로를 hostPath 로 하드코딩합니다. 경로를 바꾸면
+가져다 쓰는 차트마다 손을 대야 합니다.
+
+containerd 만 `root =` 로 옮기고 나머지 둘은 bind mount 하는 혼종보다 세 경로를 한 방식으로
+통일하는 편이 낫습니다. 그래서 `containerd_root_path` 변수를 없앴습니다 (아래 참고).
+
+=== 세 경로가 용량을 공유합니다
+
+한 파일시스템을 셋이 나눠 쓰므로 이미지가 디스크를 채우면 파드 로그와 emptyDir 도 같이
+죽습니다. LVM 으로 나누면 격리되지만 공간이 낭비되고 운영이 복잡해져서 택하지 않았습니다.
+
+kubelet 이 nodefs 와 imagefs 를 같은 파일시스템으로 보게 되는데, 이건 kubelet 의 기본
+가정이고 `create-kubelet-reservations.py` 가 원래부터 그렇게 계산합니다.
+
+=== 파일시스템을 ext4 로 고정한 이유
+
+overlayfs 상성과 프로젝트 쿼타만 보면 XFS 가 낫지만 쓸 수 없습니다. 이 설치기는 패키지를
+`bin/linux-packages/` 에 번들해서 설치하는 오프라인 구조인데, 디스크를 마운트하는 시점은
+`install-packages` 보다 *앞* 입니다. 즉 `xfsprogs` 가 스톡 이미지에 없으면 그 시점에
+설치할 방법이 없습니다. RHEL 8 은 기본 탑재지만 Ubuntu 는 보장되지 않습니다.
+
+`e2fsprogs` 는 지원하는 세 OS 모두 base 에 들어 있습니다. 덤으로 ext4 는 XFS 의 `ftype=1`
+요구사항(없으면 overlayfs 가 마운트를 거부)도 없습니다.
+
+포맷할 때 `quota,project` 피처를 켜 둡니다. 지금은 쓰지 않지만 kubelet 의 쿼타 기반
+ephemeral-storage 격리를 나중에 쓰려면 파일시스템 단에 켜져 있어야 하고, 나중에 켜려면
+재포맷입니다. 마운트 옵션 `prjquota` 는 실제로 쓸 때 붙이면 되므로 지금 넣지 않습니다.
+
+마운트 옵션에 `noexec` / `nosuid` / `nodev` 를 *넣으면 안 됩니다.* 컨테이너 rootfs 가
+여기서 실행됩니다.
+
+=== 마운트가 안 걸린 채 서비스가 뜨는 것을 막아야 합니다
+
+bind mount 없이 kubelet 과 containerd 가 뜨면 아무 에러 없이 루트 디스크를 쓰다가 한참
+뒤에 루트가 찹니다. 이 조용한 실패를 막는 것이 이 기능에서 제일 중요한 부분입니다.
+
+* fstab 의 bind 항목에 `x-systemd.requires-mounts-for=<base>` 를 명시합니다. 최근 systemd
+  는 bind 소스 의존을 추론하지만 지원 OS 전 범위에서 확인하는 것보다 적는 편이 쌉니다
+* `nofail` 을 쓰지 않습니다. 마운트 실패는 부팅 실패로 드러나야 합니다
+* `containerd.service` 와 `kubelet.service` 에 `RequiresMountsFor=` drop-in 을 넣어
+  마운트가 없으면 서비스가 아예 뜨지 않게 합니다
+
+=== 실행 순서 제약
+
+`get-node-resources.sh` 가 `df` 로 nodefs/imagefs 크기를 재서 kubelet 예약량을 계산합니다.
+마운트가 `gather-facts` 보다 먼저 끝나지 않으면 *루트 디스크 크기로 예약량이 계산됩니다.*
+`install-packages` 가 kubelet/containerd 패키지를 깔면서 대상 디렉토리를 만들기도 하므로
+그보다도 앞서야 합니다. `preflight-playbook` 직후, `gather-facts` 직전에 넣는 이유입니다.
+
+그 자리는 `setup-vars-file` 보다 앞이라 `ki_tmp_vars_path` 가 아직 없습니다. `vars.yml` 에
+`kubelet_reservations` 가 들어가고 그건 `gather-facts` 의 결과물이므로, 이 순서는 뒤집을 수
+없습니다. 그래서 이 스크립트만 `--vars-path` 대신 필요한 값을 직접 인자로 받습니다.
+`get-node-resources.sh` 가 같은 이유로 같은 방식입니다.
+
+변수 검증도 `validate-hostvars` 보다 앞서 일어나므로 스크립트가 자체적으로 방어합니다.
+
+같은 이유로 플레이북의 조건식이 `ephemeral_storage_device` 를 그냥 읽지 않고
+`default(None)` 을 거칩니다. 업그레이드는 사용자의 `vars.yml` 을 보존하므로 새 릴리스가
+추가한 변수는 사용자가 병합하기 전까지 없고, `validate-hostvars` 의 pydantic 기본값은 아직
+적용되기 전입니다. 이 방어가 없으면 디바이스를 주지 않은 노드에서 조건식이
+"undefined" 로 터집니다.
+
+=== reset 순서 제약
+
+`uninstall-packages.sh` 는 `rm -rf /var/lib/containerd` 를 합니다. bind mount 가 살아 있는
+상태로 이걸 돌리면 내용은 지워지지만 마운트포인트 `rmdir` 이 `EBUSY` 로 실패하고, 스크립트가
+`set -Eeuo pipefail` 이라 reset 전체가 거기서 죽습니다.
+
+따라서 `reset-ephemeral-storage` 는 `uninstall-packages` 보다 *반드시 앞* 이어야 합니다.
+`reset-containerd` 직후에 둡니다. 그 시점이면 containerd 와 kubelet 이 이미 내려가 있어서
+안전하게 umount 할 수 있습니다.
+
+`reset-cluster` 와 `remove-node` 가 같은 순서를 갖고 있으므로 *양쪽 모두* 넣어야 합니다.
+`remove-node` 를 빠뜨리면 기존 노드에 이 기능을 적용하는 유일한 경로인 `remove-node` →
+`add-node` 가 막힙니다.
+
+reset 은 마운트를 걷고 데이터를 비우지만 *파일시스템은 남깁니다.* 포맷하지 않습니다.
+
+=== 멱등성과 안전장치
+
+이 기능의 유일한 파괴적 실패 모드는 재실행이 mkfs 로 라이브 데이터를 날리는 것입니다.
+`setup-cluster` 와 `add-node` 는 여러 번 도는 전제이므로 판정을 명시합니다.
+
+[cols="3,2"]
+|===
+|상태 |동작
+
+|`ephemeral_storage_device` 가 null |아무것도 하지 않음
+|디바이스가 없거나 블록 디바이스가 아님 |실패
+|디바이스에 파티션 테이블이 있음 |실패
+|디바이스에 ext4 가 아닌 파일시스템이 있음 |실패
+|디바이스가 이미 어딘가 마운트되어 있음 |실패
+|디바이스에 ext4 가 있음 |포맷하지 않고 재사용
+|디바이스가 비어 있음 |포맷
+|대상 경로에 이미 데이터가 있음 |실패
+|베이스 하위 디렉토리에 데이터가 있음 |실패
+|containerd 또는 kubelet 이 이미 enabled |실패
+|이미 구성이 끝나 있음 |아무것도 하지 않음
+|===
+
+강제 재포맷은 제공하지 않습니다. 디스크를 재사용하려면 운영자가 `wipefs` 로 직접 비웁니다.
+
+포맷 여부와 데이터 유무를 나눈 것은 reset 이 파일시스템을 남기기 때문입니다. "기존
+파일시스템이 있으면 실패" 로 두면 reset 후 재설치가 막힙니다.
+
+=== 기존 노드에는 적용하지 않습니다
+
+이미 이미지와 파드 데이터가 있는 노드에 bind mount 를 걸면 기존 데이터가 가려진 채 루트
+디스크를 계속 점유합니다. 마이그레이션 경로를 만드는 대신 위 표의 가드로 실패시키고, 기존
+노드에는 `remove-node` → `add-node` 로 적용합니다.
+
+=== 파드 로그는 리셋이 지웁니다
+
+`kubeadm reset` 은 `/var/lib/kubelet` 을 비우지만 `/var/log/pods` 는 건드리지 않고, 다른
+어떤 스크립트도 지우지 않고 있었습니다. 남은 로그는 노드가 다시 조인할 때 그대로
+ephemeral-storage 사용량으로 잡히고, 디스크를 새로 붙이는 노드에서는 빈 디렉토리 검사에
+걸려 `remove-node` → `add-node` 경로 자체를 막습니다. 바로 위에서 그 경로로 적용하라고
+해 둔 것이라 `reset-k8s-node-kubelet.sh` 가 내용을 비우게 했습니다.
+
+디렉토리 자체는 남깁니다. 마운트포인트일 수 있습니다.
+
+=== 휘발성 디스크를 붙이면 안 됩니다
+
+기능 이름은 ephemeral-storage 지만 `/var/lib/kubelet` 에는 `cpu_manager_state`,
+`memory_manager_state`, 파드 체크포인트처럼 재부팅을 넘어 유지되어야 하는 상태가 들어
+있습니다. 클라우드 instance store 처럼 인스턴스가 멈추면 내용이 사라지는 디스크를 여기
+붙이면 안 됩니다.
+
+=== containerd_root_path 제거
+
+bind mount 방식에서는 의미가 없어져 없앴습니다. 대상 경로가 고정되면서 systemd drop-in 도
+템플릿이 아닌 고정 파일이 되었습니다.
+
+업그레이드하면 사용자의 `vars.yml` 은 보존되므로 이 키가 남습니다. `VarsModel` 은 pydantic
+기본 설정이라 모르는 키를 조용히 무시하는데, 그러면 커스텀 경로가 계속 먹는 줄 알지만
+실제로는 containerd 가 `/var/lib/containerd` 를 쓰게 되어 기존 이미지가 고아가 됩니다.
+그래서 `validate-hostvars.py` 가 이 키를 발견하면 실패시킵니다.
+
+=== 모니터링 영향
+
+같은 파일시스템이라 용량과 사용량 수치는 같지만, cadvisor 가 보고하는 `device` /
+`mountpoint` 라벨이 베이스 경로로 잡힐 수 있습니다. 디스크 대시보드나 알람이
+`/var/lib/kubelet` 을 문자열로 매칭하고 있다면 확인이 필요합니다.
+
+=== 검수 기준
+
+[cols="1,4"]
+|===
+|# |항목
+
+|1 |`kubectl describe node` 의 `ephemeral-storage` Capacity 가 새 디스크 크기를 반영
+|2 |`findmnt` 로 4개 마운트 확인, `/var/lib/kubelet` 의 PROPAGATION 이 `shared`
+|3 |파드가 실제로 뜸 (overlayfs 동작)
+|4 |`kubelet_reservations` 의 nodefs/imagefs 가 새 디스크 기준으로 계산됨
+|5 |재부팅 후 마운트 유지, 종료 시 hang 없음
+|6 |`setup-cluster` 재실행이 포맷하지 않고 통과
+|7 |fstab 을 고의로 깨뜨리면 kubelet/containerd 가 *뜨지 않음* (루트 디스크로 fallback 하지 않음)
+|8 |`reset-cluster` 가 끝까지 완주하고 이후 재설치가 됨
+|9 |디스크가 있는 노드와 없는 노드가 한 클러스터에 공존
+|===
+
+7번과 8번이 이 기능의 실질적 회귀 테스트입니다.

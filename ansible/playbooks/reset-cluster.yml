@@ -24,6 +24,8 @@
 
 - import_playbook: tasks/reset-containerd.yml
 
+- import_playbook: tasks/reset-ephemeral-storage.yml
+
 - import_playbook: tasks/uninstall-programs.yml
 
 - import_playbook: tasks/reset-crictl.yml

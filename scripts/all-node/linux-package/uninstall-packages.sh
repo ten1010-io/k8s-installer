@@ -73,6 +73,11 @@ UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
 
+# Fixed by containerd rather than configurable. A node that needs it off the root
+# filesystem bind mounts it onto the ephemeral storage device instead, and
+# reset-ephemeral-storage.sh has taken that apart before this script runs
+CONTAINERD_ROOT_PATH=/var/lib/containerd
+
 ki_opt_root_path=""
 ki_opt_scripts_path=""
 ki_opt_bin_path=""
@@ -86,7 +91,6 @@ os_major_version=""
 os_minor_version=""
 
 docker_root_path=""
-containerd_root_path=""
 
 main() {
   require_file_exists "$vars_path"
@@ -97,7 +101,6 @@ main() {
   get_os_version
 
   docker_root_path=$($yq_cmd '.docker_root_path' < "$vars_path")
-  containerd_root_path=$($yq_cmd '.containerd_root_path' < "$vars_path")
 
   if [[ $os_distribution = "ubuntu" && $os_major_version = "22.04" && $os_minor_version -le "$UBUNTU2204_SUPPORTED_MINOR_VERSION" ]]; then
     ubuntu2204_uninstall
@@ -149,7 +152,7 @@ ubuntu2204_uninstall() {
     apt remove -y --purge --allow-change-held-packages \
       containerd.io
   fi
-  rm -rf "$containerd_root_path"
+  rm -rf "$CONTAINERD_ROOT_PATH"
 
   systemctl daemon-reload
 
@@ -188,7 +191,7 @@ ubuntu2404_uninstall() {
     apt remove -y --purge --allow-change-held-packages \
       containerd.io
   fi
-  rm -rf "$containerd_root_path"
+  rm -rf "$CONTAINERD_ROOT_PATH"
 
   systemctl daemon-reload
 
@@ -227,7 +230,7 @@ rhel8_uninstall() {
     yum erase -y --disableplugin subscription-manager \
       containerd.io
   fi
-  rm -rf "$containerd_root_path"
+  rm -rf "$CONTAINERD_ROOT_PATH"
 
   systemctl daemon-reload
 
