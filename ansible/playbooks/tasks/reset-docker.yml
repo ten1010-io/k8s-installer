@@ -1,9 +1,11 @@
 # Resetting docker stops the daemon and then runs flush-iptables.sh, which
-# disables ufw and firewalld and empties the filter, nat and mangle tables. The
-# FORWARD policy docker left at DROP stays behind with no rules under it. Doing
-# that on the node ansible is running from can cut the paths it still needs to the
-# other nodes, and more work follows this than follows setup-docker.yml, so the
-# control node is handled only once every other node is done.
+# disables ufw and firewalld, empties the filter, nat and mangle tables and puts
+# the policies of the built in chains back to ACCEPT. What that leaves is a node
+# with no nat of its own, so the published ports of the ki cp containers and the
+# service rules of kube-proxy are both gone. Doing that on the node ansible is
+# running from can cut the paths it still needs to the other nodes, and more work
+# follows this than follows setup-docker.yml, so the control node is handled only
+# once every other node is done.
 #
 # That ordering is the only reason this is two plays rather than one with two
 # tasks. Within a play the order across hosts is a property of the linear

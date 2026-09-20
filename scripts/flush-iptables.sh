@@ -65,6 +65,14 @@ main() {
     disable_service_if_exists firewalld
     iptables -F; iptables -t nat -F; iptables -t mangle -F
     iptables -X; iptables -t nat -X; iptables -t mangle -X
+    # A flush empties the chains but leaves the policy of the built in ones as it
+    # was. dockerd sets the filter FORWARD policy to DROP and lets container traffic
+    # back through with chains of its own, so a flush that is not followed by a
+    # docker restart leaves a bare DROP behind, and every forwarded packet is
+    # dropped until the node is rebooted. ufw leaves INPUT and OUTPUT the same way,
+    # so all three go back to ACCEPT here. A docker that is still running is
+    # restarted below and sets its own policy again
+    iptables -P INPUT ACCEPT; iptables -P FORWARD ACCEPT; iptables -P OUTPUT ACCEPT
     restart_service_if_running docker
   fi
 
