@@ -111,7 +111,7 @@ main() {
   svc_root_path="$ki_etc_services_path"/$SVC_NAME
   [[ $update = "false" ]] && require_not_setup $SVC_NAME
 
-  docker load -i "$ki_opt_bundle_path"/images/keepalived/*.tar
+  docker load -i "$ki_opt_bundle_path"/ki-cp-service-images/$SVC_NAME.tar
 
   mkdir -p "$svc_root_path"
   cp -f "$SCRIPT_DIR_PATH"/templates/check_node.sh "$svc_root_path/"

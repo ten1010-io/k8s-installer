@@ -22,11 +22,11 @@
     - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
       shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
 
-    # The bin directory holds thousands of files that are already compressed, so
+    # The bundle holds thousands of files that are already compressed, so
     # the payload is bundled without compression. Bundling is what makes the
     # transfer fast, since scp pays a round trip per file
     - name: Create payload archive
-      shell: "sudo tar cf {{ ki_tmp_payload_src_path }} -C {{ ki_opt_root_path }} bin scripts"
+      shell: "sudo tar cf {{ ki_tmp_payload_src_path }} -C {{ ki_opt_root_path }} bundle scripts"
 
 - hosts: all:!localhost
   gather_facts: false

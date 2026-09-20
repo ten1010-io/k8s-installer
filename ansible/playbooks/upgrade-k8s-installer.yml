@@ -59,7 +59,7 @@
       shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
 
     - name: Create payload archive
-      shell: "sudo tar cf {{ ki_tmp_payload_src_path }} -C {{ ki_opt_root_path }} bin scripts"
+      shell: "sudo tar cf {{ ki_tmp_payload_src_path }} -C {{ ki_opt_root_path }} bundle scripts"
 
 - hosts: all:!localhost
   gather_facts: false

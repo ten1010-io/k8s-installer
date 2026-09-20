@@ -81,12 +81,15 @@ ki_opt_venv_path=""
 
 yq_cmd=""
 jinja2_cmd=""
+crane_cmd=""
 
 ki_var_root_path=""
 ki_etc_services_path=""
+ki_cp_k8s_registry_port=""
 
 etc_svc_root_path=""
 var_svc_root_path=""
+images_path=""
 
 main() {
   require_file_exists "$vars_path"
@@ -97,24 +100,80 @@ main() {
 
   ki_var_root_path=$($yq_cmd '.ki_var_root_path' < "$vars_path")
   ki_etc_services_path=$($yq_cmd '.ki_etc_services_path' < "$vars_path")
+  ki_cp_k8s_registry_port=$($yq_cmd '.ki_cp_k8s_registry_port' < "$vars_path")
 
   etc_svc_root_path="$ki_etc_services_path"/$SVC_NAME
   var_svc_root_path="$ki_var_root_path"/$SVC_NAME
+  images_path="$ki_opt_bundle_path"/$SVC_NAME-images
   [[ $update = "false" ]] && require_not_setup $SVC_NAME
+  require_directory_exists "$images_path"
 
-  docker load -i "$ki_opt_bundle_path"/images/registry/*.tar
+  docker load -i "$ki_opt_bundle_path"/ki-cp-service-images/$SVC_NAME.tar
 
   mkdir -p "$var_svc_root_path"
-  tar xzf "$ki_opt_bundle_path/registry-data/$SVC_NAME.tgz" -C "$var_svc_root_path"
-
   mkdir -p "$etc_svc_root_path"
-  $jinja2_cmd -D var_svc_root_path="$var_svc_root_path" \
-              --format yaml \
-              -o "$etc_svc_root_path""/compose.yml" \
-              "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$vars_path"
 
-  [[ $update = "true" && $(service_exists $SVC_NAME) = "true" ]] && docker compose -f "$etc_svc_root_path/compose.yml" down
+  # Seeded by pushing rather than by unpacking a copy of the storage directory of
+  # some other registry, so that the bundle does not have to agree with the
+  # internal layout of the registry image the release happens to pin
+  create_compose_yml_file "false"
+  start_service
+  wait_registry_ready 60
+  push_images
+
+  # Left readonly, which is also what makes the garbage collection of a later
+  # prune safe to run: nothing can be uploading while it walks the storage
+  create_compose_yml_file "true"
+  start_service
+
+  return 0
+}
+
+create_compose_yml_file() {
+  local readonly_enabled=$1
+
+  $jinja2_cmd -D var_svc_root_path="$var_svc_root_path"               -D readonly_enabled="$readonly_enabled"               --format yaml               -o "$etc_svc_root_path""/compose.yml"               "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$vars_path"
+
+  return 0
+}
+
+start_service() {
+  [[ $(service_exists $SVC_NAME) = "true" ]] && docker compose -f "$etc_svc_root_path/compose.yml" down
   docker compose -f "$etc_svc_root_path/compose.yml" up -d
+
+  return 0
+}
+
+wait_registry_ready() {
+  local timeout=$1
+
+  local elapsed=0
+  while true; do
+    if curl -sk --max-time 3 "https://127.0.0.1:$ki_cp_k8s_registry_port/v2/" > /dev/null 2>&1; then
+      return 0
+    fi
+    [[ $elapsed -ge $timeout ]] && die "[ERROR] Failed to wait for the registry being ready. timeout occurred"
+
+    sleep 2s
+    elapsed=$(("$elapsed" + 2))
+  done
+}
+
+# The path of a layout under the images directory is the reference it is pushed
+# to. Pushing is additive on purpose: an upgrade adds the images of the new
+# release while the nodes that have not moved yet still pull the old ones
+push_images() {
+  local layout
+  local ref
+  for layout in $(find "$images_path" -name oci-layout -printf '%h
+' | sort); do
+    ref=${layout#"$images_path"/}
+    msg "[INFO] Pushing image[\"$ref\"]"
+    # Loopback, and the certificate of the registry is issued for its dns name
+    # rather than for an address, so the name it would be verified against is not
+    # the one being connected to
+    $crane_cmd push --insecure "$layout" "127.0.0.1:$ki_cp_k8s_registry_port/$ref" > /dev/null
+  done
 
   return 0
 }
@@ -147,6 +206,7 @@ import_ki_opt_vars() {
 setup_cmd_vars() {
   yq_cmd="$ki_opt_bundle_path/bin/yq"
   jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
+  crane_cmd="$ki_opt_bundle_path/bin/crane"
 }
 
 validate_ki_opt_directory() {

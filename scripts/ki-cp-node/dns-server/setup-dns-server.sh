@@ -113,7 +113,7 @@ main() {
 
   disable_resolved
 
-  docker load -i "$ki_opt_bundle_path"/images/bind9/*.tar
+  docker load -i "$ki_opt_bundle_path"/ki-cp-service-images/$SVC_NAME.tar
 
   mkdir -p "$svc_root_path"
   $jinja2_cmd --format yaml -o "$svc_root_path""/compose.yml" "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$vars_path"

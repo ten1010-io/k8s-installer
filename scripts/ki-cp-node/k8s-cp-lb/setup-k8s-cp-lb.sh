@@ -104,7 +104,7 @@ main() {
   svc_root_path="$ki_etc_services_path"/$SVC_NAME
   [[ $update = "false" ]] && require_not_setup $SVC_NAME
 
-  docker load -i "$ki_opt_bundle_path"/images/haproxy/*.tar
+  docker load -i "$ki_opt_bundle_path"/ki-cp-service-images/$SVC_NAME.tar
 
   mkdir -p "$svc_root_path"
   create_compose_yml_file
