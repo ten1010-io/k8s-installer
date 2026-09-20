@@ -1,0 +1,26 @@
+# Records what every node was built or updated with, as the last step of the
+# playbook that did it. Last on purpose: a run that failed half way through
+# leaves the file describing the state the node was actually left in, so the
+# next update sees the change it still has to apply rather than believing it was
+# already made
+- hosts: all:!localhost:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: "Create directory[\"{{ ki_etc_root_path }}\"]"
+      shell: "sudo mkdir -p {{ ki_etc_root_path }}"
+
+    - name: "Record the variables applied to this node in file[\"{{ ki_etc_applied_vars_path }}\"]"
+      copy:
+        # Written from the class table rather than from vars.yml, so that a
+        # variable set for one node in inventory.yml is recorded with the value
+        # that node actually has. A variable nothing defines is left out rather
+        # than written as null, which would read as a value on the next compare
+        content: |
+          {% for name in ki_var_classes.values() | flatten | sort %}
+          {% if name in hostvars[inventory_hostname] %}
+          {{ name }}: {{ hostvars[inventory_hostname][name] | to_json }}
+          {% endif %}
+          {% endfor %}
+        dest: "{{ ki_etc_applied_vars_path }}"
+      become: yes

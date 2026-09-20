@@ -73,6 +73,12 @@ ki_etc_kubeadm_path: "{{ ki_etc_root_path }}/kubeadm"
 # that have to clean up after it. Nothing is derived from it while a node
 # answers, since what the node itself reports is always the fresher answer
 ki_etc_nodes_path: "{{ ki_etc_root_path }}/nodes.yml"
+# The values of the classified variables as they were when this node was last
+# built or updated. Held by every node, since some of them are set per node in
+# inventory.yml, and written only after the run that applied them succeeded, so
+# what is in it is what the node is actually running with. update-cluster.yml
+# compares vars.yml against this to work out what changed and what that needs
+ki_etc_applied_vars_path: "{{ ki_etc_root_path }}/applied-vars.yml"
 
 # Where the ephemeral storage device of a node is mounted. /var/lib/kubelet,
 # /var/log/pods and /var/lib/containerd are fixed paths and one device can not be
@@ -132,6 +138,100 @@ nvidia_gpu: false
 # rebuilding the cluster the answer rather than a rotation. Both deadlines are
 # only useful if they are seen coming
 ki_cert_expiry_warning_days: 180
+
+# What has to happen when a variable changes. update-cluster.yml compares the
+# current values against ki_etc_applied_vars_path and decides from this table
+# what to run, so a variable that is not listed here is one nothing knows how to
+# apply. That is checked rather than assumed: a variable of vars.yml, or one set
+# on a node in inventory.yml, missing from this table stops the run, so whoever
+# adds one has to say what changing it means.
+#
+# Covers both files. Most of these are set once in vars.yml, some are only ever
+# set per node in inventory.yml, and a few can be either: what a node is
+# recorded with is the value that node ended up with, whichever file it came from
+ki_var_classes:
+  # Rendered into a ki cp service and picked up by re-rendering it. The nodes
+  # and the cluster stay as they are
+  service:
+    - internal_network_extra_zone
+    - internal_network_extra_zone_a_records
+    - ki_cp_dns_dnssec_validation
+    - ki_cp_dns_server_upstream_servers
+    - ki_cp_ntp_server_upstream_servers
+    # The address moves, the name does not. controlPlaneEndpoint is
+    # ki-cp.<zone>:<port>, so what a new vip needs is the dns server and
+    # keepalived rendered again, not a cluster that knows a different endpoint
+    - ki_cp_ha_mode_vip
+  # Goes into the kubelet configuration. Applied by writing it again and
+  # restarting kubelet, which does not stop the containers already running:
+  # containerd keeps them and kubelet picks them back up. The reservations only
+  # feed scheduler accounting, and a tightened evictionHard evicting a pod is
+  # the point of tightening it
+  kubelet:
+    - kubelet_auto_ephemeral_storage_max
+    - kubelet_auto_ephemeral_storage_min
+    - kubelet_auto_memory_available_max
+    - kubelet_auto_memory_available_min
+    - kubelet_auto_nodefs_available_max
+    - kubelet_auto_nodefs_available_min
+    - kubelet_eviction_hard_imagefs_available
+    - kubelet_eviction_hard_memory_available
+    - kubelet_eviction_hard_nodefs_available
+    - kubelet_eviction_hard_nodefs_inodes_free
+    - kubelet_ki_cp_extra_cpu
+    - kubelet_ki_cp_extra_memory
+    - kubelet_kube_reserved_cpu
+    - kubelet_kube_reserved_ephemeral_storage
+    - kubelet_kube_reserved_memory
+    - kubelet_kube_reserved_pid
+    - kubelet_system_reserved_cpu
+    - kubelet_system_reserved_ephemeral_storage
+    - kubelet_system_reserved_memory
+    - kubelet_system_reserved_pid
+  # Written into the kubeadm configuration of the cluster and read the next time
+  # kubeadm issues something. Nothing already issued changes: a shorter validity
+  # period applies to the certificates renewed after it, not to the ones held
+  cluster_config:
+    - k8s_certificate_validity_period
+  # Decided while a node is being provisioned and not reachable afterwards. The
+  # device is formatted, the container and installer state lives under these
+  # paths, so moving any of them means the node is built again rather than
+  # edited. update-cluster.yml names the nodes and stops
+  #
+  # The ones set per node in inventory.yml sit here for the same reason. Whether
+  # a node runs the control plane decides whether it carries an etcd member,
+  # which is not something to add or drop under a node that is running, and the
+  # gpu setup and the address a node is published under are the same kind of
+  # thing
+  node_rebuild:
+    - docker_root_path
+    - ephemeral_storage_device
+    - internal_network_ip
+    - k8s_cp
+    - ki_var_root_path
+    - nvidia_gpu
+  # Changing it needs nothing done to any node. sync-ansible.yml already keeps
+  # the ansible directory of every ki cp node in step, so moving the control
+  # node is this declaration and nothing else.
+  #
+  # For anything in this class that a node does hold, nothing to apply is not
+  # nothing to record: the new value is written to ki_etc_applied_vars_path like
+  # any other, or every run after this one would go on reporting it as changed
+  # against a file that never catches up
+  no_action:
+    # Declared on the localhost entry of inventory.yml and nowhere else, so no
+    # node holds it and applied-vars.yml of a node does not carry it. That is
+    # consistent rather than a gap: a variable that is not recorded is not
+    # compared either, so it can not be reported as changed, and there would be
+    # nothing to do about it if it were
+    - control_node_ih
+  # Not changeable on a cluster that exists. The subnets decide the internal
+  # address of every node, which the etcd peers and the apiserver of each one
+  # are published under, and turning ha mode on or off changes which services
+  # run at all. update-cluster.yml refuses rather than applying half of it
+  immutable:
+    - internal_network_subnets
+    - ki_cp_ha_mode
 
 target_node: null
 target_node_op: null

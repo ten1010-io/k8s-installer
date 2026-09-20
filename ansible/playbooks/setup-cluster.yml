@@ -40,4 +40,6 @@
 
 - import_playbook: tasks/init-k8s-cluster.yml
 
+- import_playbook: tasks/record-applied-vars.yml
+
 - import_playbook: tasks/reset-vars-file.yml

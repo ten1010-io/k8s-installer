@@ -43,6 +43,8 @@
 - import_playbook: tasks/add-k8s-node.yml
   when: target_node in groups['k8s_node']
 
+- import_playbook: tasks/record-applied-vars.yml
+
 - import_playbook: tasks/reset-vars-file.yml
 
 - import_playbook: tasks/check-cert-expiry.yml

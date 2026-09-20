@@ -34,6 +34,7 @@ def main():
 
     check_type(hostvars_errors, hostvars)
     validate_removed_vars(hostvars_errors, hostvars)
+    validate_var_classes(hostvars_errors, hostvars)
     validate_broken_node_group(hostvars_errors, hostvars)
     validate_control_node(hostvars_errors, hostvars)
     validate_ki_cp_ha_mode_vip(hostvars_errors, hostvars)
@@ -78,6 +79,71 @@ def validate_removed_vars(hostvars_errors: List[HostvarsError], hostvars):
 
             error = HostvarsError(ih, (var_name,), str(hostvars[ih][var_name]), msg)
             hostvars_errors.append(error)
+
+
+def validate_var_classes(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects a variable of vars.yml that no class covers.
+
+    ki_var_classes says what changing a variable means, and update-cluster.yml has
+    nothing to do with one that is not in it. Left unchecked, adding a variable
+    and forgetting to classify it produces a variable that silently never gets
+    applied to a cluster that already exists, which is found the hard way. The
+    check runs here so that it is found by whoever adds it
+    """
+    lo_hostvars = hostvars["localhost"]
+    var_classes = lo_hostvars.get("ki_var_classes")
+    ansible_path = lo_hostvars.get("ki_opt_ansible_path")
+    if not var_classes or not ansible_path:
+        return
+
+    classified = {name for names in var_classes.values() for name in names}
+
+    user_vars_path = Path(ansible_path) / "group_vars" / "all" / "vars.yml"
+    for var_name, value in sorted(read_yaml_mapping(user_vars_path).items()):
+        if var_name in classified:
+            continue
+
+        hostvars_errors.append(build_unclassified_error(var_name, value, "vars.yml"))
+
+    # inventory.yml is read as a file too. hostvars carries hundreds of names
+    # ansible itself defines, so what a node was actually given can only be seen
+    # in the file it was given in. The ansible_ ones configure the connection
+    # rather than the cluster, and nothing here applies them
+    inventory_path = Path(ansible_path) / "inventory.yml"
+    for var_name, value in sorted(read_inventory_host_vars(inventory_path).items()):
+        if var_name in classified or var_name.startswith("ansible_"):
+            continue
+
+        hostvars_errors.append(build_unclassified_error(var_name, value, "inventory.yml"))
+
+
+def build_unclassified_error(var_name: str, value: Any, file_name: str) -> HostvarsError:
+    return HostvarsError(
+        "localhost", (var_name,), str(value),
+        f"Variable[\"{var_name}\"] of {file_name} is in no class of variable"
+        f"[\"ki_var_classes\"] of constant-vars.yml, so nothing knows what changing"
+        f" it means. Put it in the class that says how it is applied")
+
+
+def read_yaml_mapping(path: Path) -> dict:
+    try:
+        return yaml.safe_load(path.read_text()) or {}
+    except OSError:
+        return {}
+
+
+def read_inventory_host_vars(path: Path) -> dict:
+    """Every variable the inventory sets on a host, across all of its groups."""
+    host_vars = {}
+    for group in read_yaml_mapping(path).values():
+        if not isinstance(group, dict):
+            continue
+
+        for node_vars in (group.get("hosts") or {}).values():
+            if isinstance(node_vars, dict):
+                host_vars.update(node_vars)
+
+    return host_vars
 
 
 def get_broken_node_ihs(hostvars) -> List[str]:
