@@ -1,0 +1,34 @@
+# Release metadata of this source tree.
+#
+# A release pins every component the installer deploys, so a cluster is described
+# by this one version rather than by a combination of component versions. setup.sh
+# places this file in the installer directory, and setup-k8s-installer.yml stamps
+# the version onto every managed node once the deployment succeeds.
+#
+# A version ending in -SNAPSHOT is a development build. It keeps its name while
+# its content changes, which makes it the one thing a release version must never
+# be: ambiguous. Two nodes both reporting 1.1.0-SNAPSHOT are not known to hold the
+# same thing, so the checks that compare versions can not do their job, and
+# neither upgradable_from below nor the changed flags of a release describe a
+# delta from it. That leaves a snapshot with exactly one transition:
+#
+#   - setup.sh installs it like any other version
+#   - upgrade.sh replaces a snapshot with itself, which is a redeploy rather than
+#     an upgrade, as often as development needs
+#   - upgrade.sh refuses to move a node off a snapshot. Reset and set up again
+#   - a cluster upgrade must refuse to start from a snapshot altogether, since the
+#     delta it would have to apply is undefined
+#
+# Upgrading a release to a snapshot is allowed, because it is the only way to try
+# an upgrade path out before the release is cut. The cluster it produces is a
+# development cluster and can only be rebuilt from there.
+version: "1.0.0-SNAPSHOT"
+
+# Releases that upgrade.sh and upgrade-k8s-installer.yml accept as a starting
+# point. Empty means this release can only be installed from scratch, which is the
+# case for the first release that lays out the installer under /opt/k8s-installer.
+# Earlier releases deployed to /var/lib/ki-env and carry no release file at all.
+#
+# Snapshots are never listed here. A customer never starts from one, and a
+# development cluster that ran one is rebuilt rather than upgraded
+upgradable_from: []

@@ -1,0 +1,71 @@
+- import_playbook: tasks/check-control-node.yml
+
+# Deploys the installer itself to every node, which is what every other playbook
+# depends on. It runs before the managed nodes have a python interpreter of their
+# own, so the tasks that touch them use the raw module. Tasks that need a module
+# are delegated to the control node, which always has one
+#
+# The control node is left out. Its installer directory is the one setup.sh built
+# and the one this play copies from, and it is also the directory ansible itself
+# is running out of
+- hosts: all:!localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Check ssh connection
+      raw: "echo ok"
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
+      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+    # The bin directory holds thousands of files that are already compressed, so
+    # the payload is bundled without compression. Bundling is what makes the
+    # transfer fast, since scp pays a round trip per file
+    - name: Create payload archive
+      shell: "sudo tar cf {{ ki_tmp_payload_src_path }} -C {{ ki_opt_root_path }} bin scripts"
+
+- hosts: all:!localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - when: inventory_hostname != ki_control_node_ih
+      block:
+        - name: "Create directory[\"{{ ki_opt_root_path }}\"]"
+          raw: "sudo mkdir -p {{ ki_opt_root_path }}"
+
+        - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
+          raw: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+        - name: Copy payload to the node
+          delegate_to: localhost
+          shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
+          vars:
+            ssh_opt: "-o StrictHostKeyChecking=no"
+            port_opt: "-P {{ ansible_port }}"
+            src_arg: "{{ ki_tmp_payload_src_path }}"
+            dst_arg: "{{ ansible_ssh_user }}@{{ ansible_host }}:{{ ki_tmp_payload_path }}"
+
+        # Replaced rather than merged, so a node can not end up holding files of
+        # two releases at once
+        - name: Extract payload
+          raw: "sudo rm -rf {{ ki_opt_bin_path }} {{ ki_opt_scripts_path }} && sudo tar xf {{ ki_tmp_payload_path }} -C {{ ki_opt_root_path }}"
+
+        - name: Delete temporary payload archive
+          raw: "sudo rm -f {{ ki_tmp_payload_path }}"
+
+        - name: Execute setup-venv.sh
+          raw: "sudo {{ ki_opt_scripts_path }}/setup-venv.sh --root-path {{ ki_opt_root_path }}"
+
+        - name: Execute write-release.sh
+          raw: "sudo {{ ki_opt_scripts_path }}/write-release.sh --root-path {{ ki_opt_root_path }} --version {{ ki_release_version }}"
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Delete temporary payload archive
+      shell: "sudo rm -f {{ ki_tmp_payload_src_path }}"

@@ -1,0 +1,20 @@
+- import_playbook: tasks/check-control-node.yml
+
+# Removes the installer from the managed nodes. It has to use the raw module,
+# since the directory it deletes holds the very python interpreter the managed
+# nodes run modules from
+#
+# The control node is left out, because deleting the directory ansible is running
+# out of would take the run down with it. reset.sh removes that one, and hands the
+# process over to rm for the same reason
+- hosts: all:!localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - when: inventory_hostname != ki_control_node_ih
+      block:
+        - name: "Remove directory[\"{{ ki_opt_root_path }}\"]"
+          raw: "sudo rm -rf {{ ki_opt_root_path }}"
+
+        - name: "Remove directory[\"{{ ki_tmp_root_path }}\"]"
+          raw: "sudo rm -rf {{ ki_tmp_root_path }}"

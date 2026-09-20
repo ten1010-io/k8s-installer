@@ -4,24 +4,27 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--ki-env-path path]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--root-path path] [--force]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
---ki-env-path   Directory path
+--root-path     Directory path
+--force         Recreate the virtual environment even if one already exists
 EOF
   exit
 }
 
 parse_params() {
   ki_opt_root_path=""
+  force="false"
 
   while :; do
     case "${1-}" in
     -h | --help) print_usage ;;
     -v | --verbose) set -x ;;
     --no-color) NO_COLOR=1 ;;
-    --ki-env-path)
+    --force) force="true" ;;
+    --root-path)
       [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
       ki_opt_root_path="${2-}"
       shift
@@ -34,7 +37,7 @@ parse_params() {
 
   args=("$@")
 
-  [[ -z "${ki_opt_root_path-}" ]] && die "[ERROR] Missing required option: --ki-env-path"
+  [[ -z "${ki_opt_root_path-}" ]] && die "[ERROR] Missing required option: --root-path"
 
   return 0
 }
@@ -75,7 +78,7 @@ RHEL8_SUPPORTED_MINOR_VERSION=10
 
 KI_OPT_SCRIPTS_PATH="$ki_opt_root_path"/scripts
 KI_OPT_BIN_PATH="$ki_opt_root_path"/bin
-KI_OPT_VENV_PATH="$ki_opt_root_path"/ki-venv
+KI_OPT_VENV_PATH="$ki_opt_root_path"/venv
 
 YQ_CMD="$KI_OPT_BIN_PATH"/bin/yq
 
@@ -88,6 +91,7 @@ main() {
   require_directory_exists "$ki_opt_root_path"
   validate_ki_opt_directory
   get_os_version
+  remove_venv_if_forced
 
   if [[ $os_distribution = "ubuntu" && $os_major_version = "22.04" && $os_minor_version -le "$UBUNTU2204_SUPPORTED_MINOR_VERSION" ]]; then
     ubuntu2204_setup
@@ -107,6 +111,19 @@ main() {
   die "[ERROR] OS not supported\n$os_info"
 }
 
+# An upgrade ships new versions of the python packages, and pip can not be relied
+# on to reconcile an existing environment offline, so the environment is thrown
+# away and built again from the packages of the new release
+remove_venv_if_forced() {
+  [[ $force = "false" ]] && return 0
+  [[ ! -e $KI_OPT_VENV_PATH ]] && return 0
+
+  msg "[INFO] K8s installer will recreate virtual environment[\"venv\"]"
+  rm -rf "$KI_OPT_VENV_PATH"
+
+  return 0
+}
+
 ubuntu2204_setup() {
   if [[ $(ubuntu2204_is_installed python3\.10-venv) = "false" ]]; then
     export DEBIAN_FRONTEND=noninteractive
@@ -119,9 +136,9 @@ ubuntu2204_setup() {
   fi
 
   if [[ -e $KI_OPT_VENV_PATH ]]; then
-    msg "[INFO] K8s installer will use existing ki-venv"
+    msg "[INFO] K8s installer will use existing venv"
   else
-    msg "[INFO] K8s installer will create virtual environment[\"ki-venv\"]"
+    msg "[INFO] K8s installer will create virtual environment[\"venv\"]"
 
     python3.10 -m venv "$KI_OPT_VENV_PATH"
     "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BIN_PATH"/python-packages/python3.10/netifaces netifaces
@@ -133,7 +150,7 @@ ubuntu2204_setup() {
   validate_venv_directory
 
   msg ""
-  msg "[INFO] To activate ki-venv, run the following"
+  msg "[INFO] To activate venv, run the following"
   msg "source $KI_OPT_VENV_PATH/bin/activate"
 
   return 0
@@ -148,9 +165,9 @@ ubuntu2404_setup() {
   fi
 
   if [[ -e $KI_OPT_VENV_PATH ]]; then
-    msg "[INFO] K8s installer will use existing ki-venv"
+    msg "[INFO] K8s installer will use existing venv"
   else
-    msg "[INFO] K8s installer will create virtual environment[\"ki-venv\"]"
+    msg "[INFO] K8s installer will create virtual environment[\"venv\"]"
 
     python3.12 -m venv "$KI_OPT_VENV_PATH"
     "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BIN_PATH"/python-packages/python3.12/netifaces netifaces
@@ -162,7 +179,7 @@ ubuntu2404_setup() {
   validate_venv_directory
 
   msg ""
-  msg "[INFO] To activate ki-venv, run the following"
+  msg "[INFO] To activate venv, run the following"
   msg "source $KI_OPT_VENV_PATH/bin/activate"
 
   return 0
@@ -175,9 +192,9 @@ rhel8_setup() {
   fi
 
   if [[ -e $KI_OPT_VENV_PATH ]]; then
-    msg "[INFO] K8s installer will use existing ki-venv"
+    msg "[INFO] K8s installer will use existing venv"
   else
-    msg "[INFO] K8s installer will create virtual environment[\"ki-venv\"]"
+    msg "[INFO] K8s installer will create virtual environment[\"venv\"]"
 
     python3.12 -m venv "$KI_OPT_VENV_PATH"
     "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BIN_PATH"/python-packages/python3.12/netifaces netifaces
@@ -189,7 +206,7 @@ rhel8_setup() {
   validate_venv_directory
 
   msg ""
-  msg "[INFO] To activate ki-venv, run the following"
+  msg "[INFO] To activate venv, run the following"
   msg "source $KI_OPT_VENV_PATH/bin/activate"
 
   return 0
@@ -244,7 +261,7 @@ validate_ki_opt_directory() {
 }
 
 validate_venv_directory() {
-  [[ ! -e $KI_OPT_VENV_PATH/bin/activate ]] && die "[ERROR] Invalid ki-venv directory. activate script not exists"
+  [[ ! -e $KI_OPT_VENV_PATH/bin/activate ]] && die "[ERROR] Invalid venv directory. activate script not exists"
 
   return 0
 }

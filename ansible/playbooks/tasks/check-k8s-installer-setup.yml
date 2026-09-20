@@ -1,0 +1,40 @@
+- hosts: all
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: "Check directory[\"{{ ki_opt_root_path }}\"] exists"
+      shell: "sudo ls {{ ki_opt_root_path }}"
+
+    - name: "Check directory[\"{{ ki_opt_scripts_path }}\"] exists"
+      shell: "sudo ls {{ ki_opt_scripts_path }}"
+
+    - name: "Check directory[\"{{ ki_opt_bin_path }}\"] exists"
+      shell: "sudo ls {{ ki_opt_bin_path }}"
+
+    - name: "Check directory[\"{{ ki_opt_venv_path }}\"] exists"
+      shell: "sudo ls {{ ki_opt_venv_path }}"
+
+    # Absent on a node whose deployment did not finish, so the missing file is
+    # itself the answer rather than a missing check
+    - name: "Check file[\"{{ ki_opt_release_path }}\"] exists"
+      shell: "sudo cat {{ ki_opt_release_path }}"
+      register: release_result
+
+    - name: "Set_fact variable[\"node_release\"]"
+      set_fact:
+        node_release: "{{ release_result.stdout | trim }}"
+
+# A cluster is described by one release, so a node that drifted away from it is
+# rejected here rather than discovered later by whichever task it breaks
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Check every node holds the release of the source tree
+      fail:
+        msg: >-
+          Node["{{ item }}"] holds release["{{ hostvars[item]['node_release'] }}"]
+          but the source tree is release["{{ ki_release_version }}"].
+          Run the upgrade-k8s-installer.yml playbook to bring every node to the same release
+      when: hostvars[item]['node_release'] != ki_release_version
+      with_items: "{{ groups['all'] }}"

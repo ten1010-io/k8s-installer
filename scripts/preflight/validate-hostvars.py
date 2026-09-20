@@ -23,6 +23,7 @@ def main():
     hostvars_errors: List[HostvarsError] = []
 
     check_type(hostvars_errors, hostvars)
+    validate_control_node(hostvars_errors, hostvars)
     validate_ki_cp_ha_mode_vip(hostvars_errors, hostvars)
     validate_internal_network_subnets(hostvars_errors, hostvars)
     validate_kubelet_reservations(hostvars_errors, hostvars)
@@ -47,6 +48,65 @@ def check_type(hostvars_errors: List[HostvarsError], hostvars):
         except ValidationError as e:
             for error in e.errors():
                 hostvars_errors.append(build_hostvars_error(ih, error))
+
+
+def validate_control_node(hostvars_errors: List[HostvarsError], hostvars):
+    """Requires the control node to be a node of the ki_cp_node group.
+
+    sync-ansible.yml keeps the ansible directory of every ki cp node the same as
+    the one of the control node, so that losing the control node costs nothing
+    more than running the playbooks from another one. That only holds while the
+    control node is one of them, and while the inventory says which one it is
+    """
+    lo_hostvars = hostvars["localhost"]
+    localhost_ih = lo_hostvars.get("localhost_ih")
+    control_node_ih = lo_hostvars.get("control_node_ih")
+    ki_cp_node_ihs = lo_hostvars.get("groups", {}).get("ki_cp_node", [])
+
+    # An unset ansible variable can reach here either as None or as the string it
+    # was templated into
+    if localhost_ih is None or localhost_ih in ("", "None"):
+        error = HostvarsError("localhost",
+                              ("localhost_ih",),
+                              str(localhost_ih),
+                              "Control node must be one of the nodes of the inventory,"
+                              " but no node has the hostname of the control node")
+        hostvars_errors.append(error)
+        return
+
+    if localhost_ih not in ki_cp_node_ihs:
+        error = HostvarsError("localhost",
+                              ("localhost_ih",),
+                              str(localhost_ih),
+                              f"Control node is the node[\"{localhost_ih}\"], which is not in the ki_cp_node group."
+                              " Control node must be a node of the ki_cp_node group")
+        hostvars_errors.append(error)
+        return
+
+    # The bootstrap playbooks single out the control node by what the inventory
+    # declares, since they run before there are any facts to derive it from.
+    # check-control-node.yml compares that declaration against the hostname of the
+    # node it names, and here it is compared against the node the hostnames
+    # actually resolve to
+    if control_node_ih != localhost_ih:
+        error = HostvarsError("localhost",
+                              ("control_node_ih",),
+                              str(control_node_ih),
+                              f"The inventory declares node[\"{control_node_ih}\"] as the control node,"
+                              f" but the hostname of the control node is that of node[\"{localhost_ih}\"]."
+                              " Point control_node_ih of inventory.yml at the node the playbooks are run from")
+        hostvars_errors.append(error)
+        return
+
+    # Removing the node the playbook is running from would tear down the installer
+    # underneath the run, so the removal is done from one of the other ki cp nodes
+    if lo_hostvars.get("target_node_op") == "remove" and lo_hostvars.get("target_node") == localhost_ih:
+        error = HostvarsError("localhost",
+                              ("target_node",),
+                              str(localhost_ih),
+                              f"Node[\"{localhost_ih}\"] is the control node and can not be removed from the"
+                              " cluster. Run this from another node of the ki_cp_node group")
+        hostvars_errors.append(error)
 
 
 def validate_ki_cp_ha_mode_vip(hostvars_errors: List[HostvarsError], hostvars):

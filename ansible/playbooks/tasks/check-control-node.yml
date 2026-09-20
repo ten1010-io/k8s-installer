@@ -1,0 +1,69 @@
+# The bootstrap playbooks single out one node of the inventory as the control
+# node and leave it alone, because what they do to the other nodes would pull
+# the installer or the virtual environment out from under the run. That only holds while control_node_ih of
+# inventory.yml names the node the playbooks are actually being run from, so a
+# declaration pointing anywhere else is rejected before anything is touched
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: "Check variable[\"control_node_ih\"] is set"
+      fail:
+        msg: >-
+          No node of the inventory is declared as the control node. Set
+          control_node_ih of the localhost entry of inventory.yml to the node this
+          is being run from
+      when: ki_control_node_ih | string in ["", "None"]
+
+    - name: "Check variable[\"control_node_ih\"] names a node of the ki_cp_node group"
+      fail:
+        msg: >-
+          The control node is declared as node["{{ ki_control_node_ih }}"], which is not
+          a node of the ki_cp_node group. Only those nodes hold the ansible directory,
+          so only one of them can be the control node
+      when: ki_control_node_ih not in groups['ki_cp_node']
+
+    - name: Execute hostname
+      shell: "sudo hostname"
+      register: shell_result
+
+    - name: "Set_fact variable[\"control_node_hostname\"]"
+      set_fact:
+        control_node_hostname: "{{ shell_result.stdout | trim }}"
+
+    - name: "Remove temporary variable[\"shell_result\"]"
+      set_fact:
+        shell_result: null
+
+# Read over the connection ansible would use for that node, so that a declaration
+# naming a different machine is caught rather than assumed
+- hosts: all:!localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - when: inventory_hostname == ki_control_node_ih
+      block:
+        - name: Execute hostname
+          raw: "sudo hostname"
+          register: raw_result
+
+        - name: "Set_fact variable[\"node_hostname\"]"
+          set_fact:
+            node_hostname: "{{ raw_result.stdout | trim }}"
+
+        - name: "Remove temporary variable[\"raw_result\"]"
+          set_fact:
+            raw_result: null
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: "Check variable[\"control_node_ih\"] names this node"
+      fail:
+        msg: >-
+          The control node is declared as node["{{ ki_control_node_ih }}"], whose hostname
+          is ["{{ hostvars[ki_control_node_ih]['node_hostname'] }}"], but this node is
+          ["{{ control_node_hostname }}"]. Point control_node_ih of inventory.yml at the
+          node this is being run from
+      when: hostvars[ki_control_node_ih]['node_hostname'] != control_node_hostname

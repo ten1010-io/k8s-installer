@@ -1,0 +1,77 @@
+ansible_python_interpreter: "{{ ki_opt_venv_path }}/bin/python3"
+ansible_port: 22
+ansible_ssh_user: root
+
+# The installer is deployed as a self contained package under /opt, following the
+# FHS convention for add-on software. Configuration lives in ki_etc_root_path and
+# variable data in ki_var_root_path, so the whole deployment is removed by
+# deleting this one directory
+# Jinja2 template can not be used for ki_opt_root_path. since it is used without jinja2 engine
+ki_opt_root_path: "/opt/k8s-installer"
+# Don't modify ki_opt_scripts_path. since it is hardcoded in setup.sh, setup-venv.sh
+ki_opt_scripts_path: "{{ ki_opt_root_path }}/scripts"
+# Don't modify ki_opt_bin_path. since it is hardcoded in setup.sh, setup-venv.sh
+ki_opt_bin_path: "{{ ki_opt_root_path }}/bin"
+# Don't modify ki_opt_venv_path. since it is hardcoded in setup.sh, setup-venv.sh
+ki_opt_venv_path: "{{ ki_opt_root_path }}/venv"
+# Holds nothing but the release version. Written as the last step of
+# setup-k8s-installer.yml, so its presence means the node holds a complete
+# deployment of that release, and a node that failed half way through has no file
+ki_opt_release_path: "{{ ki_opt_root_path }}/release"
+# Release metadata of the source tree, placed by setup.sh. Only the control node
+# needs it, since it is what decides whether the managed nodes are upgradable
+ki_opt_release_meta_path: "{{ ki_opt_root_path }}/release.yml"
+
+# The node of the inventory that the control node is, declared in inventory.yml
+# and read here so that every host can compare itself against it. What the
+# playbooks do to the other nodes would break the run if it were done to this one,
+# since it is the node ansible itself runs out of. check-control-node.yml rejects
+# a declaration that points elsewhere, and validate-hostvars.py checks it again
+# against the localhost_ih that gather-facts derives from the hostnames
+ki_control_node_ih: "{{ hostvars['localhost']['control_node_ih'] | default(None) }}"
+
+# A lookup always runs on the control node, so these read the release metadata of
+# the source tree even while a play targets the managed nodes
+ki_release_version: "{{ (lookup('file', ki_opt_release_meta_path) | from_yaml)['version'] }}"
+ki_release_upgradable_from: "{{ (lookup('file', ki_opt_release_meta_path) | from_yaml)['upgradable_from'] }}"
+# A version carrying this suffix is a development build. It keeps its name while
+# its content changes, so a node holding one can only have it replaced by itself.
+# See release.yml. Kept in sync with SNAPSHOT_SUFFIX of setup.sh and upgrade.sh
+ki_release_snapshot_suffix: "-SNAPSHOT"
+
+ki_tmp_root_path: "/tmp/k8s-installer"
+ki_tmp_localhost_vars_path: "{{ ki_tmp_root_path }}/localhost-vars.yml"
+ki_tmp_vars_path: "{{ ki_tmp_root_path }}/vars.yml"
+ki_tmp_pki_path: "{{ ki_tmp_root_path }}/pki"
+ki_tmp_ki_ca_crt_path: "{{ ki_tmp_root_path }}/ki-ca.crt"
+ki_tmp_join_credentials_path: "{{ ki_tmp_root_path }}/join-credentials.yml"
+# The source and the destination of the payload are named apart on purpose. A
+# control node that is also a managed node would otherwise have scp copy a file
+# onto itself, which truncates it
+ki_tmp_payload_src_path: "{{ ki_tmp_root_path }}/payload-src.tar"
+ki_tmp_payload_path: "{{ ki_tmp_root_path }}/payload.tar"
+
+ki_etc_root_path: "/etc/k8s-installer"
+ki_etc_pki_path: "{{ ki_etc_root_path }}/pki"
+ki_etc_services_path: "{{ ki_etc_root_path }}/services"
+ki_etc_kubeadm_path: "{{ ki_etc_root_path }}/kubeadm"
+
+internal_network_ip: null
+internal_network_zone: "ki.local"
+internal_network_ki_cp_dns_name: "ki-cp.{{ internal_network_zone }}"
+
+ki_cp_k8s_cp_lb_port: 16443
+ki_cp_k8s_cp_lb_stats_port: 18404
+ki_cp_k8s_registry_port: 5000
+
+k8s_version: "v1.34.1"
+k8s_apiserver_port: 6443
+k8s_service_subnet: "10.96.0.0/12"
+k8s_pod_subnet: "10.244.0.0/16"
+k8s_ca_certificate_validity_period: "87600h" # 87600h = 10 year
+k8s_cp: false
+
+nvidia_gpu: false
+
+target_node: null
+target_node_op: null

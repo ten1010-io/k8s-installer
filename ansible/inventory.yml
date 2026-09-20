@@ -2,6 +2,11 @@ control_node:
   hosts:
     localhost:
       ansible_connection: local
+      # Which node of the inventory this control node is. It must be a node of the
+      # ki_cp_node group, because every node of that group holds a copy of the
+      # ansible directory so that any of them can take over as the control node.
+      # Moving the control node to another one is this line and nothing else
+      control_node_ih: node1
 
 all:
   hosts:
