@@ -133,8 +133,8 @@ cd /opt/k8s-installer/ansible
 ansible-playbook -i inventory.yml playbooks/upgrade-k8s-installer.yml
 ----
 
-NOTE: 클러스터 업그레이드(`upgrade-cluster.yml`)와 인증서 갱신(`renew-certs.yml`)은 아직 제공되지 않습니다.
-설정 변경은 아래 <<설정 변경 적용>> 을 보세요.
+NOTE: 클러스터 업그레이드(`upgrade-cluster.yml`)는 아직 제공되지 않습니다.
+설정 변경은 아래 <<설정 변경 적용>>, 인증서 갱신은 <<인증서 갱신>> 을 보세요.
 
 `inventory.yml` 도 보존되므로 새 릴리스가 추가한 그룹이 빠져 있을 수 있습니다. 마찬가지로
 플레이북이 알려주고 중단합니다. 접속되지 않는 노드를 선언하는 `broken_node` 그룹이 여기
@@ -255,6 +255,26 @@ deactivate
 sudo /opt/k8s-installer/ansible/reset-control-node-ssh.sh   # 출력된 안내에 따라 모든 관리 노드의 SSH 설정 제거
 sudo /opt/k8s-installer/reset.sh
 ----
+
+=== 인증서 갱신
+
+kubeadm 이 발급한 컨트롤 플레인 인증서를 갱신합니다. 서비스는 끊기지 않습니다.
+
+[source,shell]
+----
+source /opt/k8s-installer/venv/bin/activate
+cd /opt/k8s-installer/ansible
+ansible-playbook -i inventory.yml playbooks/renew-certs.yml
+----
+
+컨트롤 플레인 노드를 한 대씩 돌면서, 그 노드를 모든 ki cp 노드의 로드밸런서에서 뺀 뒤 갱신하고,
+다시 넣어 트래픽을 받는 것까지 확인한 다음 다음 노드로 넘어갑니다. 3노드 기준 3분 남짓 걸립니다.
+
+중간에 실패하면 그 노드를 로드밸런서에 되돌려 놓고 멈추므로, 작업 전과 같은 노드들이 서비스하는
+상태로 남습니다. 뒤 노드는 손대지 않습니다.
+
+NOTE: 워커 노드는 대상이 아닙니다. kubeadm 이 발급한 인증서를 갖지 않고, kubelet 이 쓰는 것은
+kubelet 이 스스로 갱신합니다.
 
 === 인증서 만료 확인
 

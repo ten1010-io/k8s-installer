@@ -1,0 +1,62 @@
+# Renews the certificates of one control plane node at a time, taking the node
+# out of every load balancer while its apiserver is restarted and putting it
+# back once it is serving again.
+#
+# One at a time, because what keeps the control plane reachable during this is
+# the nodes that are not being worked on. Only the control plane nodes are here:
+# a worker holds no certificate kubeadm issued, and the one kubelet uses is
+# rotated by kubelet itself
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    lb_admin_cmd: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-cp-lb/lb-admin.sh {{ vars_path_arg }}"
+    ki_cp_ihs: "{{ groups['ki_cp_node'] | difference(ki_broken_nodes) }}"
+  tasks:
+    - when: inventory_hostname in k8s_cp_nodes
+      block:
+        # Every ki cp node runs a load balancer of its own and the vip can move
+        # between them at any moment, so a node is only really out of rotation
+        # once every one of them has been told
+        - name: Take this node out of the load balancer of every ki cp node
+          shell: "{{ lb_admin_cmd }} drain {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+
+        - name: Execute renew-k8s-certs.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/renew-k8s-certs.sh {{ vars_path_arg }}"
+
+      # A drained node that is never put back takes no work for good, which is
+      # worse than the failure that got here. It goes back into rotation and the
+      # run stops after that, so the operator is left with a cluster serving from
+      # every node it was serving from before
+      rescue:
+        - name: Put this node back into the load balancer of every ki cp node
+          shell: "{{ lb_admin_cmd }} ready {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+
+        - name: Report that renewing the certificates failed
+          fail:
+            msg: >-
+              Renewing the certificates of node["{{ inventory_hostname }}"] failed.
+              The node was put back into the load balancer of every ki cp node, so it is
+              serving again if its apiserver is up. The nodes after it in the inventory
+              were not touched
+
+    - when: inventory_hostname in k8s_cp_nodes
+      block:
+        - name: Put this node back into the load balancer of every ki cp node
+          shell: "{{ lb_admin_cmd }} ready {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+
+        # Before the next node is taken out. Moving on while this one is not
+        # being given traffic again would take the control plane down to one
+        # fewer node than it looks like
+        - name: Wait for every ki cp node to be giving this node traffic again
+          shell: "{{ lb_admin_cmd }} wait-ready {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
