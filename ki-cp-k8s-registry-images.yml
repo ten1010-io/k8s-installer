@@ -2,6 +2,23 @@
 # The name of this file is the name of the registry, and build-bundle-images.sh
 # puts what it declares under a bundle directory named after it in turn, so a
 # registry is added by adding a file rather than by editing a shared list.
+#
+# *** ask the kubeadm of the release, not the one already installed ***
+#
+# The list comes from "kubeadm config images list --kubernetes-version <version>",
+# and that command has to be run with the kubeadm binary this release ships.
+# Only the four kube- images follow the version passed to it. The versions of
+# coredns, pause and etcd are compiled into kubeadm itself, so an older kubeadm
+# answers the question with its own and does it without complaining:
+#
+#   kubeadm 1.35, asked for v1.36.0  ->  coredns v1.13.1, pause 3.10.1, etcd 3.6.6-0
+#   kubeadm 1.36, asked for v1.36.0  ->  coredns v1.14.2, pause 3.10.2, etcd 3.6.8-0
+#
+# All three differ. Building a bundle from the first set leaves the registry
+# without the images the new kubeadm will look for, and in an air gap there is
+# nowhere else to get them: the cluster fails at the preflight that pulls them.
+# Extract the binary from the package in linux-packages and run it, or run the
+# command on a node already on that version.
 images:
   - registry.k8s.io/kube-apiserver:v1.34.1
   - registry.k8s.io/kube-controller-manager:v1.34.1

@@ -4,17 +4,19 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path] [--update]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
 --vars-path     File path
+--update        Upgrade the packages of a node that already has them
 EOF
   exit
 }
 
 parse_params() {
   vars_path=""
+  update="false"
 
   while :; do
     case "${1-}" in
@@ -26,6 +28,7 @@ parse_params() {
       vars_path="${2-}"
       shift
       ;;
+    --update) update="true" ;;
     -?*) die "[ERROR] Unknown option: $1" ;;
     *) break ;;
     esac
@@ -112,9 +115,7 @@ main() {
 }
 
 ubuntu2204_install() {
-  require_not_installed containerd
-  require_not_installed docker
-  require_not_installed kubelet
+  require_packages_installable
 
   export DEBIAN_FRONTEND=noninteractive
 
@@ -155,18 +156,13 @@ ubuntu2204_install() {
 
   "$ki_opt_scripts_path/systemctl.sh" reload
 
-  "$ki_opt_scripts_path/systemctl.sh" disable kubelet
-  "$ki_opt_scripts_path/systemctl.sh" disable docker.socket
-  "$ki_opt_scripts_path/systemctl.sh" disable docker
-  "$ki_opt_scripts_path/systemctl.sh" disable containerd
+  settle_units
 
   return 0
 }
 
 ubuntu2404_install() {
-  require_not_installed containerd
-  require_not_installed docker
-  require_not_installed kubelet
+  require_packages_installable
 
   export DEBIAN_FRONTEND=noninteractive
 
@@ -206,18 +202,13 @@ ubuntu2404_install() {
 
   "$ki_opt_scripts_path/systemctl.sh" reload
 
-  "$ki_opt_scripts_path/systemctl.sh" disable kubelet
-  "$ki_opt_scripts_path/systemctl.sh" disable docker.socket
-  "$ki_opt_scripts_path/systemctl.sh" disable docker
-  "$ki_opt_scripts_path/systemctl.sh" disable containerd
+  settle_units
 
   return 0
 }
 
 rhel8_install() {
-  require_not_installed containerd
-  require_not_installed docker
-  require_not_installed kubelet
+  require_packages_installable
 
   [[ $(getenforce) != "Disabled" ]] && setenforce 0
 
@@ -282,10 +273,7 @@ rhel8_install() {
 
   "$ki_opt_scripts_path/systemctl.sh" reload
 
-  "$ki_opt_scripts_path/systemctl.sh" disable kubelet
-  "$ki_opt_scripts_path/systemctl.sh" disable docker.socket
-  "$ki_opt_scripts_path/systemctl.sh" disable docker
-  "$ki_opt_scripts_path/systemctl.sh" disable containerd
+  settle_units
 
   return 0
 }
@@ -297,6 +285,45 @@ rhel8_is_installed() {
   yum list installed --disableplugin subscription-manager 2> /dev/null | grep "$pkg_regex" > /dev/null 2>/dev/null || exit_code=$?
 
   if [[ $exit_code = "0" ]]; then echo "true"; else echo "false"; fi
+
+  return 0
+}
+
+# A first install refuses to run over packages that are already there, because
+# what it would be doing then is an upgrade it was not asked for. An update is
+# that upgrade, so the same packages being present is the point
+require_packages_installable() {
+  [[ $update = "true" ]] && return 0
+
+  require_not_installed containerd
+  require_not_installed docker
+  require_not_installed kubelet
+
+  return 0
+}
+
+# A first install leaves every unit disabled, because what enables them is the
+# playbook that sets each one up in its turn. On an update they are already
+# enabled and running, and the packages under them have just been replaced, so
+# what they need is to be restarted onto the new binaries. Only the ones this
+# node actually runs: docker is enabled on ki cp nodes and nowhere else
+settle_units() {
+  if [[ $update = "false" ]]; then
+    "$ki_opt_scripts_path/systemctl.sh" disable kubelet
+    "$ki_opt_scripts_path/systemctl.sh" disable docker.socket
+    "$ki_opt_scripts_path/systemctl.sh" disable docker
+    "$ki_opt_scripts_path/systemctl.sh" disable containerd
+
+    return 0
+  fi
+
+  local unit
+  for unit in containerd docker kubelet; do
+    [[ $("$ki_opt_scripts_path/systemctl.sh" is-enabled "$unit") != "true" ]] && continue
+
+    msg "[INFO] Restarting unit[\"$unit\"] onto the packages just installed"
+    "$ki_opt_scripts_path/systemctl.sh" restart "$unit"
+  done
 
   return 0
 }

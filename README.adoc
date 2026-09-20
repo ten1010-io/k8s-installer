@@ -133,8 +133,35 @@ cd /opt/k8s-installer/ansible
 ansible-playbook -i inventory.yml playbooks/upgrade-k8s-installer.yml
 ----
 
-NOTE: 클러스터 업그레이드(`upgrade-cluster.yml`)는 아직 제공되지 않습니다.
-설정 변경은 아래 <<설정 변경 적용>>, 인증서 갱신은 <<인증서 갱신>> 을 보세요.
+`upgrade-k8s-installer.yml` 은 각 노드의 `/opt/k8s-installer` 만 새 릴리스로 바꿉니다.
+클러스터에 반영하려면 이어서 아래 <<클러스터 업그레이드>> 를 실행합니다.
+설정 변경은 <<설정 변경 적용>>, 인증서 갱신은 <<인증서 갱신>> 을 보세요.
+
+=== 클러스터 업그레이드
+
+새 릴리스가 담고 있는 것들을 실제 클러스터에 적용합니다. 쿠버네티스뿐 아니라 리눅스 패키지
+(containerd, docker, kubelet 등), 유저 바이너리(helm, etcdctl 등), 레지스트리 이미지,
+ki cp 서비스 이미지가 모두 대상입니다.
+
+[source,shell]
+----
+source /opt/k8s-installer/venv/bin/activate
+cd /opt/k8s-installer/ansible
+ansible-playbook -i inventory.yml playbooks/upgrade-cluster.yml
+----
+
+레지스트리를 먼저 채우고, ki cp 서비스를 한 노드씩 올린 뒤, 노드를 하나씩 drain 하여 패키지와
+쿠버네티스를 올리고 다시 투입합니다. 3노드 기준 4분 남짓 걸립니다.
+
+[WARNING]
+====
+실패해도 되돌리지 않습니다. kubeadm 이 클러스터 버전과 저장된 데이터를 옮기므로 되돌리는 쪽이
+더 위험합니다. 어느 노드까지 끝났는지 알려주고 멈추며, **다시 실행하면 이미 새 버전인 노드는
+건너뛰고 멈춘 자리에서 이어집니다.**
+
+멈춘 동안 클러스터는 두 버전이 섞인 상태입니다. 쿠버네티스는 컨트롤 플레인과 kubelet 사이
+한 마이너 버전 차이를 허용하므로 그 범위에서는 동작하지만, 오래 두지 마세요.
+====
 
 `inventory.yml` 도 보존되므로 새 릴리스가 추가한 그룹이 빠져 있을 수 있습니다. 마찬가지로
 플레이북이 알려주고 중단합니다. 접속되지 않는 노드를 선언하는 `broken_node` 그룹이 여기

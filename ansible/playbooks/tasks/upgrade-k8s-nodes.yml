@@ -1,0 +1,90 @@
+# Takes the cluster to the kubernetes version of the release the installer now
+# holds, one node at a time.
+#
+# The order within a node is fixed by what depends on what. The packages go
+# first, because kubeadm has to be the new one before it is asked to upgrade
+# anything. The node is drained before that, because replacing the container
+# runtime under a node recreates every pod on it. kubeadm comes next, then
+# kubelet is restarted onto the new binaries, and only then is the node given
+# work again.
+#
+# The first control plane node raises the version the cluster records; every node
+# after it reads that version and follows.
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    lb_admin_cmd: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-cp-lb/lb-admin.sh {{ vars_path_arg }}"
+    ki_cp_ihs: "{{ groups['ki_cp_node'] | difference(ki_broken_nodes) }}"
+    knn: "{{ ih_to_hostname_dict[inventory_hostname] | lower | replace('_', '-') }}"
+  tasks:
+    - block:
+        - name: Take this node out of the load balancer of every ki cp node
+          shell: "{{ lb_admin_cmd }} drain {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+          when: inventory_hostname in k8s_cp_nodes
+
+        - name: Execute drain-node.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/drain-node.sh {{ vars_path_arg }} {{ knn }}"
+          delegate_to: "{{ k8s_cp_nodes[0] }}"
+
+        - name: Execute install-packages.sh --update
+          shell: "sudo {{ ki_opt_scripts_path }}/all-node/linux-package/install-packages.sh {{ vars_path_arg }} --update"
+
+        - name: Execute install-programs.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/all-node/linux-bin/install-programs.sh {{ vars_path_arg }}"
+
+        - name: Execute upgrade-k8s-node.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/upgrade-k8s-node.sh {{ vars_path_arg }} {{ first_cp_node_arg }}"
+          vars:
+            first_cp_node_arg: "{{ '--first-cp-node' if inventory_hostname == k8s_cp_nodes[0] else '' }}"
+
+        # install-packages.sh restarted it onto the new binaries already, but
+        # kubeadm has written a new configuration for it since
+        - name: Restart kubelet
+          shell: "sudo {{ ki_opt_scripts_path }}/systemctl.sh restart kubelet"
+
+        - name: Execute uncordon-node.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/uncordon-node.sh {{ vars_path_arg }} {{ knn }}"
+          delegate_to: "{{ k8s_cp_nodes[0] }}"
+
+        - name: Put this node back into the load balancer of every ki cp node
+          shell: "{{ lb_admin_cmd }} ready {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+          when: inventory_hostname in k8s_cp_nodes
+
+        - name: Wait for every ki cp node to be giving this node traffic again
+          shell: "{{ lb_admin_cmd }} wait-ready {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+          when: inventory_hostname in k8s_cp_nodes
+
+      # An upgrade is not rolled back. kubeadm raises the version the cluster
+      # records and migrates what is stored under it, and putting that back is
+      # not something to attempt from here. What is left is to say exactly where
+      # it stopped, so the node is given work again and the run ends
+      rescue:
+        - name: Execute uncordon-node.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/uncordon-node.sh {{ vars_path_arg }} {{ knn }}"
+          delegate_to: "{{ k8s_cp_nodes[0] }}"
+          ignore_errors: yes
+
+        - name: Put this node back into the load balancer of every ki cp node
+          shell: "{{ lb_admin_cmd }} ready {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+          when: inventory_hostname in k8s_cp_nodes
+          ignore_errors: yes
+
+        - name: Report where the upgrade stopped
+          fail:
+            msg: >-
+              Upgrading node["{{ inventory_hostname }}"] failed. The nodes before it in the
+              inventory are on kubernetes["{{ k8s_version }}"] and the ones after it were not
+              touched, so the cluster is running two versions. This node was put back into
+              service as far as it could be. Fix what failed and run this playbook again:
+              a node already on the new version is skipped, so it carries on from here

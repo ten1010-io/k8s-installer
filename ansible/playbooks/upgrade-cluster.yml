@@ -1,0 +1,26 @@
+- import_playbook: tasks/check-k8s-installer-setup.yml
+
+- import_playbook: tasks/sync-ansible.yml
+
+- import_playbook: tasks/preflight-playbook.yml
+  vars:
+    playbook: "upgrade-cluster"
+
+- import_playbook: tasks/gather-facts.yml
+
+- import_playbook: tasks/validate-hostvars.yml
+
+- import_playbook: tasks/setup-vars-file.yml
+
+# The registry is filled before any node is asked to pull from it. kubeadm pulls
+# the images of the new version as part of upgrading, and an air gapped cluster
+# has nowhere else to get them
+- import_playbook: tasks/upgrade-ki-cp.yml
+
+- import_playbook: tasks/upgrade-k8s-nodes.yml
+
+- import_playbook: tasks/record-applied-vars.yml
+
+- import_playbook: tasks/reset-vars-file.yml
+
+- import_playbook: tasks/check-cert-expiry.yml
