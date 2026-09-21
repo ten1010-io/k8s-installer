@@ -1,3 +1,9 @@
+# Every ki cp node writes its services again, because a node joining changes what
+# they serve: the dns server gains a record, the load balancer gains a backend and
+# keepalived gains a unicast peer. None of the ones here stops for it. The load
+# balancer and the dns server reload, and the ntp server and the two registries
+# render the files they are already running under and are left alone. keepalived
+# is the exception and follows below
 - hosts: ki_cp_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
@@ -6,9 +12,6 @@
   tasks:
     - when: inventory_hostname == target_node
       block:
-        - name: Execute setup-keepalived.sh
-          shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/keepalived/setup-keepalived.sh {{ vars_path_arg }}"
-
         - name: Execute setup-dns-server.sh
           shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/dns-server/setup-dns-server.sh {{ vars_path_arg }}"
 
@@ -26,9 +29,6 @@
 
     - when: inventory_hostname != target_node
       block:
-        - name: Execute setup-keepalived.sh --update
-          shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/keepalived/setup-keepalived.sh {{ vars_path_arg }} --update"
-
         - name: Execute setup-dns-server.sh --update
           shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/dns-server/setup-dns-server.sh {{ vars_path_arg }} --update"
 
@@ -43,3 +43,41 @@
 
         - name: Execute setup-user-registry.sh --update
           shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/user-registry/setup-user-registry.sh {{ vars_path_arg }} --update"
+
+# keepalived on its own and one node at a time. It is the one ki cp service a
+# changed configuration only reaches by a restart, and restarting it is giving
+# the vip up. Done on every node at once, that is every node dropping the address
+# in the same moment with nobody left to take it, and the cluster waits without
+# an apiserver, a dns server or a registry until one of them is back and has won
+# an election. Measured on a three node cluster:
+#
+#   both at once    4.9 seconds with no vip, and it returns to the same node
+#   one at a time   1.1 to 1.3 seconds, in handovers of about 0.6 each
+#
+# keepalived advertises priority zero on its way down and a peer adds the
+# address, and the 0.6 seconds is that handover rather than an election: the
+# address moves instead of going away and coming back.
+#
+# More than one handover because of rise 2 on the tracked script. A node that has
+# just been restarted cannot take the address for six seconds, so it walks on to
+# whichever node is still up and comes back afterwards. Two handovers measured
+# for adding a node and two for removing one, three on one run. Holding it to a
+# single handover would mean doing the node that has the address last, which is a
+# fact to gather before this play can start and is not done here
+#
+# Last, so that the node being added has a load balancer answering by the time
+# its own health check first asks for one
+- hosts: ki_cp_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute setup-keepalived.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/keepalived/setup-keepalived.sh {{ vars_path_arg }}"
+      when: inventory_hostname == target_node
+
+    - name: Execute setup-keepalived.sh --update
+      shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/keepalived/setup-keepalived.sh {{ vars_path_arg }} --update"
+      when: inventory_hostname != target_node
