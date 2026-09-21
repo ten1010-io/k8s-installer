@@ -29,3 +29,9 @@ build/
 
 ### Claude ###
 .claude/
+
+### k8s-installer ###
+# What a cluster keeps in its user registry is decided by whoever runs it, so
+# neither the list nor the archive built from it belongs to a release
+/ki-cp-user-registry-images.yml
+/ki-cp-user-registry-images.tgz

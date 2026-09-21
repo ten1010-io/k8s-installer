@@ -1,0 +1,59 @@
+# Removes from the user registry of every ki cp node everything the keep file
+# does not name, and reclaims what those images were holding.
+#
+# Prints what it would remove and removes nothing unless -e delete= is passed.
+# A registry inside an air gap is the only copy of what it holds, so deleting
+# one image too many costs a trip across the gap rather than a command.
+#
+# One node at a time. Reclaiming the storage stops the registry while it walks
+# it, and stopping every one of them at once would leave the cluster with
+# nowhere to pull a workload image from
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: "Validate variable[\"keep\"]"
+      fail:
+        msg: >-
+          Variable["keep"] is not defined. It is the path of the file declaring the
+          images to keep, in the shape of ki-cp-user-registry-images.yml, as it is on this
+          node. Run with -e keep=<path>
+      when: keep is not defined
+
+    - name: "Validate variable[\"keep\"]"
+      fail:
+        msg: "No such file or directory of which path is \"{{ keep }}\""
+      when: not (keep | ansible.builtin.expanduser) is exists
+
+- hosts: ki_cp_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    node_keep_path: "{{ ki_tmp_root_path }}/user-registry-keep.yml"
+    delete_arg: "{{ '--delete' if delete is defined else '' }}"
+  tasks:
+    - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
+      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+    - name: Copy the keep file to the node
+      copy:
+        src: "{{ keep | ansible.builtin.expanduser }}"
+        dest: "{{ node_keep_path }}"
+      become: yes
+
+    - name: Execute prune-user-registry.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/user-registry/prune-user-registry.sh {{ vars_path_arg }} --keep-path {{ node_keep_path }} {{ delete_arg }}"
+      register: shell_result
+
+    - name: Report what it found
+      debug:
+        msg: "{{ shell_result.stderr_lines }}"
+
+    - name: "Remove temporary variable[\"shell_result\"]"
+      set_fact:
+        shell_result: null
+
+    - name: Delete the keep file from the node
+      shell: "sudo rm -f {{ node_keep_path }}"

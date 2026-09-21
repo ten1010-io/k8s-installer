@@ -7,6 +7,9 @@
     - name: Execute reset-k8s-registry.sh
       shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-registry/reset-k8s-registry.sh {{ vars_path_arg }}"
 
+    - name: Execute reset-user-registry.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/user-registry/reset-user-registry.sh {{ vars_path_arg }}"
+
     - name: Execute reset-k8s-cp-lb.sh
       shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-cp-lb/reset-k8s-cp-lb.sh {{ vars_path_arg }}"
 

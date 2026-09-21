@@ -124,6 +124,12 @@ ki_cp_ntp_server_image: "cturra/ntp:latest"
 ki_cp_ntp_server_image_digest: "sha256:7224d4e7c7833aabbcb7dd70c46c8a8dcccda365314c6db047b9b10403ace3bc"
 ki_cp_k8s_registry_image: "registry:2.8"
 ki_cp_k8s_registry_image_digest: "sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
+# The same registry as the one above and declared separately all the same, so
+# that the registry serving the images of a release and the one serving the
+# images of the workloads can be moved apart without one dragging the other.
+# Being the same image today, it resolves to the same digest today
+ki_cp_user_registry_image: "registry:2.8"
+ki_cp_user_registry_image_digest: "sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
 
 ki_cp_k8s_cp_lb_port: 16443
 ki_cp_k8s_cp_lb_stats_port: 18404
@@ -145,6 +151,10 @@ ki_cp_k8s_cp_lb_server_state_path: "/var/lib/haproxy/server-state"
 # directory, so that resetting the service takes it with everything else
 ki_cp_k8s_cp_lb_stats_password_path: "{{ ki_etc_services_path }}/ki-cp-k8s-cp-lb/stats-password"
 ki_cp_k8s_registry_port: 5000
+# The registry the workloads of the cluster pull from, as opposed to the one
+# kubeadm pulls from. What it holds is decided by whoever runs the cluster and
+# carried in with push-user-registry-images.yml, so no release ever fills it
+ki_cp_user_registry_port: 5001
 
 k8s_version: "v1.34.1"
 # Where kubeadm keeps the certificates of the cluster. Fixed by kubeadm

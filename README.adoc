@@ -283,6 +283,63 @@ sudo /opt/k8s-installer/ansible/reset-control-node-ssh.sh   # 출력된 안내�
 sudo /opt/k8s-installer/reset.sh
 ----
 
+=== 사용자 레지스트리
+
+클러스터에는 레지스트리가 둘 있습니다. kubeadm 이 쓰는 것(`ki-cp-k8s-registry`, 5000)은 릴리스가
+채우고, 워크로드가 쓰는 것(`ki-cp-user-registry`, 5001)은 여기서 채웁니다.
+
+담을 이미지를 `ki-cp-user-registry-images.yml` 에 선언합니다.
+`ki-cp-user-registry-images.yml.example` 을
+복사해서 쓰면 됩니다. 그 다음 **이미지를 받을 수 있는 곳에서** 아카이브를 만듭니다.
+
+[source,shell]
+----
+./download-bundle.sh                        # crane 이 번들에 들어 있습니다
+tools/build-user-registry-images.sh
+----
+
+나온 `ki-cp-user-registry-images.tgz` 를 매체로 반입한 뒤, 제어 노드에서 밀어 넣습니다.
+
+[source,shell]
+----
+source /opt/k8s-installer/venv/bin/activate
+cd /opt/k8s-installer/ansible
+ansible-playbook -i inventory.yml playbooks/push-user-registry-images.yml \
+  -e archive=/media/usb/ki-cp-user-registry-images.tgz
+----
+
+모든 ki cp 노드에 같은 내용이 들어갑니다. 파드는 그때 VIP 를 들고 있는 노드에서 당기므로 노드마다
+내용이 다르면 같은 파드가 어디에 스케줄되느냐에 따라 뜨기도 하고 안 뜨기도 합니다. 그래서
+레지스트리는 읽기 전용으로 돌고 **직접 push 는 막혀 있습니다.**
+
+워크로드에서는 이렇게 씁니다.
+
+[source,yaml]
+----
+image: ki-cp.ki.local:5001/library/nginx:1.25
+----
+
+==== 사용자 레지스트리 정리
+
+push 는 더하기만 하므로 레지스트리는 계속 커집니다. 목록 파일에 없는 것을 지우려면:
+
+[source,shell]
+----
+# 무엇이 지워질지만 봅니다
+ansible-playbook -i inventory.yml playbooks/prune-user-registry.yml \
+  -e keep=/path/to/ki-cp-user-registry-images.yml
+
+# 실제로 지웁니다
+ansible-playbook -i inventory.yml playbooks/prune-user-registry.yml \
+  -e keep=/path/to/ki-cp-user-registry-images.yml -e delete=
+----
+
+[WARNING]
+====
+에어갭 안의 레지스트리는 그 이미지의 유일한 사본입니다. 지운 이미지를 되돌리려면 다시 반입해야
+하므로, `-e delete=` 없이 먼저 목록을 확인하세요.
+====
+
 === 인증서 갱신
 
 kubeadm 이 발급한 컨트롤 플레인 인증서를 갱신합니다. 서비스는 끊기지 않습니다.

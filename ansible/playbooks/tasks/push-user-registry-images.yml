@@ -1,0 +1,45 @@
+# Puts the images of an archive into the user registry of every ki cp node.
+#
+# Every one of them, because every ki cp node runs a registry of its own and a
+# pod pulls from whichever node is answering the vip at that moment. Nodes
+# holding different images is the failure this exists to prevent: the same pod
+# starts or does not depending on where it was scheduled, which is found much
+# later than it is caused
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: "Validate variable[\"archive\"]"
+      fail:
+        msg: >-
+          Variable["archive"] is not defined. It is the path of the archive
+          tools/build-user-registry-images.sh produced, as it is on this node.
+          Run with -e archive=<path>
+      when: archive is not defined
+
+    - name: "Validate variable[\"archive\"]"
+      fail:
+        msg: "No such file or directory of which path is \"{{ archive }}\""
+      when: not (archive | ansible.builtin.expanduser) is exists
+
+- hosts: ki_cp_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    node_archive_path: "{{ ki_tmp_root_path }}/ki-cp-user-registry-images.tgz"
+  tasks:
+    - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
+      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+    - name: Copy the archive to the node
+      copy:
+        src: "{{ archive | ansible.builtin.expanduser }}"
+        dest: "{{ node_archive_path }}"
+      become: yes
+
+    - name: Execute push-user-registry-images.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/user-registry/push-user-registry-images.sh {{ vars_path_arg }} --archive-path {{ node_archive_path }}"
+
+    - name: Delete the archive from the node
+      shell: "sudo rm -f {{ node_archive_path }}"

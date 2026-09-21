@@ -1,0 +1,26 @@
+# The images the ki-cp-user-registry serves, which are the ones the workloads of
+# this cluster pull. Copy this file to ki-cp-user-registry-images.yml and declare them
+# there, the way ki-cp-k8s-registry-images.yml declares the ones kubeadm asks
+# for.
+#
+# Unlike that file this one is not part of a release. It says what this cluster
+# needs rather than what the installer ships, so it is not carried in the bundle
+# and build-bundle-images.sh does not read it.
+#
+# tools/build-user-registry-images.sh turns it into
+# ki-cp-user-registry-images.tgz,
+# which is carried across the air gap and pushed with
+# playbooks/push-user-registry-images.yml
+#
+# Give the name a registry pulls it by. The registry part is dropped on the way
+# in, so docker.io/library/nginx:1.25 is served as
+# ki-cp.<zone>:<user registry port>/library/nginx:1.25
+images:
+  - docker.io/library/nginx:1.25
+  - quay.io/prometheus/node-exporter:v1.7.0
+
+# An image whose repository under the registry has to differ from the one it is
+# pulled from. Only needed when the path it lands on is not the one wanted
+#mappings:
+#  - from: ghcr.io/myorg/myapp:v2.1.0
+#    to: myapp:v2.1.0

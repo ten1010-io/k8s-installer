@@ -78,10 +78,12 @@ CRANE_CMD="$BUNDLE_PATH"/bin/crane
 CONSTANT_VARS_PATH="$KI_ROOT_PATH"/ansible/group_vars/all/constant-vars.yml
 SERVICE_IMAGES_PATH="$BUNDLE_PATH"/ki-cp-service-images
 
-# Every file of this shape declares the contents of the registry named by it, so
-# a registry is added to the bundle by adding one file rather than by editing a
-# list that several of them share
-REGISTRY_IMAGES_YML_SUFFIX="-images.yml"
+# The one registry the bundle carries. Named here rather than found by looking
+# for files of a shape, which used to pick up every *-images.yml beside it: the
+# user registry declares its contents the same way and must not end up in a
+# release bundle, since what it holds is chosen by whoever runs the cluster
+K8S_REGISTRY_NAME="ki-cp-k8s-registry"
+K8S_REGISTRY_IMAGES_YML_PATH="$KI_ROOT_PATH/$K8S_REGISTRY_NAME-images.yml"
 
 main() {
   require_bundle
@@ -100,6 +102,7 @@ require_bundle() {
   [[ ! -x $YQ_CMD ]] && die "[ERROR] File[\"$YQ_CMD\"] not exists or is not executable"
   [[ ! -x $CRANE_CMD ]] && die "[ERROR] File[\"$CRANE_CMD\"] not exists or is not executable"
   [[ ! -f $CONSTANT_VARS_PATH ]] && die "[ERROR] No such file or directory of which path is \"$CONSTANT_VARS_PATH\""
+  [[ ! -f $K8S_REGISTRY_IMAGES_YML_PATH ]] && die "[ERROR] No such file or directory of which path is \"$K8S_REGISTRY_IMAGES_YML_PATH\""
 
   return 0
 }
@@ -185,25 +188,12 @@ get_svc_name() {
 # not. These are oci layouts, one per image, because crane refuses to push a
 # layout holding more than one entry to a single reference
 build_registry_images() {
-  local yml
-  for yml in "$KI_ROOT_PATH"/*"$REGISTRY_IMAGES_YML_SUFFIX"; do
-    [[ ! -f $yml ]] && continue
-    build_registry "$yml"
-  done
-
-  return 0
-}
-
-build_registry() {
-  local yml=$1
-
-  local registry_name
-  registry_name=$(basename "$yml" "$REGISTRY_IMAGES_YML_SUFFIX")
+  local yml="$K8S_REGISTRY_IMAGES_YML_PATH"
 
   local output_path
-  output_path="$BUNDLE_PATH/$registry_name-images"
+  output_path="$BUNDLE_PATH/$K8S_REGISTRY_NAME-images"
 
-  msg "[INFO] Building the images of the registry[\"$registry_name\"]"
+  msg "[INFO] Building the images of the registry[\"$K8S_REGISTRY_NAME\"]"
 
   rm -rf "$output_path"
   mkdir -p "$output_path"

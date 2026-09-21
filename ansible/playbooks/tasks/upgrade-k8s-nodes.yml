@@ -82,6 +82,13 @@
           shell: "{{ scripts }}/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh {{ vars_path_arg }} --update"
           when: inventory_hostname in groups['ki_cp_node']
 
+        # Written again, never filled. What it holds came across the air gap and
+        # is left where it is: an upgrade replaces the registry, not the images
+        # somebody carried in
+        - name: Execute setup-user-registry.sh --update
+          shell: "{{ scripts }}/ki-cp-node/user-registry/setup-user-registry.sh {{ vars_path_arg }} --update"
+          when: inventory_hostname in groups['ki_cp_node']
+
         - name: Execute setup-nfs-client.sh
           shell: "{{ scripts }}/all-node/nfs-client/setup-nfs-client.sh {{ vars_path_arg }}"
 
