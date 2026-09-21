@@ -119,8 +119,13 @@ main() {
   mkdir -p "$var_svc_root_path"
   mkdir -p "$etc_svc_root_path"
 
+  local compose_yml_before
+  compose_yml_before=$(checksum_of "$etc_svc_root_path/compose.yml")
   create_compose_yml_file "true"
-  start_service
+  local compose_yml_changed="false"
+  [[ $(checksum_of "$etc_svc_root_path/compose.yml") != "$compose_yml_before" ]] && compose_yml_changed="true"
+
+  start_service "$compose_yml_changed"
   wait_registry_ready 60
 
   return 0
@@ -138,9 +143,24 @@ create_compose_yml_file() {
   return 0
 }
 
+# A run that renders the same compose file the service is already running under
+# leaves it alone. The registry holds what somebody carried across the air gap
+# and a node that is only being written again has no reason to stop serving it
 start_service() {
-  [[ $(service_exists $SVC_NAME) = "true" ]] && docker compose -f "$etc_svc_root_path/compose.yml" down
+  local compose_yml_changed=$1
+
+  [[ $compose_yml_changed = "true" && $(service_exists $SVC_NAME) = "true" ]] &&
+    docker compose -f "$etc_svc_root_path/compose.yml" down
   docker compose -f "$etc_svc_root_path/compose.yml" up -d
+
+  return 0
+}
+
+checksum_of() {
+  local path=$1
+
+  [[ -f $path ]] || { echo "absent"; return 0; }
+  md5sum < "$path"
 
   return 0
 }

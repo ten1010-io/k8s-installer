@@ -116,6 +116,8 @@ main() {
   docker load -i "$ki_opt_bundle_path"/ki-cp-service-images/$SVC_NAME.tar
 
   mkdir -p "$svc_root_path"
+  local rendered_before
+  rendered_before=$(checksum_of_directory "$svc_root_path")
   $jinja2_cmd --format yaml -o "$svc_root_path""/compose.yml" "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$vars_path"
   $jinja2_cmd --format yaml -o "$svc_root_path""/named.conf.local" "$SCRIPT_DIR_PATH"/templates/named.conf.local.j2 "$vars_path"
   create_named_conf_options_file
@@ -124,11 +126,20 @@ main() {
     create_internal_network_extra_zone_db_file
   fi
 
-  [[ $update = "true" && $(service_exists $SVC_NAME) = "true" ]] && docker compose -f "$svc_root_path/compose.yml" down
+  local rendered_after
+  rendered_after=$(checksum_of_directory "$svc_root_path")
+
+  [[ $update = "true" && $(service_exists $SVC_NAME) = "true" && $rendered_after != "$rendered_before" ]] &&
+    docker compose -f "$svc_root_path/compose.yml" down
   docker compose -f "$svc_root_path/compose.yml" up -d
 
+  # Restarting docker restarts every container of the node, the apiserver lb and
+  # the keepalived holding the vip among them, so the daemon is left running
+  # unless it really has something new to read
+  local daemon_json_before
+  daemon_json_before=$(checksum_of /etc/docker/daemon.json)
   $yq_cmd -i -o json -P '.dns = ["172.17.0.1"]' /etc/docker/daemon.json
-  systemctl restart docker
+  [[ $(checksum_of /etc/docker/daemon.json) != "$daemon_json_before" ]] && systemctl restart docker
 
   return 0
 }
@@ -215,6 +226,29 @@ get_ki_cp_master_node_ip() {
   local ih
   ih=$(get_ki_cp_master_node_ih)
   $yq_cmd '.internal_network_hosts.'"$ih"'.interfaces[0].ip' < "$vars_path"
+}
+
+checksum_of() {
+  local path=$1
+
+  [[ -f $path ]] || { echo "absent"; return 0; }
+  md5sum < "$path"
+
+  return 0
+}
+
+# What the setup rendered, so that a run which changes nothing can leave the
+# container where it is. compose notices a change to compose.yml by itself, but
+# everything else here reaches the service as a bind mount and it has no way to
+# know, which is why the service was taken down on every run whether or not
+# there was anything new to read
+checksum_of_directory() {
+  local path=$1
+
+  [[ ! -d $path ]] && { echo "absent"; return 0; }
+  find "$path" -type f -exec md5sum {} + | sort | md5sum
+
+  return 0
 }
 
 service_exists() {

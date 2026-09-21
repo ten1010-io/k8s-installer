@@ -103,9 +103,14 @@ main() {
   docker load -i "$ki_opt_bundle_path"/ki-cp-service-images/$SVC_NAME.tar
 
   mkdir -p "$etc_svc_root_path"
+  local rendered_before
+  rendered_before=$(checksum_of_directory "$etc_svc_root_path")
   create_compose_yml_file
+  local rendered_after
+  rendered_after=$(checksum_of_directory "$etc_svc_root_path")
 
-  [[ $update = "true" && $(service_exists $SVC_NAME) = "true" ]] && docker compose -f "$etc_svc_root_path/compose.yml" down
+  [[ $update = "true" && $(service_exists $SVC_NAME) = "true" && $rendered_after != "$rendered_before" ]] &&
+    docker compose -f "$etc_svc_root_path/compose.yml" down
   docker compose -f "$etc_svc_root_path/compose.yml" up -d
 
   return 0
@@ -128,6 +133,20 @@ create_compose_yml_file() {
   $yq_cmd -i ".ki_cp_ntp_server_image = load(\"$vars_path\").ki_cp_ntp_server_image" "$tmp_file_path"
   $jinja2_cmd --format yaml -o "$etc_svc_root_path""/compose.yml" "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$tmp_file_path"
   rm "$tmp_file_path"
+}
+
+# What the setup rendered, so that a run which changes nothing can leave the
+# container where it is. compose notices a change to compose.yml by itself, but
+# everything else here reaches the service as a bind mount and it has no way to
+# know, which is why the service was taken down on every run whether or not
+# there was anything new to read
+checksum_of_directory() {
+  local path=$1
+
+  [[ ! -d $path ]] && { echo "absent"; return 0; }
+  find "$path" -type f -exec md5sum {} + | sort | md5sum
+
+  return 0
 }
 
 service_exists() {
