@@ -101,6 +101,16 @@
         - name: Restart kubelet
           shell: "{{ scripts }}/systemctl.sh restart kubelet"
 
+        # Before the node is given anything again. kubeadm rewrites the static
+        # pod manifests and kubelet replaces the containers after that, so the
+        # upgrade command returning says nothing about whether the apiserver of
+        # this node is up. Putting it back first sends traffic to one that is
+        # not there yet, and the load balancer only learns that from its own
+        # health check several seconds later
+        - name: Execute wait-k8s-apiserver.sh
+          shell: "{{ scripts }}/k8s-node/wait-k8s-apiserver.sh {{ vars_path_arg }}"
+          when: inventory_hostname in k8s_cp_nodes
+
         - name: Execute uncordon-node.sh
           shell: "{{ scripts }}/k8s-node/uncordon-node.sh {{ vars_path_arg }} {{ knn }}"
           delegate_to: "{{ k8s_cp_nodes[0] }}"
