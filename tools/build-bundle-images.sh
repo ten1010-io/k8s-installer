@@ -122,11 +122,46 @@ build_service_images() {
     image=$($YQ_CMD ".$var" < "$CONSTANT_VARS_PATH")
     [[ -z $image || $image = "null" ]] && die "[ERROR] Variable[\"$var\"] has no value"
 
+    require_declared_digest "$var" "$image"
+
     msg "[INFO]   $svc_name  <-  $image"
     "$CRANE_CMD" pull --platform "$platform" --format tarball "$image" "$SERVICE_IMAGES_PATH/$svc_name.tar"
   done
 
   return 0
+}
+
+# Refuses to build when a tag no longer points at what constant-vars.yml records
+# it pointed at. Several of these tags move by design, and a bundle that quietly
+# holds something other than the one built from the same source last time is
+# exactly what the release scheme exists to prevent.
+#
+# The image is still pulled by the tag rather than by the digest. Pulling by
+# digest loses the tag: crane writes the tarball under the placeholder reference
+# "i-was-a-digest", docker load brings the image in under that name, and the
+# compose file of the service then asks for a name that is not there and tries to
+# fetch it, which in an air gap is where the install stops.
+#
+# Asked without a platform, so that what is compared is the index and one
+# recorded digest holds for every architecture the bundle is built for
+require_declared_digest() {
+  local var=$1
+  local image=$2
+
+  local declared
+  declared=$($YQ_CMD ".${var}_digest" < "$CONSTANT_VARS_PATH")
+  [[ -z $declared || $declared = "null" ]] &&
+    die "[ERROR] Variable[\"${var}_digest\"] has no value. Run \"crane digest $image\" and record what it prints"
+
+  local actual
+  actual=$("$CRANE_CMD" digest "$image")
+
+  [[ $actual = "$declared" ]] && return 0
+
+  msg "[ERROR] Image[\"$image\"] is no longer what variable[\"${var}_digest\"] records"
+  msg "[ERROR]   recorded: $declared"
+  msg "[ERROR]   registry: $actual"
+  die "[ERROR] The tag was moved. Find out what changed, and if the new image is wanted, record the new digest in the same commit that says so"
 }
 
 # A service is added to the bundle by declaring its image in constant-vars.yml,

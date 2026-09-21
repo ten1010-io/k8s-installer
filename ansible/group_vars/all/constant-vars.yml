@@ -99,12 +99,31 @@ internal_network_ki_cp_dns_name: "ki-cp.{{ internal_network_zone }}"
 # The image of each ki cp service, named after the service that runs it. Both the
 # compose file of the service and the tool that puts the image in the bundle read
 # it from here, so that the bundle can not end up holding a version the service
-# does not ask for
+# does not ask for.
+#
+# The digest beside each one is what the tag resolved to when it was recorded,
+# and build-bundle-images.sh refuses to build when the two no longer agree. A tag
+# on a public registry is a name and not a version: whoever owns the repository
+# can move it, and two of these move by design, since cturra/ntp publishes
+# nothing but latest and ubuntu/bind9 publishes channels rather than releases.
+# Without the digest, rebuilding the bundle of a line that is already in the
+# field could put something else in it and nothing would say so, which is the one
+# thing the release scheme can not allow. See release.yml.
+#
+# So a moved tag is a failed build rather than a silent substitution. Look at what
+# changed, and if the new image is wanted, record its digest in the same commit
+# that says so. "crane digest <image>" prints it, asked without a platform so that
+# it names the index and holds whatever architecture the bundle is built for
 ki_cp_dns_server_image: "ubuntu/bind9:9.18-22.04_beta"
+ki_cp_dns_server_image_digest: "sha256:770db6e381fa54a991b31e32496334fa9e69c322473eb95abca8a05a3d4b7739"
 ki_cp_k8s_cp_lb_image: "haproxy:2.6"
+ki_cp_k8s_cp_lb_image_digest: "sha256:7e35a0edd273556c03461da98bdef80421de2253c781b6cf48a5a277ae8bbb30"
 ki_cp_keepalived_image: "osixia/keepalived:2.0.20"
+ki_cp_keepalived_image_digest: "sha256:ba2a6419532cef068afc3586a6c597fd3b9fd8472592520c2f011d23c4672deb"
 ki_cp_ntp_server_image: "cturra/ntp:latest"
+ki_cp_ntp_server_image_digest: "sha256:7224d4e7c7833aabbcb7dd70c46c8a8dcccda365314c6db047b9b10403ace3bc"
 ki_cp_k8s_registry_image: "registry:2.8"
+ki_cp_k8s_registry_image_digest: "sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
 
 ki_cp_k8s_cp_lb_port: 16443
 ki_cp_k8s_cp_lb_stats_port: 18404
