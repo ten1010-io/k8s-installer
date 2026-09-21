@@ -45,6 +45,8 @@
 
 - import_playbook: tasks/record-applied-state.yml
 
+- import_playbook: tasks/check-user-registry.yml
+
 - import_playbook: tasks/reset-vars-file.yml
 
 - import_playbook: tasks/check-cert-expiry.yml

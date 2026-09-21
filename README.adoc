@@ -197,6 +197,18 @@ ansible-playbook -i inventory.yml playbooks/push-user-registry-images.yml \
 ansible-playbook -i inventory.yml playbooks/sync-user-registry.yml
 ----
 
+맞는지 물어보기만 하려면:
+
+[source,shell]
+----
+ansible-playbook -i inventory.yml playbooks/check-user-registry.yml
+----
+
+`check` 는 보고만 합니다. 어긋난 채로 두면 그 노드가 VIP 를 드는 순간부터 그 이미지를 당기는 파드가
+실패하는데, 레지스트리는 정상 응답하고 카탈로그만 짧아서 **아무것도 티가 나지 않습니다.** 첫 신호가
+"어떤 노드에 스케줄되면 뜨고 어떤 노드면 안 뜨는 파드" 이고, 그때는 원인에서 한참 떨어져 있습니다.
+그래서 `add-node`, `push-user-registry-images`, `prune-user-registry` 끝에서 자동으로 돌아갑니다.
+
 워크로드에서는 이렇게 씁니다.
 
 [source,yaml]

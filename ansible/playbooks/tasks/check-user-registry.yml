@@ -1,0 +1,31 @@
+# Reports a user registry that does not serve what the others do.
+#
+# It only reports. sync-user-registry.yml is what fixes it, and a playbook that
+# could fix something has to be able to run: failing here would block the work
+# an operator came to do over a registry they can put right in one command.
+#
+# Every node is asked what it is missing relative to a peer, so a divergence in
+# either direction is named by one of them. What makes it worth asking at all is
+# that nothing else notices: the registry answers, the catalogue is simply
+# shorter, and the first sign is a pod that starts on one node and not on
+# another, long after whatever caused it.
+#
+# Runnable on its own through playbooks/check-user-registry.yml
+- hosts: ki_cp_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute sync-user-registry.sh --check
+      shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/user-registry/sync-user-registry.sh {{ vars_path_arg }} --check"
+      register: shell_result
+      changed_when: false
+
+    - name: Report what this node is missing
+      debug:
+        msg: "{{ shell_result.stderr_lines }}"
+
+    - name: "Remove temporary variable[\"shell_result\"]"
+      set_fact:
+        shell_result: null

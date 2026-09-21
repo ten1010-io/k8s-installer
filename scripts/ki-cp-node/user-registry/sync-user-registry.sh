@@ -4,17 +4,19 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path] [--check]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
 --vars-path     File path
+--check         Report what this node is missing and copy nothing
 EOF
   exit
 }
 
 parse_params() {
   vars_path=""
+  check="false"
 
   while :; do
     case "${1-}" in
@@ -26,6 +28,7 @@ parse_params() {
       vars_path="${2-}"
       shift
       ;;
+    --check) check="true" ;;
     -?*) die "[ERROR] Unknown option: $1" ;;
     *) break ;;
     esac
@@ -106,8 +109,10 @@ source_host=""
 #
 # Copies without being asked twice, where prune-user-registry.sh removes nothing
 # unless it is. The caution there is that deleting inside an air gap costs a trip
-# across it; copying between two nodes of the same cluster costs disk and can
-# only make them agree, so there is nothing to protect an operator from
+# across it; copying between two nodes of one cluster costs disk and can only
+# make them agree, so there is nothing to protect an operator from. --check
+# reports what a node is missing and copies nothing, which is what
+# check-user-registry.yml runs on every node to find a registry that has drifted
 main() {
   require_file_exists "$vars_path"
   import_ki_opt_vars
@@ -139,7 +144,7 @@ main() {
 
   if [[ -z $refs ]]; then
     msg "[INFO] The user registry of this node already serves what the others do"
-    report_usage
+    [[ $check = "false" ]] && report_usage
     return 0
   fi
 
@@ -148,6 +153,8 @@ main() {
   while read -r ref; do
     msg "[INFO]   $ref"
   done <<< "$refs"
+
+  [[ $check = "true" ]] && return 0
 
   # Writable only while this is copying, and readonly again before it returns,
   # the way push-user-registry-images.sh opens it. Rendered from the same

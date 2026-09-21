@@ -4,15 +4,13 @@
 
 - import_playbook: tasks/preflight-playbook.yml
   vars:
-    playbook: "sync-user-registry"
+    playbook: "check-user-registry"
 
 - import_playbook: tasks/gather-facts.yml
 
 - import_playbook: tasks/validate-hostvars.yml
 
 - import_playbook: tasks/setup-vars-file.yml
-
-- import_playbook: tasks/sync-user-registry.yml
 
 - import_playbook: tasks/check-user-registry.yml
 
