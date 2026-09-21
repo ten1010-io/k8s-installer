@@ -63,6 +63,17 @@ backend backend
     # one that has been marked down are cut rather than left to hang on it until
     # they time out
     default-server inter 2s fall 3 rise 2 on-marked-down shutdown-sessions
+    # Those six seconds are what a node that dies between two checks is still
+    # being given traffic for, and a connection handed to it in that window is
+    # refused. Refused at connect time is the one failure a proxy can take back:
+    # nothing was sent, so there is nothing to have sent twice, and the
+    # connection is made to another node instead. The interval says to do that on
+    # every retry rather than only on the last, since retrying the node that just
+    # refused is a wasted round trip. An apiserver that accepts the connection
+    # and then breaks it is not retried, which is correct, as bytes may have gone
+    # either way by then
+    retries 3
+    option redispatch 1
 
 {% for ih in backend_server_ih_list -%}
 {{"    "}}server {{ ih }} {{ internal_network_hosts[ih]["interfaces"][0]["ip"] }}:{{ k8s_apiserver_port }} check verify none

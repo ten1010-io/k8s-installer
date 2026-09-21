@@ -72,6 +72,10 @@ parse_params "$@"
 # Long enough for a control plane that is being replaced to come back, short
 # enough that one which is not coming back is reported rather than waited on
 APISERVER_READY_TIMEOUT=300
+# How long the answer has to keep coming before it is believed. See
+# wait_apiserver_ready for what this is sized against
+APISERVER_STABLE_SECONDS=30
+POLL_INTERVAL=2
 # The answer /readyz gives when the apiserver is serving
 READY_BODY=ok
 
@@ -84,17 +88,15 @@ yq_cmd=""
 
 k8s_apiserver_port=""
 
-# Waits until the apiserver of this node is serving again.
+# Waits until the apiserver of this node is serving and stays that way.
 #
 # What this is between is a node being worked on and the same node being given
 # traffic again. Putting it back the moment the work returns is too early:
 # kubeadm rewrites a static pod manifest and kubelet replaces the container
 # after that, so the command finishing says nothing about whether the apiserver
-# is up. Measured during an upgrade, the node went back into the load balancer
-# four seconds after its apiserver container had gone and twelve seconds before
-# the replacement was running, and the requests that arrived in between failed:
-# the load balancer only learns of a backend that died from its own health
-# check, which takes inter times fall to notice.
+# is up. The load balancer only learns of a backend that died from its own
+# health check, which takes inter times fall to notice, and everything sent to
+# that node until then fails.
 #
 # renew-certs does the same wait inside renew-k8s-certs.sh, where the restart it
 # waits on is its own
@@ -114,15 +116,47 @@ main() {
 
 # Against this node rather than through the vip. What the caller needs to know
 # is whether this one is serving, and the vip would answer from whichever node
-# happens to hold it, including while this one is down
+# happens to hold it, including while this one is down.
+#
+# One answer is not enough, because the apiserver this node runs is replaced
+# twice and the first replacement is already serving when the second one is
+# about to start. kubeadm rewrites the static pod manifest, kubelet brings that
+# container up, and then kubeadm rewrites /var/lib/kubelet/config.yaml, so the
+# kubelet restart that has to follow the package upgrade comes up against a
+# configuration it did not have and builds the static pods again. Measured on
+# one node of a 1.36 to 1.37 upgrade:
+#
+#   02:23:14  kubeadm writes /var/lib/kubelet/config.yaml
+#   02:23:15  kubelet is restarted, the container from 02:20 still serving
+#   02:23:15  a single probe here is answered by that container and passes
+#   02:23:17  kubelet stops it
+#   02:23:18  the node is given traffic again
+#   02:23:21  the load balancer notices, three seconds of refused connections
+#   02:23:27  the replacement is running
+#
+# So what is waited for is not an answer but an answer that keeps coming. The
+# window has to outlast the gap between the restart and the stop, two seconds
+# there, and the eleven the replacement took to come back. Thirty is that with
+# room, and it is paid once per control plane node
 wait_apiserver_ready() {
   local elapsed=0
-  while [[ $(get_apiserver_readyz) != "$READY_BODY" ]]; do
+  local stable=0
+
+  while :; do
+    if [[ $(get_apiserver_readyz) = "$READY_BODY" ]]; then
+      [[ $stable -ge $APISERVER_STABLE_SECONDS ]] && break
+      stable=$(("$stable" + "$POLL_INTERVAL"))
+    else
+      # The apiserver went away again, so nothing counted before it says
+      # anything about the one answering now
+      stable=0
+    fi
+
     [[ $elapsed -ge $APISERVER_READY_TIMEOUT ]] &&
       die "[ERROR] Failed to wait for the apiserver of this node being ready. timeout occurred"
 
-    sleep 2s
-    elapsed=$(("$elapsed" + 2))
+    sleep "$POLL_INTERVAL"s
+    elapsed=$(("$elapsed" + "$POLL_INTERVAL"))
   done
 
   msg "[INFO] The apiserver of this node is ready"
