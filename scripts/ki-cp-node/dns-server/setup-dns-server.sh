@@ -116,8 +116,11 @@ main() {
   docker load -i "$ki_opt_bundle_path"/ki-cp-service-images/$SVC_NAME.tar
 
   mkdir -p "$svc_root_path"
+
   local rendered_before
+  local container_id_before
   rendered_before=$(checksum_of_directory "$svc_root_path")
+  container_id_before=$(get_container_id)
   $jinja2_cmd --format yaml -o "$svc_root_path""/compose.yml" "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$vars_path"
   $jinja2_cmd --format yaml -o "$svc_root_path""/named.conf.local" "$SCRIPT_DIR_PATH"/templates/named.conf.local.j2 "$vars_path"
   create_named_conf_options_file
@@ -126,12 +129,22 @@ main() {
     create_internal_network_extra_zone_db_file
   fi
 
-  local rendered_after
-  rendered_after=$(checksum_of_directory "$svc_root_path")
+  local rendered_changed="false"
+  [[ $(checksum_of_directory "$svc_root_path") != "$rendered_before" ]] && rendered_changed="true"
 
-  [[ $update = "true" && $(service_exists $SVC_NAME) = "true" && $rendered_after != "$rendered_before" ]] &&
-    docker compose -f "$svc_root_path/compose.yml" down
+  # No down first. Recreating the container takes the dns server of the node
+  # away for a second and a half, and every node of the cluster carries the vip
+  # as its only nameserver, so on the node holding the vip that second and a
+  # half is the whole cluster unable to resolve a name. compose replaces the
+  # container by itself when compose.yml changed, which is the one change that
+  # needs a replacement
   docker compose -f "$svc_root_path/compose.yml" up -d
+
+  # A container compose replaced has read the new configuration already. One it
+  # left alone has not, since named.conf and the zone files reach it as a bind
+  # mount and nothing told it to look again
+  [[ $rendered_changed = "true" && -n $container_id_before && $container_id_before = $(get_container_id) ]] &&
+    reload
 
   # Restarting docker restarts every container of the node, the apiserver lb and
   # the keepalived holding the vip among them, so the daemon is left running
@@ -226,6 +239,22 @@ get_ki_cp_master_node_ip() {
   local ih
   ih=$(get_ki_cp_master_node_ih)
   $yq_cmd '.internal_network_hosts.'"$ih"'.interfaces[0].ip' < "$vars_path"
+}
+
+# SIGHUP is what named takes as a reload of its configuration and of its zones.
+# The container stays up and the socket stays open, so a query arriving while it
+# rereads is answered rather than refused
+reload() {
+  docker compose -f "$svc_root_path/compose.yml" kill -s HUP bind9
+
+  return 0
+}
+
+get_container_id() {
+  [[ -f "$svc_root_path/compose.yml" ]] || return 0
+  docker compose -f "$svc_root_path/compose.yml" ps -q bind9 2>/dev/null || true
+
+  return 0
 }
 
 checksum_of() {
