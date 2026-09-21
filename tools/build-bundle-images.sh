@@ -70,7 +70,7 @@ parse_params "$@"
 # This fills the image half of a bundle that is being built, so it works on an
 # unpacked bundle directory rather than on the archive the installer consumes.
 # The archive is made from that directory once this has run
-KI_ROOT_PATH=$SCRIPT_DIR_PATH/..
+KI_ROOT_PATH=$(cd "$SCRIPT_DIR_PATH/.." &>/dev/null && pwd -P)
 BUNDLE_PATH="$KI_ROOT_PATH"/bundle
 YQ_CMD="$BUNDLE_PATH"/bin/yq
 CRANE_CMD="$BUNDLE_PATH"/bin/crane

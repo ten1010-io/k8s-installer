@@ -67,7 +67,7 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
-KI_ROOT_PATH=$SCRIPT_DIR_PATH/..
+KI_ROOT_PATH=$(cd "$SCRIPT_DIR_PATH/.." &>/dev/null && pwd -P)
 BUNDLE_PATH="$KI_ROOT_PATH"/bundle
 YQ_CMD="$BUNDLE_PATH"/bin/yq
 CRANE_CMD="$BUNDLE_PATH"/bin/crane
