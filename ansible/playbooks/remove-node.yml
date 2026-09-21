@@ -14,6 +14,13 @@
 
 - import_playbook: tasks/check-node-state.yml
 
+# Not conditioned on the node being a control plane one. Removing one takes an
+# etcd member out, which is the case this is most worth having, but the snapshot
+# is taken on the cp nodes either way and removing a worker is still a change to
+# the cluster. Deciding it here would also mean reading k8s_cp_nodes from a
+# play that has not run yet
+- import_playbook: tasks/backup-etcd.yml
+
 - import_playbook: tasks/remove-k8s-node.yml
   when: target_node in groups['k8s_node']
 

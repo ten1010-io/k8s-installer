@@ -4,7 +4,7 @@
 
 - import_playbook: tasks/preflight-playbook.yml
   vars:
-    playbook: "renew-certs"
+    playbook: "restore-etcd"
 
 - import_playbook: tasks/gather-facts.yml
 
@@ -12,10 +12,6 @@
 
 - import_playbook: tasks/setup-vars-file.yml
 
-- import_playbook: tasks/backup-etcd.yml
-
-- import_playbook: tasks/renew-k8s-certs.yml
+- import_playbook: tasks/restore-etcd.yml
 
 - import_playbook: tasks/reset-vars-file.yml
-
-- import_playbook: tasks/check-cert-expiry.yml

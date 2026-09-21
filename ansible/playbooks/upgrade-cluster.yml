@@ -17,6 +17,8 @@
 
 - import_playbook: tasks/setup-vars-file.yml
 
+- import_playbook: tasks/backup-etcd.yml
+
 - import_playbook: tasks/upgrade-k8s-registry.yml
 
 - import_playbook: tasks/upgrade-k8s-nodes.yml

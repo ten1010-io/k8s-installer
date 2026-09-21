@@ -1,0 +1,166 @@
+# Rebuilds etcd on every k8s cp node from one snapshot.
+#
+# The snapshot named here is the one every node restores. etcd requires that:
+# members restored from different snapshots do not form a cluster, and members
+# restored from the same one form a new cluster with a new id rather than
+# repairing the old one. Everything written after the snapshot is gone.
+#
+# Which snapshot to use is the operator's to decide and not derivable here. Each
+# node holds its own, and which of them is the one to keep depends on what went
+# wrong, so this takes a path on the control node and copies that to every node
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Check the snapshot to restore was named
+      fail:
+        msg: >-
+          Restoring etcd needs the snapshot to restore from. Copy one off a k8s cp
+          node, from the directory each of them keeps its snapshots in, and run this
+          again with -e etcd_snapshot=<path on this node>
+      when: etcd_snapshot is not defined
+
+    - name: "Check file[\"{{ etcd_snapshot }}\"] exists"
+      stat:
+        path: "{{ etcd_snapshot }}"
+      register: etcd_snapshot_stat
+
+    - name: "Report file[\"{{ etcd_snapshot }}\"] does not exist"
+      fail:
+        msg: "No such file of which path is \"{{ etcd_snapshot }}\""
+      when: not etcd_snapshot_stat.stat.exists
+
+    # The state of the cluster is replaced by what the snapshot holds. No check
+    # made here can tell whether that is what the operator wants, because the
+    # answer is about the work the cluster has done since, so only the operator
+    # can say it
+    - name: Check the loss of everything written after the snapshot is intended
+      fail:
+        msg: >-
+          Restoring etcd replaces the state of the cluster with what the snapshot
+          holds. Everything written after it was taken is lost, and the restored
+          cluster is a new one rather than the old one repaired. Run this again with
+          -e confirm_data_loss= to say that is intended
+      when: confirm_data_loss is not defined
+
+    # One token for the whole restore, decided once here so that every member is
+    # given the same one. Members restored with different tokens do not form a
+    # cluster together
+    - name: "Set_fact variable[\"etcd_restore_cluster_token\"]"
+      set_fact:
+        etcd_restore_cluster_token: "ki-etcd-{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    restore_cmd: "sudo {{ ki_opt_scripts_path }}/k8s-node/restore-etcd.sh {{ vars_path_arg }}"
+    node_snapshot_path: "{{ ki_tmp_root_path }}/etcd-restore.db"
+  tasks:
+    - when: inventory_hostname in k8s_cp_nodes
+      block:
+        - name: "Create output directory[\"{{ ki_tmp_root_path }}\"]"
+          shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+        - name: "Copy the snapshot to file[\"{{ node_snapshot_path }}\"]"
+          copy:
+            src: "{{ etcd_snapshot }}"
+            dest: "{{ node_snapshot_path }}"
+            mode: "0600"
+          become: yes
+
+        # Three plays rather than three tasks of one. Ansible synchronises
+        # between plays, so every node is stopped before any node is restored
+        # and every node is restored before any node is started. A node started
+        # early forms the new cluster on its own and the others are refused
+        - name: Execute restore-etcd.sh stop
+          shell: "{{ restore_cmd }} stop"
+
+      # Nothing has been replaced yet at this point, so the node this failed on
+      # goes straight back. Leaving a control plane stopped with its manifests
+      # held aside is worse than the failure that got here, and it is not a
+      # state the operator has any reason to be left holding
+      rescue:
+        - name: Execute restore-etcd.sh start
+          shell: "{{ restore_cmd }} start"
+
+        - name: Report that stopping the control plane failed
+          fail:
+            msg: >-
+              Stopping the control plane of node["{{ inventory_hostname }}"] failed and
+              nothing has been restored. The control plane of this node was put back.
+              Nodes that were already stopped are still stopped, so run
+              restore-etcd.sh start against each of them before trying again
+
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    restore_cmd: "sudo {{ ki_opt_scripts_path }}/k8s-node/restore-etcd.sh {{ vars_path_arg }}"
+    node_snapshot_path: "{{ ki_tmp_root_path }}/etcd-restore.db"
+  tasks:
+    - when: inventory_hostname in k8s_cp_nodes
+      block:
+        # The options go before the command, which is where the script reads
+        # them. It rejects one written after it rather than ignoring it
+        - name: Execute restore-etcd.sh restore
+          shell: >-
+            {{ restore_cmd }}
+            --snapshot {{ node_snapshot_path }}
+            --cluster-token {{ hostvars['localhost']['etcd_restore_cluster_token'] }}
+            --confirm-data-loss
+            restore
+
+      # Not put back automatically. Whatever this node has under its data
+      # directory now is between the old state and the snapshot, and starting
+      # etcd on it would be guessing which. The old directory is still there
+      # under a .replaced name, so the ways out are open, but which one to take
+      # is the operator's
+      rescue:
+        - name: Report that restoring etcd failed
+          fail:
+            msg: >-
+              Restoring etcd on node["{{ inventory_hostname }}"] failed. The control plane
+              of every k8s cp node is stopped and this node holds a data directory that
+              was not finished. The data it had before is kept beside it under a name
+              ending .replaced-<timestamp>. Decide whether to run this playbook again,
+              restore by hand, or put the old directory back, then run
+              restore-etcd.sh start on every k8s cp node
+
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    restore_cmd: "sudo {{ ki_opt_scripts_path }}/k8s-node/restore-etcd.sh {{ vars_path_arg }}"
+    node_snapshot_path: "{{ ki_tmp_root_path }}/etcd-restore.db"
+  tasks:
+    - when: inventory_hostname in k8s_cp_nodes
+      block:
+        - name: Execute restore-etcd.sh start
+          shell: "{{ restore_cmd }} start"
+
+        - name: "Delete file[\"{{ node_snapshot_path }}\"]"
+          shell: "sudo rm -f {{ node_snapshot_path }}"
+
+# The restored members have to find each other before anything can be said to
+# have worked, and that takes longer than the manifests being back
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute restore-etcd.sh status
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/restore-etcd.sh {{ vars_path_arg }} status"
+      register: shell_result
+      retries: 30
+      delay: 10
+      until: shell_result is succeeded
+      when: inventory_hostname in k8s_cp_nodes
+
+    - name: "Remove temporary variable[\"shell_result\"]"
+      set_fact:
+        shell_result: null

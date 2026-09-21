@@ -257,6 +257,56 @@ ansible-playbook -i inventory.yml playbooks/renew-certs.yml
 NOTE: 워커 노드는 대상이 아닙니다. kubeadm 이 발급한 인증서를 갖지 않고, kubelet 이 쓰는 것은
 kubelet 이 스스로 갱신합니다.
 
+=== etcd 백업
+
+각 k8s cp 노드가 자기 etcd 스냅샷을 받아 노드 안에 보관합니다. 클러스터를 바꾸는 플레이북
+(`remove-node`, `renew-certs`, `upgrade-cluster`)이 시작 전에 자동으로 한 번 받고, 따로 돌릴 수도
+있습니다.
+
+[source,shell]
+----
+source /opt/k8s-installer/venv/bin/activate
+cd /opt/k8s-installer/ansible
+ansible-playbook -i inventory.yml playbooks/backup-etcd.yml
+----
+
+스냅샷은 각 노드의 `/var/lib/k8s-installer/etcd-backups` 에 UTC 타임스탬프 이름으로 쌓이고,
+`ki_etcd_backup_retention_count`(기본 5)를 넘는 오래된 것부터 지워집니다. 제어 노드 루트
+파일시스템에 쌓이므로 개수를 두지 않으면 디스크가 찹니다.
+
+받은 직후 `etcdutl snapshot status` 로 읽어 보고, 읽히지 않으면 그 파일을 지우고 실패합니다.
+쓸 수 없는 스냅샷을 보관해 두면 정작 필요할 때 알게 됩니다.
+
+NOTE: 스냅샷은 노드 안에만 있습니다. 노드를 잃으면 그 노드의 스냅샷도 같이 잃으므로, 정기적으로
+노드 밖으로 복사해 두세요. 에어갭이라 설치본이 대신 보낼 곳을 가정할 수 없습니다.
+
+=== etcd 복구
+
+WARNING: 복구는 클러스터의 상태를 스냅샷 시점으로 되돌립니다. 그 뒤에 쓰인 것은 전부 사라지고,
+복구된 클러스터는 기존 클러스터를 고친 것이 아니라 새 클러스터입니다. 되돌릴 수 없습니다.
+
+복구할 스냅샷을 제어 노드로 가져온 뒤 경로를 지정합니다. 어느 노드의 어느 스냅샷을 쓸지는
+무엇이 잘못됐는지에 달려 있어서 설치본이 대신 고르지 않습니다.
+
+[source,shell]
+----
+# 스냅샷을 제어 노드로 가져옵니다
+scp root@<노드>:/var/lib/k8s-installer/etcd-backups/etcd-<타임스탬프>.db /tmp/
+
+source /opt/k8s-installer/venv/bin/activate
+cd /opt/k8s-installer/ansible
+ansible-playbook -i inventory.yml playbooks/restore-etcd.yml \
+  -e etcd_snapshot=/tmp/etcd-<타임스탬프>.db \
+  -e confirm_data_loss=
+----
+
+모든 k8s cp 노드가 **같은** 스냅샷으로 복구됩니다. etcd 가 그것을 요구합니다. 서로 다른
+스냅샷에서 복구된 멤버들은 클러스터를 이루지 못합니다.
+
+기존 데이터 디렉토리는 지우지 않고 `/var/lib/etcd.replaced-<타임스탬프>` 로 이름만 바꿔 둡니다.
+잘못된 스냅샷으로 복구한 것을 알게 되는 시점에는 이미 스냅샷을 받을 대상이 없기 때문입니다.
+확인이 끝나면 직접 지우세요.
+
 === 인증서 만료 확인
 
 만료가 임박한 인증서를 보고합니다. `add-node`, `remove-node` 끝에서 자동으로 돌고, 따로 돌릴 수도 있습니다.

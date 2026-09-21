@@ -1,0 +1,19 @@
+# Takes an etcd snapshot on every k8s cp node.
+#
+# Imported by the playbooks that are about to change the cluster, as the step
+# before they change it, and runnable on its own through backup-etcd.yml. The
+# snapshot is worth having exactly when the run that follows it goes wrong, so
+# it is taken while the cluster is still the one the operator meant to keep.
+#
+# Every cp node takes its own rather than one node taking one for all of them.
+# A snapshot holds the whole keyspace, so any single one is enough to restore
+# from, but a single copy sits on a node that can be the one that is lost
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute backup-etcd.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/backup-etcd.sh {{ vars_path_arg }}"
+      when: inventory_hostname in k8s_cp_nodes

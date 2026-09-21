@@ -79,6 +79,15 @@ ki_etc_nodes_path: "{{ ki_etc_root_path }}/nodes.yml"
 # what is in it is what the node is actually running with. update-cluster.yml
 # compares vars.yml against this to work out what changed and what that needs
 ki_etc_applied_vars_path: "{{ ki_etc_root_path }}/applied-vars.yml"
+# Where each k8s cp node keeps its etcd snapshots. Under the variable data of
+# the installer rather than /var/backups, so that everything it writes on a node
+# is under one root. On the root filesystem, which is why the count is bounded
+ki_etcd_backup_path: "{{ ki_var_root_path }}/etcd-backups"
+# The fallback for the count vars.yml carries. An upgrade keeps the vars.yml of
+# the user, so a cluster upgraded into the release that added this variable has
+# no count in it at all, and backup-etcd.sh would have nothing to read. group_vars
+# of all are merged with vars.yml winning, so a count set there still decides
+ki_etcd_backup_retention_count: 5
 # The release this node was last built or updated with, written next to the
 # variables by the same play and for the same reason. ki_opt_release_path is the
 # release the installer on the node holds, which upgrade-k8s-installer.yml raises
@@ -159,6 +168,11 @@ ki_cp_user_registry_port: 5001
 k8s_version: "v1.34.1"
 # Where kubeadm keeps the certificates of the cluster. Fixed by kubeadm
 k8s_pki_path: "/etc/kubernetes/pki"
+# Where kubelet looks for the static pods of the control plane, and where etcd
+# keeps its data. Fixed by kubeadm. Restoring etcd takes the manifests out of
+# that directory to stop the pods and puts them back to start them again
+k8s_manifests_path: "/etc/kubernetes/manifests"
+k8s_etcd_data_path: "/var/lib/etcd"
 k8s_apiserver_port: 6443
 k8s_service_subnet: "10.96.0.0/12"
 k8s_pod_subnet: "10.244.0.0/16"
@@ -260,6 +274,9 @@ ki_var_classes:
     # compared either, so it can not be reported as changed, and there would be
     # nothing to do about it if it were
     - control_node_ih
+    # Read by backup-etcd.sh the next time it runs and by nothing else, so a
+    # changed count applies itself without anything being done to a node
+    - ki_etcd_backup_retention_count
   # Not changeable on a cluster that exists. The subnets decide the internal
   # address of every node, which the etcd peers and the apiserver of each one
   # are published under, and turning ha mode on or off changes which services
