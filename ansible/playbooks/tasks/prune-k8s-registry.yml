@@ -1,0 +1,42 @@
+# Removes from the k8s registry of every ki cp node everything the bundle does
+# not hold, and reclaims what those images were holding.
+#
+# Nothing is asked for. The bundle is the release and the release is what the
+# cluster runs, so the images directory of the bundle already says what to keep,
+# which is why this takes no keep variable where prune-user-registry.yml does:
+# nothing on a node can know what a workload needs, and everything on a node
+# knows what the release does.
+#
+# Prints what it would remove and removes nothing unless -e delete= is passed.
+# Getting it wrong here is recovered by running upgrade-k8s-registry.yml, which
+# pushes the whole of the bundle again, so the caution is less than the user
+# registry needs. It is kept the same anyway, because two prunes that are asked
+# for differently are a way to reach for the wrong one.
+#
+# Not called from upgrade-cluster.yml. upgrade-k8s-nodes.yml goes one node at a
+# time, so an upgrade that fails part way through leaves the nodes before it on
+# the new release and the ones after it on the old, and the images this removes
+# are the ones those nodes still have to pull.
+#
+# One node at a time here too. Reclaiming the storage stops the registry while
+# it walks it, and stopping every one of them at once would leave the cluster
+# with nowhere to pull an image of the release from
+- hosts: ki_cp_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    delete_arg: "{{ '--delete' if delete is defined else '' }}"
+  tasks:
+    - name: Execute prune-k8s-registry.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-registry/prune-k8s-registry.sh {{ vars_path_arg }} {{ delete_arg }}"
+      register: shell_result
+
+    - name: Report what it found
+      debug:
+        msg: "{{ shell_result.stderr_lines }}"
+
+    - name: "Remove temporary variable[\"shell_result\"]"
+      set_fact:
+        shell_result: null
