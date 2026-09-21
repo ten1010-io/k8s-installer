@@ -15,6 +15,20 @@ vrrp_script check_node {
   # the load balancer is restarted whenever the set of control plane nodes
   # changes. A shorter fall would turn each of those restarts into an outage
   fall 10
+  # Two successes before a node may hold the address again, which with the
+  # interval above is six seconds of a node that has just been restarted being
+  # ineligible. That is what makes the address walk forward rather than settle
+  # when the ki cp nodes are restarted one after another, and it is the first
+  # thing to weigh against taking the address off a node on purpose before
+  # working on it.
+  #
+  # Measured on the three node cluster: a handover costs 0.6 seconds with no vip
+  # anywhere, so moving it away and back is 1.2 seconds without an apiserver, a
+  # dns server or a registry, while the work such a move would cover is a
+  # registry stopped for 2.0 seconds and nothing else touched. Two seconds of
+  # one service is cheaper than one and a bit of all three, which is why
+  # prune-user-registry.yml, prune-k8s-registry.yml and setup-k8s-registry.sh
+  # stop the registry of the node holding the vip rather than move the vip
   rise 2
 }
 
