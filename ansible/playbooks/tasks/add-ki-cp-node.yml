@@ -27,6 +27,26 @@
         - name: Execute setup-user-registry.sh
           shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/user-registry/setup-user-registry.sh {{ vars_path_arg }}"
 
+        # The registry the line above set up is empty, and what belongs in it
+        # arrives on an archive that no release knows. The other ki cp nodes are
+        # already serving exactly that, on this side of the air gap, so the node
+        # is filled from one of them rather than left for an operator to notice
+        - name: Execute sync-user-registry.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/user-registry/sync-user-registry.sh {{ vars_path_arg }}"
+          register: shell_result
+
+        # Said out loud, unlike the tasks around it. This is the one step whose
+        # length is decided by how much somebody put in the registry rather than
+        # by the release, so an operator watching a long add-node should be able
+        # to see that it is copying images and which one it is on
+        - name: Report what it copied
+          debug:
+            msg: "{{ shell_result.stderr_lines }}"
+
+        - name: "Remove temporary variable[\"shell_result\"]"
+          set_fact:
+            shell_result: null
+
     - when: inventory_hostname != target_node
       block:
         - name: Execute setup-dns-server.sh --update

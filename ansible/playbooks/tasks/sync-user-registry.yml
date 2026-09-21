@@ -1,0 +1,30 @@
+# Makes the user registry of every ki cp node serve what the others serve, by
+# copying from a node that holds what a node is missing.
+#
+# What this covers is a node that was added, or removed and added again, or lost
+# the disk its registry was on. add-ki-cp-node.yml can only set up an empty
+# registry, because what belongs in one arrives on an archive that no release
+# knows, and an empty one among several is a workload that fails as soon as that
+# node takes the vip.
+#
+# One node at a time. Filling a registry means opening it for writing, which
+# stops it while it comes back, and stopping every one of them at once would
+# leave the cluster with nowhere to pull a workload image from
+- hosts: ki_cp_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute sync-user-registry.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/user-registry/sync-user-registry.sh {{ vars_path_arg }}"
+      register: shell_result
+
+    - name: Report what it copied
+      debug:
+        msg: "{{ shell_result.stderr_lines }}"
+
+    - name: "Remove temporary variable[\"shell_result\"]"
+      set_fact:
+        shell_result: null
