@@ -88,6 +88,8 @@ ki_etc_services_path=""
 ki_cp_user_registry_port=""
 ki_cp_ha_mode=""
 inventory_hostname=""
+target_node=""
+target_node_op=""
 
 etc_svc_root_path=""
 var_svc_root_path=""
@@ -125,6 +127,9 @@ main() {
   ki_cp_user_registry_port=$($yq_cmd '.ki_cp_user_registry_port' < "$vars_path")
   ki_cp_ha_mode=$($yq_cmd '.ki_cp_ha_mode' < "$vars_path")
   inventory_hostname=$($yq_cmd '.inventory_hostname' < "$vars_path")
+  target_node=$($yq_cmd '.target_node' < "$vars_path")
+  target_node_op=$($yq_cmd '.target_node_op' < "$vars_path")
+  require_valid_target_node_op
 
   # One ki cp node is the whole of the registry of the cluster, so there is
   # nobody for it to agree with
@@ -190,9 +195,39 @@ find_source_host() {
 }
 
 get_peer_ih_list() {
-  $yq_cmd ".groups.ki_cp_node - [\"$inventory_hostname\"] | join(\" \")" < "$vars_path"
+  local ih_list
+  ih_list=$(get_ki_cp_ih_list)
+
+  $yq_cmd --null-input "$ih_list - [\"$inventory_hostname\"] | join(\" \")"
 
   return 0
+}
+
+# A node on its way out of the cluster is left out, the way every other script
+# that reads this group leaves it out. It answers for its registry until the
+# moment reset-user-registry.sh deletes it, so it is the one peer whose copy is
+# about to stop existing
+get_ki_cp_ih_list() {
+  if [[ $target_node != "null" && $target_node_op = "remove" ]]; then
+    $yq_cmd -o json ".groups.ki_cp_node - [\"$target_node\"]" < "$vars_path"
+  else
+    $yq_cmd -o json '.groups.ki_cp_node' < "$vars_path"
+  fi
+
+  return 0
+}
+
+# Checked where the variables are read rather than where the node list is
+# derived. The other scripts that read this group refuse an operation they can
+# not make sense of from inside the function that derives it, which is reached
+# through a command substitution, and a die in there only ends the subshell: what
+# came out was the right error followed by two misleading ones and a run that
+# carried on to fail somewhere else
+require_valid_target_node_op() {
+  [[ $target_node = "null" ]] && return 0
+  [[ $target_node_op = "add" || $target_node_op = "remove" ]] && return 0
+
+  die "[ERROR] Invalid variable[\"target_node\"] or Invalid variable[\"target_node_op\"]"
 }
 
 get_ip() {
