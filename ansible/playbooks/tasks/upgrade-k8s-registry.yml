@@ -1,0 +1,18 @@
+# Fills the registry with the container images of the release the installer now
+# holds, before any node is upgraded.
+#
+# First on purpose. kubeadm pulls the images of the new version while it
+# upgrades, and on an air gapped cluster there is nowhere else for them to come
+# from, so a node upgraded before this ran would have nothing to pull.
+#
+# One node at a time. Every ki cp node runs a registry of its own behind the
+# vip, and taking them all down together would leave nothing answering
+- hosts: ki_cp_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute setup-k8s-registry.sh --update
+      shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-registry/setup-k8s-registry.sh {{ vars_path_arg }} --update"

@@ -303,10 +303,9 @@ require_packages_installable() {
 }
 
 # A first install leaves every unit disabled, because what enables them is the
-# playbook that sets each one up in its turn. On an update they are already
-# enabled and running, and the packages under them have just been replaced, so
-# what they need is to be restarted onto the new binaries. Only the ones this
-# node actually runs: docker is enabled on ki cp nodes and nowhere else
+# playbook that sets each one up in its turn. An update finds them enabled and
+# running and leaves them exactly as they are: disabling them would stop
+# services that are serving, and restarting them is somebody else's job
 settle_units() {
   if [[ $update = "false" ]]; then
     "$ki_opt_scripts_path/systemctl.sh" disable kubelet
@@ -317,14 +316,23 @@ settle_units() {
     return 0
   fi
 
-  local unit
-  for unit in containerd docker kubelet; do
-    [[ $("$ki_opt_scripts_path/systemctl.sh" is-enabled "$unit") != "true" ]] && continue
-
-    msg "[INFO] Restarting unit[\"$unit\"] onto the packages just installed"
-    "$ki_opt_scripts_path/systemctl.sh" restart "$unit"
-  done
-
+  # Nothing is restarted here, on purpose. Every unit whose package this just
+  # replaced is restarted by something that runs after it and knows more:
+  # setup-containerd.sh and setup-docker.sh each render their configuration and
+  # then restart, and kubelet is restarted by the caller once kubeadm has been
+  # through. Restarting here as well means doing it twice, the first time onto
+  # configuration that is about to be rewritten.
+  #
+  # For kubelet it was worse than wasteful. kubeadm records the flags it starts
+  # kubelet with in /var/lib/kubelet/kubeadm-flags.env, and a release that drops
+  # a flag leaves that file naming one the new binary does not know: 1.35
+  # removed --pod-infra-container-image, and a kubelet restarted onto the new
+  # package before that file was rewritten died parsing its own arguments,
+  # restart after restart. With kubelet gone, the static pods it runs were never
+  # picked up, so the control plane upgrade waited five minutes for a pod hash
+  # that could not change and rolled itself back. "kubeadm upgrade node" is what
+  # rewrites that file, which is why the old binary has to keep running until
+  # then
   return 0
 }
 

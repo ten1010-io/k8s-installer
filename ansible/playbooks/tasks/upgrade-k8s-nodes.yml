@@ -1,12 +1,18 @@
-# Takes the cluster to the kubernetes version of the release the installer now
-# holds, one node at a time.
+# Brings every node to the release the installer now holds, one at a time.
 #
-# The order within a node is fixed by what depends on what. The packages go
-# first, because kubeadm has to be the new one before it is asked to upgrade
-# anything. The node is drained before that, because replacing the container
-# runtime under a node recreates every pod on it. kubeadm comes next, then
-# kubelet is restarted onto the new binaries, and only then is the node given
-# work again.
+# Everything a node carries is written again here rather than only the parts a
+# version number covers. A release pins the packages, the binaries, the images
+# and the configuration it renders, and a node that got the new packages while
+# keeping the old sysctl values or the old containerd configuration is running
+# something no release describes.
+#
+# The order within a node is fixed by what depends on what. The node is drained
+# before anything is touched, because replacing the container runtime recreates
+# every pod on it and restarting docker restarts every ki cp service on it. The
+# packages go before kubeadm, because kubeadm has to be the new one before it can
+# tell the cluster anything. The ki cp services are written after docker has been
+# restarted, so they come back once rather than twice. kubelet is restarted last,
+# after kubeadm has rewritten its configuration.
 #
 # The first control plane node raises the version the cluster records; every node
 # after it reads that version and follows.
@@ -16,11 +22,15 @@
   serial: 1
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    scripts: "sudo {{ ki_opt_scripts_path }}"
     lb_admin_cmd: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-cp-lb/lb-admin.sh {{ vars_path_arg }}"
     ki_cp_ihs: "{{ groups['ki_cp_node'] | difference(ki_broken_nodes) }}"
     knn: "{{ ih_to_hostname_dict[inventory_hostname] | lower | replace('_', '-') }}"
   tasks:
     - block:
+        # Every ki cp node runs a load balancer of its own and the vip can move
+        # between them at any moment, so a node is only really out of rotation
+        # once every one of them has been told
         - name: Take this node out of the load balancer of every ki cp node
           shell: "{{ lb_admin_cmd }} drain {{ inventory_hostname }}"
           delegate_to: "{{ item }}"
@@ -28,27 +38,71 @@
           when: inventory_hostname in k8s_cp_nodes
 
         - name: Execute drain-node.sh
-          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/drain-node.sh {{ vars_path_arg }} {{ knn }}"
+          shell: "{{ scripts }}/k8s-node/drain-node.sh {{ vars_path_arg }} {{ knn }}"
           delegate_to: "{{ k8s_cp_nodes[0] }}"
 
         - name: Execute install-packages.sh --update
-          shell: "sudo {{ ki_opt_scripts_path }}/all-node/linux-package/install-packages.sh {{ vars_path_arg }} --update"
+          shell: "{{ scripts }}/all-node/linux-package/install-packages.sh {{ vars_path_arg }} --update"
 
         - name: Execute install-programs.sh
-          shell: "sudo {{ ki_opt_scripts_path }}/all-node/linux-bin/install-programs.sh {{ vars_path_arg }}"
+          shell: "{{ scripts }}/all-node/linux-bin/install-programs.sh {{ vars_path_arg }}"
+
+        # The sysctl values, the kernel modules and the swap entries of the node.
+        # Only init-k8s-cluster.yml and add-k8s-node.yml ran this before, so a
+        # release that changed any of them never reached a node that already
+        # existed
+        - name: Execute configure-linux.sh
+          shell: "{{ scripts }}/k8s-node/configure-linux.sh {{ vars_path_arg }}"
+
+        - name: Execute setup-crictl.sh
+          shell: "{{ scripts }}/all-node/crictl/setup-crictl.sh {{ vars_path_arg }}"
+
+        - name: Execute setup-containerd.sh --update
+          shell: "{{ scripts }}/all-node/containerd/setup-containerd.sh {{ vars_path_arg }} --update"
+
+        # Restarting docker takes every ki cp service of this node with it, which
+        # is why this waits until the node is out of rotation and why the
+        # services are written again right after
+        - name: Execute setup-docker.sh --update
+          shell: "{{ scripts }}/all-node/docker/setup-docker.sh {{ vars_path_arg }} --update"
+
+        - name: Execute setup-keepalived.sh --update
+          shell: "{{ scripts }}/ki-cp-node/keepalived/setup-keepalived.sh {{ vars_path_arg }} --update"
+          when: inventory_hostname in groups['ki_cp_node']
+
+        - name: Execute setup-dns-server.sh --update
+          shell: "{{ scripts }}/ki-cp-node/dns-server/setup-dns-server.sh {{ vars_path_arg }} --update"
+          when: inventory_hostname in groups['ki_cp_node']
+
+        - name: Execute setup-ntp-server.sh --update
+          shell: "{{ scripts }}/ki-cp-node/ntp-server/setup-ntp-server.sh {{ vars_path_arg }} --update"
+          when: inventory_hostname in groups['ki_cp_node']
+
+        - name: Execute setup-k8s-cp-lb.sh --update
+          shell: "{{ scripts }}/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh {{ vars_path_arg }} --update"
+          when: inventory_hostname in groups['ki_cp_node']
+
+        - name: Execute setup-nfs-client.sh
+          shell: "{{ scripts }}/all-node/nfs-client/setup-nfs-client.sh {{ vars_path_arg }}"
+
+        - name: Execute setup-resolv-conf.sh
+          shell: "{{ scripts }}/all-node/resolv-conf/setup-resolv-conf.sh {{ vars_path_arg }}"
+
+        - name: Execute setup-ntp-client.sh
+          shell: "{{ scripts }}/all-node/ntp-client/setup-ntp-client.sh {{ vars_path_arg }}"
 
         - name: Execute upgrade-k8s-node.sh
-          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/upgrade-k8s-node.sh {{ vars_path_arg }} {{ first_cp_node_arg }}"
+          shell: "{{ scripts }}/k8s-node/upgrade-k8s-node.sh {{ vars_path_arg }} {{ first_cp_node_arg }}"
           vars:
             first_cp_node_arg: "{{ '--first-cp-node' if inventory_hostname == k8s_cp_nodes[0] else '' }}"
 
-        # install-packages.sh restarted it onto the new binaries already, but
-        # kubeadm has written a new configuration for it since
+        # install-packages.sh replaced the binary under it and kubeadm has
+        # rewritten its configuration since
         - name: Restart kubelet
-          shell: "sudo {{ ki_opt_scripts_path }}/systemctl.sh restart kubelet"
+          shell: "{{ scripts }}/systemctl.sh restart kubelet"
 
         - name: Execute uncordon-node.sh
-          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/uncordon-node.sh {{ vars_path_arg }} {{ knn }}"
+          shell: "{{ scripts }}/k8s-node/uncordon-node.sh {{ vars_path_arg }} {{ knn }}"
           delegate_to: "{{ k8s_cp_nodes[0] }}"
 
         - name: Put this node back into the load balancer of every ki cp node
@@ -57,6 +111,9 @@
           loop: "{{ ki_cp_ihs }}"
           when: inventory_hostname in k8s_cp_nodes
 
+        # Before the next node is taken out. Moving on while this one is not
+        # being given traffic again would take the control plane down to one
+        # fewer node than it looks like
         - name: Wait for every ki cp node to be giving this node traffic again
           shell: "{{ lb_admin_cmd }} wait-ready {{ inventory_hostname }}"
           delegate_to: "{{ item }}"
@@ -69,7 +126,7 @@
       # it stopped, so the node is given work again and the run ends
       rescue:
         - name: Execute uncordon-node.sh
-          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/uncordon-node.sh {{ vars_path_arg }} {{ knn }}"
+          shell: "{{ scripts }}/k8s-node/uncordon-node.sh {{ vars_path_arg }} {{ knn }}"
           delegate_to: "{{ k8s_cp_nodes[0] }}"
           ignore_errors: yes
 
@@ -84,7 +141,8 @@
           fail:
             msg: >-
               Upgrading node["{{ inventory_hostname }}"] failed. The nodes before it in the
-              inventory are on kubernetes["{{ k8s_version }}"] and the ones after it were not
-              touched, so the cluster is running two versions. This node was put back into
+              inventory are on release["{{ ki_release_version }}"] and the ones after it were
+              not touched, so the cluster is running two releases. This node was put back into
               service as far as it could be. Fix what failed and run this playbook again:
-              a node already on the new version is skipped, so it carries on from here
+              a node already on the new version is skipped where skipping is safe, so it
+              carries on from here

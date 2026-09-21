@@ -12,10 +12,7 @@
 
 - import_playbook: tasks/setup-vars-file.yml
 
-# The registry is filled before any node is asked to pull from it. kubeadm pulls
-# the images of the new version as part of upgrading, and an air gapped cluster
-# has nowhere else to get them
-- import_playbook: tasks/upgrade-ki-cp.yml
+- import_playbook: tasks/upgrade-k8s-registry.yml
 
 - import_playbook: tasks/upgrade-k8s-nodes.yml
 
