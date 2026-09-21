@@ -10,7 +10,10 @@ K8S Installer는 오프라인 환경에서 쿠버네티스 클러스터를 구�
 노드 프로비저닝과 kubeadm 기반 클러스터 구성까지만 수행하며, CNI를 포함한 애드온 차트는 설치하지 않습니다.
 클러스터 구성 후 CNI 플러그인은 직접 설치해야 노드가 Ready 상태가 됩니다.
 
-== 사용법
+== 시작하기
+
+클러스터를 처음 세울 때 한 번 하는 일들입니다. 이미 서 있는 클러스터에 하는 일은
+<<작업>> 에 있습니다.
 
 K8S Installer는 제어 노드의 `/opt/k8s-installer`에 설치되며, 릴리스 단위로 관리됩니다.
 설치된 릴리스는 `/opt/k8s-installer/release` 파일에 기록되고, 모든 관리 노드가 동일한 릴리스를 갖습니다.
@@ -29,20 +32,6 @@ control_node:
       ansible_connection: local
       control_node_ih: node1
 ----
-
-=== 제어 노드 인계
-
-인계받을 `ki_cp_node`에서 `control_node_ih`를 그 노드로 바꾸고, 그 노드의 SSH 키를 관리 노드에 심으면 됩니다.
-SSH 설정 스크립트는 ansible 디렉토리에 함께 동기화되므로 소스 트리를 다시 받을 필요가 없습니다.
-
-[source,shell]
-----
-# 인계받을 ki_cp_node 에서
-vi /opt/k8s-installer/ansible/inventory.yml    # control_node_ih: node2
-sudo /opt/k8s-installer/ansible/configure-control-node-ssh.sh   # 출력된 안내에 따라 모든 관리 노드에 SSH 설정
-----
-
-선언이 실제로 플레이북을 실행하는 노드를 가리키지 않으면 모든 플레이북이 시작 단계에서 중단됩니다.
 
 === 클러스터 설치
 
@@ -118,59 +107,35 @@ LVM 논리 볼륨이면 `/dev/<vg>/<lv>` 도 재부팅에 안정적인 경로입
 지정하지 않으면(`null`) 아무것도 하지 않고 기존처럼 루트 디스크를 씁니다.
 설계 판단은 link:docs/impl-notes.adoc[구현 노트]에 있습니다.
 
-=== K8S Installer 업그레이드
+== 작업
 
-[source,shell,subs="+attributes"]
-----
-git clone {github}.git
-cd k8s-installer
-git checkout v{version}          # 업그레이드할 릴리스 태그
-./download-bundle.sh
-sudo ./upgrade.sh          # inventory.yml 과 vars.yml 은 보존되며, 새 릴리스의 파일은 *.new 로 남습니다
+클러스터가 서 있는 뒤로 하는 일들입니다. 순서대로 읽는 것이 아니라 필요한 것을 찾아 봅니다.
 
-source /opt/k8s-installer/venv/bin/activate
-cd /opt/k8s-installer/ansible
-ansible-playbook -i inventory.yml playbooks/upgrade-k8s-installer.yml
-----
+[cols="1,3"]
+|===
+|하려는 일 |보는 곳
 
-`upgrade-k8s-installer.yml` 은 각 노드의 `/opt/k8s-installer` 만 새 릴리스로 바꿉니다.
-클러스터에 반영하려면 이어서 아래 <<클러스터 업그레이드>> 를 실행합니다.
-설정 변경은 <<설정 변경 적용>>, 인증서 갱신은 <<인증서 갱신>> 을 보세요.
+|`vars.yml` 이나 `inventory.yml` 을 고쳤다
+|<<설정 변경 적용>>
 
-=== 클러스터 업그레이드
+|워크로드가 쓸 이미지를 클러스터에 넣는다
+|<<사용자 레지스트리>>
 
-새 릴리스가 담고 있는 것들을 실제 클러스터에 적용합니다. 쿠버네티스뿐 아니라 리눅스 패키지
-(containerd, docker, kubelet 등), 유저 바이너리(helm, etcdctl 등), 레지스트리 이미지,
-ki cp 서비스 이미지가 모두 대상입니다.
+|인증서가 만료되기 전에 갱신한다
+|<<인증서 갱신>>, <<인증서 만료 확인>>
 
-[source,shell]
-----
-source /opt/k8s-installer/venv/bin/activate
-cd /opt/k8s-installer/ansible
-ansible-playbook -i inventory.yml playbooks/upgrade-cluster.yml
-----
+|새 릴리스로 올린다
+|<<K8S Installer 업그레이드>> 후 <<클러스터 업그레이드>>
 
-레지스트리를 먼저 채우고, ki cp 서비스를 한 노드씩 올린 뒤, 노드를 하나씩 drain 하여 패키지와
-쿠버네티스를 올리고 다시 투입합니다. 3노드 기준 4분 남짓 걸립니다.
+|제어 노드를 다른 노드로 옮긴다
+|<<제어 노드 인계>>
 
-[WARNING]
-====
-실패해도 되돌리지 않습니다. kubeadm 이 클러스터 버전과 저장된 데이터를 옮기므로 되돌리는 쪽이
-더 위험합니다. 어느 노드까지 끝났는지 알려주고 멈추며, **다시 실행하면 이미 새 버전인 노드는
-건너뛰고 멈춘 자리에서 이어집니다.**
+|노드가 죽어서 접속이 안 된다
+|<<고장난 노드 제거>>
 
-멈춘 동안 클러스터는 두 버전이 섞인 상태입니다. 쿠버네티스는 컨트롤 플레인과 kubelet 사이
-한 마이너 버전 차이를 허용하므로 그 범위에서는 동작하지만, 오래 두지 마세요.
-====
-
-`inventory.yml` 도 보존되므로 새 릴리스가 추가한 그룹이 빠져 있을 수 있습니다. 마찬가지로
-플레이북이 알려주고 중단합니다. 접속되지 않는 노드를 선언하는 `broken_node` 그룹이 여기
-해당하며, 비어 있어도 선언은 있어야 합니다. 아래 <<고장난 노드 제거>> 를 보세요.
-
-`vars.yml` 은 보존되므로 제거된 변수가 남아 있을 수 있습니다. 플레이북이 시작 단계에서
-어느 변수를 지워야 하는지 알려주고 중단하므로, 안내대로 지우고 다시 실행하세요.
-`containerd_root_path` 가 여기 해당합니다. 컨테이너 런타임 루트는 더 이상 설정할 수 없고,
-루트 디스크에서 떼어내려면 위의 `ephemeral_storage_device` 를 씁니다.
+|클러스터를 걷어낸다
+|<<클러스터 제거>>
+|===
 
 === 설정 변경 적용
 
@@ -191,97 +156,6 @@ ansible-playbook -i inventory.yml playbooks/update-cluster.yml
 
 NOTE: 이 릴리스 이전에 만들어진 클러스터에는 기록이 없습니다. 첫 실행은 현재 값을 기준점으로
 삼고 그렇게 알려 주며, 변경 감지는 그 다음 실행부터입니다.
-
-=== 스냅샷 릴리스
-
-`-SNAPSHOT` 으로 끝나는 버전은 개발용 빌드입니다. 같은 이름으로 내용이 계속 바뀌므로
-두 노드가 같은 스냅샷을 보고해도 같은 것을 들고 있다고 볼 수 없고, 따라서 **업그레이드의
-출발점이 될 수 없습니다.**
-
-[cols="1,1,3"]
-|===
-|설치된 버전 |목표 버전 |판정
-
-|릴리스 |릴리스 |`upgradable_from` 에 있으면 허용
-|릴리스 |스냅샷 |허용. 릴리스를 내기 전 업그레이드 경로를 시험하는 용도
-|스냅샷 |동일 스냅샷 |허용. 업그레이드가 아니라 **재배포**이며 개발 중 몇 번이든 가능
-|스냅샷 |그 외 |**거부.** `reset.sh` 후 `setup.sh` 로 재구축
-|===
-
-릴리스를 낼 때는 `release.yml` 의 `version` 에서 `-SNAPSHOT` 을 떼고 커밋한 뒤 태그를 붙이고,
-다음 개발 버전으로 다시 올립니다. 이 문서의 `:version:` 속성은 사용자가 체크아웃할 태그를 가리키므로
-릴리스 버전까지만 올리고, 다음 개발 버전으로는 올리지 않습니다.
-
-[source,shell]
-----
-# 개발 중        version: "1.1.0-SNAPSHOT"    태그 없음
-# 릴리스         version: "1.1.0"   → commit → git tag v1.1.0
-# 다음 개발      version: "1.2.0-SNAPSHOT"
-----
-
-=== 고장난 노드 제거
-
-접속이 되지 않는 노드는 `remove-node` 로 뺄 수 없습니다. 그 플레이북이 하는 일의 대부분이
-빼려는 노드 위에서 이뤄지기 때문입니다. 접속되지 않는 노드는 `inventory.yml` 의 `broken_node`
-그룹에 넣습니다.
-
-[source,yaml]
-----
-broken_node:
-  hosts:
-    node2: {}
-----
-
-그룹에 넣는 것만으로 *모든 플레이북이 그 노드를 건너뜁니다.* 노드 한 대가 죽었다고 해서
-나머지 노드에 대한 작업까지 막히지 않게 하는 것이 이 그룹의 목적이고, 클러스터에서 빼는 것은
-그 다음 문제입니다.
-
-[source,shell]
-----
-source /opt/k8s-installer/venv/bin/activate
-cd /opt/k8s-installer/ansible
-ansible-playbook -i inventory.yml playbooks/remove-broken-node.yml -e fenced=
-----
-
-살아있는 노드들에서만 동작합니다. 클러스터에서 노드와 etcd 멤버를 지우고, 남은 `ki_cp_node`
-들의 서비스를 그 노드가 없는 구성으로 다시 만듭니다. 노드 자체는 아무것도 정리하지 않습니다.
-정리할 대상에 닿을 수 없기 때문입니다.
-
-.전제 조건
-* *전원을 내리거나 네트워크에서 격리한 뒤* 실행해야 합니다. 접속이 안 될 뿐 살아있는 노드는
-  여전히 가상 IP를 주장하고 레지스트리를 서빙합니다. 플레이북은 접속 불가까지만 확인할 수
-  있으므로, 격리했다는 사실은 `-e fenced=` 로 사람이 선언합니다
-* 고장난 노드가 제어 노드라면 *다른 `ki_cp_node` 로 제어 노드를 먼저 인계*하세요
-* 고장난 노드가 `k8s_cp` 라면 *etcd 쿼럼이 남아 있어야 합니다.* 노드를 지우는 것도 etcd 멤버를
-  빼는 것도 쓰기 작업입니다. cp 노드가 2대인 구성에서는 1대만 잃어도 쿼럼이 깨지므로 이 경로로는
-  고칠 수 없고, etcd 복구가 먼저입니다
-* 남은 `ki_cp_node` 가 한 대뿐이라면 서비스를 다시 만드는 동안 가상 IP가 잠깐 사라집니다.
-  넘겨받을 상대가 없기 때문입니다
-
-[IMPORTANT]
-====
-*제거한 머신을 그대로 다시 켜지 마세요.* kubelet이 이 클러스터가 받아주는 인증서를 그대로
-들고 있어서 노드 등록을 계속 시도합니다. 워커였다면 성공해서 설치기가 모르는 노드로 되살아나고,
-컨트롤 플레인이었다면 kubelet이 자기 노드의 apiserver를 보는데 그 apiserver에 붙을 etcd가
-없어서 크래시루프만 돕니다. 어느 쪽이든 재투입은 OS 재설치부터입니다.
-====
-
-되돌릴 때는 노드를 재설치하고 `broken_node` 그룹에서 뺀 뒤 `setup-k8s-installer.yml`,
-`add-node.yml` 순으로 실행합니다. ki PKI는 살아있는 `ki_cp_node` 에서 복사됩니다.
-
-=== 클러스터 제거
-
-[source,shell]
-----
-source /opt/k8s-installer/venv/bin/activate
-cd /opt/k8s-installer/ansible
-ansible-playbook -i inventory.yml playbooks/reset-cluster.yml
-ansible-playbook -i inventory.yml playbooks/reset-k8s-installer.yml
-deactivate
-
-sudo /opt/k8s-installer/ansible/reset-control-node-ssh.sh   # 출력된 안내에 따라 모든 관리 노드의 SSH 설정 제거
-sudo /opt/k8s-installer/reset.sh
-----
 
 === 사용자 레지스트리
 
@@ -391,6 +265,169 @@ ansible-playbook -i inventory.yml playbooks/tasks/check-cert-expiry.yml
 
 ki PKI가 만료되면 레지스트리 TLS가 깨져 모든 노드에서 이미지 pull이 실패합니다.
 설치 시점 + 10년이 이 배포의 하드 리밋이고, 재설치할 때마다 초기화됩니다.
+
+=== K8S Installer 업그레이드
+
+[source,shell,subs="+attributes"]
+----
+git clone {github}.git
+cd k8s-installer
+git checkout v{version}          # 업그레이드할 릴리스 태그
+./download-bundle.sh
+sudo ./upgrade.sh          # inventory.yml 과 vars.yml 은 보존되며, 새 릴리스의 파일은 *.new 로 남습니다
+
+source /opt/k8s-installer/venv/bin/activate
+cd /opt/k8s-installer/ansible
+ansible-playbook -i inventory.yml playbooks/upgrade-k8s-installer.yml
+----
+
+`upgrade-k8s-installer.yml` 은 각 노드의 `/opt/k8s-installer` 만 새 릴리스로 바꿉니다.
+클러스터에 반영하려면 이어서 아래 <<클러스터 업그레이드>> 를 실행합니다.
+설정 변경은 <<설정 변경 적용>>, 인증서 갱신은 <<인증서 갱신>> 을 보세요.
+
+=== 클러스터 업그레이드
+
+새 릴리스가 담고 있는 것들을 실제 클러스터에 적용합니다. 쿠버네티스뿐 아니라 리눅스 패키지
+(containerd, docker, kubelet 등), 유저 바이너리(helm, etcdctl 등), 레지스트리 이미지,
+ki cp 서비스 이미지가 모두 대상입니다.
+
+[source,shell]
+----
+source /opt/k8s-installer/venv/bin/activate
+cd /opt/k8s-installer/ansible
+ansible-playbook -i inventory.yml playbooks/upgrade-cluster.yml
+----
+
+레지스트리를 먼저 채우고, ki cp 서비스를 한 노드씩 올린 뒤, 노드를 하나씩 drain 하여 패키지와
+쿠버네티스를 올리고 다시 투입합니다. 3노드 기준 4분 남짓 걸립니다.
+
+[WARNING]
+====
+실패해도 되돌리지 않습니다. kubeadm 이 클러스터 버전과 저장된 데이터를 옮기므로 되돌리는 쪽이
+더 위험합니다. 어느 노드까지 끝났는지 알려주고 멈추며, **다시 실행하면 이미 새 버전인 노드는
+건너뛰고 멈춘 자리에서 이어집니다.**
+
+멈춘 동안 클러스터는 두 버전이 섞인 상태입니다. 쿠버네티스는 컨트롤 플레인과 kubelet 사이
+한 마이너 버전 차이를 허용하므로 그 범위에서는 동작하지만, 오래 두지 마세요.
+====
+
+`inventory.yml` 도 보존되므로 새 릴리스가 추가한 그룹이 빠져 있을 수 있습니다. 마찬가지로
+플레이북이 알려주고 중단합니다. 접속되지 않는 노드를 선언하는 `broken_node` 그룹이 여기
+해당하며, 비어 있어도 선언은 있어야 합니다. 아래 <<고장난 노드 제거>> 를 보세요.
+
+`vars.yml` 은 보존되므로 제거된 변수가 남아 있을 수 있습니다. 플레이북이 시작 단계에서
+어느 변수를 지워야 하는지 알려주고 중단하므로, 안내대로 지우고 다시 실행하세요.
+`containerd_root_path` 가 여기 해당합니다. 컨테이너 런타임 루트는 더 이상 설정할 수 없고,
+루트 디스크에서 떼어내려면 위의 `ephemeral_storage_device` 를 씁니다.
+
+=== 스냅샷 릴리스
+
+`-SNAPSHOT` 으로 끝나는 버전은 개발용 빌드입니다. 같은 이름으로 내용이 계속 바뀌므로
+두 노드가 같은 스냅샷을 보고해도 같은 것을 들고 있다고 볼 수 없고, 따라서 **업그레이드의
+출발점이 될 수 없습니다.**
+
+[cols="1,1,3"]
+|===
+|설치된 버전 |목표 버전 |판정
+
+|릴리스 |릴리스 |`upgradable_from` 에 있으면 허용
+|릴리스 |스냅샷 |허용. 릴리스를 내기 전 업그레이드 경로를 시험하는 용도
+|스냅샷 |동일 스냅샷 |허용. 업그레이드가 아니라 **재배포**이며 개발 중 몇 번이든 가능
+|스냅샷 |그 외 |**거부.** `reset.sh` 후 `setup.sh` 로 재구축
+|===
+
+릴리스를 낼 때는 `release.yml` 의 `version` 에서 `-SNAPSHOT` 을 떼고 커밋한 뒤 태그를 붙이고,
+다음 개발 버전으로 다시 올립니다. 이 문서의 `:version:` 속성은 사용자가 체크아웃할 태그를 가리키므로
+릴리스 버전까지만 올리고, 다음 개발 버전으로는 올리지 않습니다.
+
+[source,shell]
+----
+# 개발 중        version: "1.1.0-SNAPSHOT"    태그 없음
+# 릴리스         version: "1.1.0"   → commit → git tag v1.1.0
+# 다음 개발      version: "1.2.0-SNAPSHOT"
+----
+
+=== 제어 노드 인계
+
+제어 노드가 인벤토리의 어느 노드인지는 `inventory.yml`의 `control_node_ih`가 선언합니다.
+옮기는 것은 그 선언 한 줄과 SSH 키뿐입니다. `ki_cp_node` 는 모두 같은 `ansible` 디렉토리를
+들고 있으므로 옮겨 갈 노드에 이미 필요한 것이 다 있습니다.
+
+인계받을 `ki_cp_node`에서 `control_node_ih`를 그 노드로 바꾸고, 그 노드의 SSH 키를 관리 노드에 심으면 됩니다.
+SSH 설정 스크립트는 ansible 디렉토리에 함께 동기화되므로 소스 트리를 다시 받을 필요가 없습니다.
+
+[source,shell]
+----
+# 인계받을 ki_cp_node 에서
+vi /opt/k8s-installer/ansible/inventory.yml    # control_node_ih: node2
+sudo /opt/k8s-installer/ansible/configure-control-node-ssh.sh   # 출력된 안내에 따라 모든 관리 노드에 SSH 설정
+----
+
+선언이 실제로 플레이북을 실행하는 노드를 가리키지 않으면 모든 플레이북이 시작 단계에서 중단됩니다.
+
+=== 고장난 노드 제거
+
+접속이 되지 않는 노드는 `remove-node` 로 뺄 수 없습니다. 그 플레이북이 하는 일의 대부분이
+빼려는 노드 위에서 이뤄지기 때문입니다. 접속되지 않는 노드는 `inventory.yml` 의 `broken_node`
+그룹에 넣습니다.
+
+[source,yaml]
+----
+broken_node:
+  hosts:
+    node2: {}
+----
+
+그룹에 넣는 것만으로 *모든 플레이북이 그 노드를 건너뜁니다.* 노드 한 대가 죽었다고 해서
+나머지 노드에 대한 작업까지 막히지 않게 하는 것이 이 그룹의 목적이고, 클러스터에서 빼는 것은
+그 다음 문제입니다.
+
+[source,shell]
+----
+source /opt/k8s-installer/venv/bin/activate
+cd /opt/k8s-installer/ansible
+ansible-playbook -i inventory.yml playbooks/remove-broken-node.yml -e fenced=
+----
+
+살아있는 노드들에서만 동작합니다. 클러스터에서 노드와 etcd 멤버를 지우고, 남은 `ki_cp_node`
+들의 서비스를 그 노드가 없는 구성으로 다시 만듭니다. 노드 자체는 아무것도 정리하지 않습니다.
+정리할 대상에 닿을 수 없기 때문입니다.
+
+.전제 조건
+* *전원을 내리거나 네트워크에서 격리한 뒤* 실행해야 합니다. 접속이 안 될 뿐 살아있는 노드는
+  여전히 가상 IP를 주장하고 레지스트리를 서빙합니다. 플레이북은 접속 불가까지만 확인할 수
+  있으므로, 격리했다는 사실은 `-e fenced=` 로 사람이 선언합니다
+* 고장난 노드가 제어 노드라면 *다른 `ki_cp_node` 로 제어 노드를 먼저 인계*하세요
+* 고장난 노드가 `k8s_cp` 라면 *etcd 쿼럼이 남아 있어야 합니다.* 노드를 지우는 것도 etcd 멤버를
+  빼는 것도 쓰기 작업입니다. cp 노드가 2대인 구성에서는 1대만 잃어도 쿼럼이 깨지므로 이 경로로는
+  고칠 수 없고, etcd 복구가 먼저입니다
+* 남은 `ki_cp_node` 가 한 대뿐이라면 서비스를 다시 만드는 동안 가상 IP가 잠깐 사라집니다.
+  넘겨받을 상대가 없기 때문입니다
+
+[IMPORTANT]
+====
+*제거한 머신을 그대로 다시 켜지 마세요.* kubelet이 이 클러스터가 받아주는 인증서를 그대로
+들고 있어서 노드 등록을 계속 시도합니다. 워커였다면 성공해서 설치기가 모르는 노드로 되살아나고,
+컨트롤 플레인이었다면 kubelet이 자기 노드의 apiserver를 보는데 그 apiserver에 붙을 etcd가
+없어서 크래시루프만 돕니다. 어느 쪽이든 재투입은 OS 재설치부터입니다.
+====
+
+되돌릴 때는 노드를 재설치하고 `broken_node` 그룹에서 뺀 뒤 `setup-k8s-installer.yml`,
+`add-node.yml` 순으로 실행합니다. ki PKI는 살아있는 `ki_cp_node` 에서 복사됩니다.
+
+=== 클러스터 제거
+
+[source,shell]
+----
+source /opt/k8s-installer/venv/bin/activate
+cd /opt/k8s-installer/ansible
+ansible-playbook -i inventory.yml playbooks/reset-cluster.yml
+ansible-playbook -i inventory.yml playbooks/reset-k8s-installer.yml
+deactivate
+
+sudo /opt/k8s-installer/ansible/reset-control-node-ssh.sh   # 출력된 안내에 따라 모든 관리 노드의 SSH 설정 제거
+sudo /opt/k8s-installer/reset.sh
+----
 
 == 지원하는 운영체제
 
