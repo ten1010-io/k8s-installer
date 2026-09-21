@@ -6,6 +6,8 @@
   vars:
     playbook: "upgrade-cluster"
 
+- import_playbook: tasks/check-cluster-upgradable.yml
+
 - import_playbook: tasks/gather-facts.yml
 
 - import_playbook: tasks/validate-hostvars.yml
@@ -16,7 +18,7 @@
 
 - import_playbook: tasks/upgrade-k8s-nodes.yml
 
-- import_playbook: tasks/record-applied-vars.yml
+- import_playbook: tasks/record-applied-state.yml
 
 - import_playbook: tasks/reset-vars-file.yml
 

@@ -79,6 +79,12 @@ ki_etc_nodes_path: "{{ ki_etc_root_path }}/nodes.yml"
 # what is in it is what the node is actually running with. update-cluster.yml
 # compares vars.yml against this to work out what changed and what that needs
 ki_etc_applied_vars_path: "{{ ki_etc_root_path }}/applied-vars.yml"
+# The release this node was last built or updated with, written next to the
+# variables by the same play and for the same reason. ki_opt_release_path is the
+# release the installer on the node holds, which upgrade-k8s-installer.yml raises
+# before a cluster upgrade begins, so by the time the cluster is touched it no
+# longer says what the cluster was built with. This does
+ki_etc_applied_release_path: "{{ ki_etc_root_path }}/applied-release"
 
 # Where the ephemeral storage device of a node is mounted. /var/lib/kubelet,
 # /var/log/pods and /var/lib/containerd are fixed paths and one device can not be

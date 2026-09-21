@@ -1,0 +1,59 @@
+# Refuses a cluster upgrade that would start from somewhere undefined.
+#
+# An upgrade applies a delta: the release names what it changed since the
+# releases it can be upgraded from, and the playbooks carry the steps that delta
+# needs. That only means something if the release the cluster is on is known.
+#
+# A snapshot keeps its name while its content changes, so two clusters both
+# recording one are not known to hold the same thing and neither the
+# upgradable_from list nor the changed flags of a release describe a delta from
+# it. A cluster that records nothing at all was built before the record existed.
+# Either way there is no delta to apply, and a run that went ahead anyway would
+# be guessing at every step. See release.yml.
+#
+# The release of the installer is not the answer here. upgrade-k8s-installer.yml
+# raises it on every node before the cluster is touched, so by this point it says
+# where the cluster is going rather than where it is
+- hosts: all:!localhost:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    # Absent on a cluster built before this file was recorded, which is an answer
+    # of its own rather than a failure to read
+    - name: "Read file[\"{{ ki_etc_applied_release_path }}\"]"
+      shell: "sudo cat {{ ki_etc_applied_release_path }} 2>/dev/null || true"
+      register: applied_release_result
+
+    - name: "Set_fact variable[\"applied_release\"]"
+      set_fact:
+        applied_release: "{{ applied_release_result.stdout | trim }}"
+
+# Every node is reported rather than the first one that fails, so a cluster whose
+# nodes disagree is seen whole
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Check every node records the release its cluster was built with
+      fail:
+        msg: >-
+          Node["{{ item }}"] does not record the release it was built or updated with, so
+          there is no release for this upgrade to start from. A cluster built before that
+          record existed is a development cluster: reset it and set it up again on
+          release["{{ ki_release_version }}"]
+      when:
+        - allow_upgrading_from_snapshot is not defined
+        - hostvars[item]['applied_release'] | length == 0
+      with_items: "{{ groups['all'] | difference(['localhost']) | difference(ki_broken_nodes) }}"
+
+    - name: Check no node is on a snapshot
+      fail:
+        msg: >-
+          Node["{{ item }}"] is on release["{{ hostvars[item]['applied_release'] }}"], which is a
+          snapshot, so what it holds is not described by any release and the delta up to
+          release["{{ ki_release_version }}"] is undefined. A cluster that ran a snapshot is
+          rebuilt rather than upgraded: reset it and set it up again
+      when:
+        - allow_upgrading_from_snapshot is not defined
+        - hostvars[item]['applied_release'].endswith(ki_release_snapshot_suffix)
+      with_items: "{{ groups['all'] | difference(['localhost']) | difference(ki_broken_nodes) }}"

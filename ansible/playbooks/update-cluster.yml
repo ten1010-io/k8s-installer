@@ -20,6 +20,6 @@
 
 - import_playbook: tasks/apply-cluster-config-var-changes.yml
 
-- import_playbook: tasks/record-applied-vars.yml
+- import_playbook: tasks/record-applied-state.yml
 
 - import_playbook: tasks/reset-vars-file.yml

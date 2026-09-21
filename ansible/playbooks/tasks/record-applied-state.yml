@@ -1,6 +1,6 @@
 # Records what every node was built or updated with, as the last step of the
 # playbook that did it. Last on purpose: a run that failed half way through
-# leaves the file describing the state the node was actually left in, so the
+# leaves the files describing the state the node was actually left in, so the
 # next update sees the change it still has to apply rather than believing it was
 # already made
 - hosts: all:!localhost:!broken_node
@@ -23,4 +23,14 @@
           {% endif %}
           {% endfor %}
         dest: "{{ ki_etc_applied_vars_path }}"
+      become: yes
+
+    # The release that produced the state recorded above. A cluster upgrade reads
+    # it to learn where it is starting from, which nothing else on the node can
+    # answer: the release file under ki_opt_root_path is raised by
+    # upgrade-k8s-installer.yml before the cluster is touched at all
+    - name: "Record the release applied to this node in file[\"{{ ki_etc_applied_release_path }}\"]"
+      copy:
+        content: "{{ ki_release_version }}"
+        dest: "{{ ki_etc_applied_release_path }}"
       become: yes

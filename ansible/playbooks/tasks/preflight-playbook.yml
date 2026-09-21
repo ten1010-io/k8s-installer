@@ -21,6 +21,14 @@
         skip_resetting_vars_file: ""
       when: srvf is defined
 
+    # Development only. It lets upgrade-cluster.yml run against a cluster whose
+    # release says nothing about what it holds, which is every cluster this
+    # repository is tested on. See check-cluster-upgradable.yml
+    - name: Set_fact variable[\"allow_upgrading_from_snapshot\"]
+      set_fact:
+        allow_upgrading_from_snapshot: ""
+      when: aus is defined
+
     - when: playbook == "add-node" or playbook == "remove-node"
       block:
         - name: Validate variable[\"node\"]
