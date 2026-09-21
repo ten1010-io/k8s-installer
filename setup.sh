@@ -176,6 +176,15 @@ copy_installer() {
   rm -rf "$KI_OPT_SCRIPTS_PATH"
   cp -r "$SRC_SCRIPTS_PATH" "$KI_OPT_SCRIPTS_PATH"
 
+  # The mode a script arrives with is whatever git recorded it with, and a
+  # repository worked on from Windows records a new file as 644. Every one of
+  # these is run by its path rather than passed to bash, so one that lands
+  # without the bit stops the first playbook to reach it. Setting it on what was
+  # laid down, rather than on the files of the source tree, is what keeps the
+  # question from arising again. setup-k8s-installer.yml carries this tree to
+  # the other nodes with tar, which takes the mode with it
+  find "$KI_OPT_SCRIPTS_PATH" -name '*.sh' -exec chmod 755 {} +
+
   rm -rf "$KI_OPT_BUNDLE_PATH"
   tar xzf "$src_bundle_archive_path" -C "$KI_OPT_ROOT_PATH"
   require_directory_exists "$KI_OPT_BUNDLE_PATH"
@@ -198,8 +207,7 @@ copy_ansible() {
   rm -rf "$KI_OPT_ANSIBLE_PATH"
   cp -r "$SRC_ANSIBLE_PATH" "$KI_OPT_ANSIBLE_PATH"
 
-  chmod 755 "$KI_OPT_ANSIBLE_PATH"/configure-control-node-ssh.sh
-  chmod 755 "$KI_OPT_ANSIBLE_PATH"/reset-control-node-ssh.sh
+  find "$KI_OPT_ANSIBLE_PATH" -name '*.sh' -exec chmod 755 {} +
 
   return 0
 }
