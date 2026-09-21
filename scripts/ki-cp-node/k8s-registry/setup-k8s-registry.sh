@@ -132,7 +132,11 @@ main() {
 create_compose_yml_file() {
   local readonly_enabled=$1
 
-  $jinja2_cmd -D var_svc_root_path="$var_svc_root_path"               -D readonly_enabled="$readonly_enabled"               --format yaml               -o "$etc_svc_root_path""/compose.yml"               "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$vars_path"
+  $jinja2_cmd -D var_svc_root_path="$var_svc_root_path" \
+              -D readonly_enabled="$readonly_enabled" \
+              --format yaml \
+              -o "$etc_svc_root_path""/compose.yml" \
+              "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$vars_path"
 
   return 0
 }
@@ -165,8 +169,7 @@ wait_registry_ready() {
 push_images() {
   local layout
   local ref
-  for layout in $(find "$images_path" -name oci-layout -printf '%h
-' | sort); do
+  for layout in $(find "$images_path" -name oci-layout -printf '%h\n' | sort); do
     ref=${layout#"$images_path"/}
     msg "[INFO] Pushing image[\"$ref\"]"
     # Loopback, and the certificate of the registry is issued for its dns name
