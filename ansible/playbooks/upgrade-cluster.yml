@@ -6,9 +6,12 @@
   vars:
     playbook: "upgrade-cluster"
 
-- import_playbook: tasks/check-cluster-upgradable.yml
-
 - import_playbook: tasks/gather-facts.yml
+
+# After gather-facts, which is what works out which node the control plane is
+# asked from, and before upgrade-k8s-registry, which is the first thing here that
+# changes anything
+- import_playbook: tasks/check-cluster-upgradable.yml
 
 - import_playbook: tasks/validate-hostvars.yml
 
