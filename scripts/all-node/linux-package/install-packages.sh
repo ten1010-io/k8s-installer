@@ -117,7 +117,7 @@ main() {
 ubuntu2204_install() {
   require_packages_installable
 
-  export DEBIAN_FRONTEND=noninteractive
+  begin_apt
 
   if [[ $("$ki_opt_scripts_path/systemctl.sh" exists systemd-timesyncd) = "true" ]]; then
     apt remove -y --purge --allow-change-held-packages \
@@ -152,7 +152,7 @@ ubuntu2204_install() {
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/socat
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/k8s
 
-  export DEBIAN_FRONTEND=""
+  end_apt
 
   "$ki_opt_scripts_path/systemctl.sh" reload
 
@@ -164,7 +164,7 @@ ubuntu2204_install() {
 ubuntu2404_install() {
   require_packages_installable
 
-  export DEBIAN_FRONTEND=noninteractive
+  begin_apt
 
   if [[ $("$ki_opt_scripts_path/systemctl.sh" exists systemd-timesyncd) = "true" ]]; then
     apt remove -y --purge --allow-change-held-packages \
@@ -198,7 +198,7 @@ ubuntu2404_install() {
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/ethtool
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/k8s
 
-  export DEBIAN_FRONTEND=""
+  end_apt
 
   "$ki_opt_scripts_path/systemctl.sh" reload
 
@@ -306,6 +306,40 @@ require_packages_installable() {
 # playbook that sets each one up in its turn. An update finds them enabled and
 # running and leaves them exactly as they are: disabling them would stop
 # services that are serving, and restarting them is somebody else's job
+# Which services run and when is the installer's to decide, not the distribution's.
+#
+# needrestart hooks itself into apt as a DPkg::Post-Invoke and restarts every
+# daemon it finds running a binary that has been replaced. The first thing done
+# here is an apt remove, so the hook fires before a single package of the bundle
+# has been laid down, and on a second run it finds kubelet and containerd
+# already carrying new binaries from the first one. Measured on a node whose
+# upgrade was being repeated after a failure, it printed
+#
+#   Restarting services...
+#    systemctl restart containerd.service kubelet.service multipathd.service ...
+#
+# and the kubelet that came back died on --pod-infra-container-image, which
+# 1.35 removed and which /var/lib/kubelet/kubeadm-flags.env still named because
+# kubeadm had not run yet. The node went NotReady and the upgrade that was being
+# retried refused to start against it. See settle_units for the same hazard from
+# the other direction.
+#
+# Everything this installs is restarted by something that runs after it and
+# knows more, so there is nothing here for needrestart to be right about
+begin_apt() {
+  export DEBIAN_FRONTEND=noninteractive
+  export NEEDRESTART_SUSPEND=1
+
+  return 0
+}
+
+end_apt() {
+  export DEBIAN_FRONTEND=""
+  unset NEEDRESTART_SUSPEND
+
+  return 0
+}
+
 settle_units() {
   if [[ $update = "false" ]]; then
     "$ki_opt_scripts_path/systemctl.sh" disable kubelet
@@ -332,7 +366,7 @@ settle_units() {
   # picked up, so the control plane upgrade waited five minutes for a pod hash
   # that could not change and rolled itself back. "kubeadm upgrade node" is what
   # rewrites that file, which is why the old binary has to keep running until
-  # then
+  # then. begin_apt keeps needrestart from doing the same thing from outside
   return 0
 }
 
