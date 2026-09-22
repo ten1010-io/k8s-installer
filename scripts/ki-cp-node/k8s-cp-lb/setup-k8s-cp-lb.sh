@@ -124,6 +124,8 @@ main() {
   create_haproxy_cfg_file
   create_stats_password_file
 
+  validate_haproxy_cfg
+
   local haproxy_cfg_changed="false"
   [[ $(checksum_of "$svc_root_path/haproxy.cfg") != "$haproxy_cfg_before" ]] && haproxy_cfg_changed="true"
 
@@ -156,6 +158,27 @@ create_stats_password_file() {
     umask 077
     printf '%s\n' "$password" > "$stats_password_path"
   )
+
+  return 0
+}
+
+# Before anything is started or reloaded. A configuration haproxy refuses takes
+# the master down, the workers watch the master and exit with it, and the restart
+# policy of the compose file turns that into a crash loop. Nothing else would
+# catch it: apply-service-var-changes.yml runs this on every ki cp node without
+# serial, so a file that does not parse would take every load balancer of the
+# cluster at once, and keepalived can not move the vip to a node that is in the
+# same state. The directives this file carries are not all plain haproxy either -
+# the prometheus exporter is there only in a build that was made with USE_PROMEX
+#
+# run rather than exec, so that the first setup is covered as well as an update.
+# It takes the volumes and the environment of the service from the compose file,
+# and without --service-ports it publishes nothing, so it does not collide with
+# the container that is already running
+validate_haproxy_cfg() {
+  docker compose -f "$svc_root_path/compose.yml" run --rm --entrypoint haproxy haproxy \
+    -c -f /usr/local/etc/haproxy/haproxy.cfg ||
+    die "[ERROR] haproxy refused the rendered configuration. Nothing has been started or reloaded"
 
   return 0
 }
@@ -206,7 +229,14 @@ create_compose_yml_file() {
   $yq_cmd -i ".ki_cp_k8s_cp_lb_port = load(\"$vars_path\").ki_cp_k8s_cp_lb_port" "$tmp_file_path"
   $yq_cmd -i ".ki_cp_k8s_cp_lb_stats_port = load(\"$vars_path\").ki_cp_k8s_cp_lb_stats_port" "$tmp_file_path"
   $yq_cmd -i ".ki_cp_k8s_cp_lb_stats_admin_pw = load(\"$vars_path\").ki_cp_k8s_cp_lb_stats_admin_pw" "$tmp_file_path"
-  $yq_cmd -i ".lb_bind_ip = load(\"$vars_path\").internal_network_interfaces[0].ip" "$tmp_file_path"
+  # Never the vip. keepalived carries it as a secondary address on this same
+  # interface and it is inside the internal subnet, so the preflight finds it
+  # beside the node address on whichever node is holding it. Publishing the
+  # unauthenticated /metrics of the stats port there would put it on the one
+  # address the whole cluster routes to
+  local vip
+  vip=$($yq_cmd '.ki_cp_ha_mode_vip' < "$vars_path")
+  $yq_cmd -i ".lb_bind_ip = (load(\"$vars_path\").internal_network_interfaces | map(select(.ip != \"$vip\")) | .[0].ip)" "$tmp_file_path"
   $yq_cmd -i ".ki_cp_k8s_cp_lb_image = load(\"$vars_path\").ki_cp_k8s_cp_lb_image" "$tmp_file_path"
   $jinja2_cmd --format yaml -o "$svc_root_path""/compose.yml" "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$tmp_file_path"
   rm "$tmp_file_path"

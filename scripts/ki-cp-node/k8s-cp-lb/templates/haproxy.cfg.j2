@@ -81,6 +81,11 @@ backend backend
 frontend stats
     mode http
     bind 0.0.0.0:{{ ki_cp_k8s_cp_lb_stats_port }}
+    # The defaults carry a 30m client timeout for the apiserver watches, and this
+    # port now answers a path that takes no credentials. Without a request
+    # timeout of its own an unfinished request here holds a connection out of the
+    # process wide maxconn for half an hour
+    timeout http-request 10s
     # What keepalived asks to decide whether this node should keep the vip. It
     # answers while the load balancer is running and the connection is refused
     # once it is not, which is the whole of what the answer has to say. Ahead of
@@ -97,6 +102,21 @@ frontend stats
     # not resolve and kubeadm could never pull the image that creates the first
     # apiserver
     monitor-uri /lb-healthz
+    # What this load balancer knows about itself and its backends, in the format
+    # a prometheus scraper reads. The exporter is compiled into the official
+    # image (USE_PROMEX=1), so nothing new runs on the node for it
+    #
+    # On the stats port, and without the authentication the stats page carries.
+    # Both are traded knowingly: the port is reachable from the internal network
+    # and, since the bind above is 0.0.0.0 in a bridge container, from the other
+    # ki cp services on docker0 as well, and the password is minted per cluster
+    # so requiring it would hand every scraper a secret no two clusters share.
+    # What it gives up either way is the stats page's own numbers and not an api
+    # that can drop a backend. docs/impl-notes.adoc carries the reasoning
+    #
+    # An http-request rule runs before the stats applet below, so this path is
+    # answered here and every other one but /lb-healthz goes on to the page
+    http-request use-service prometheus-exporter if { path /metrics }
     stats enable
     stats uri /
     stats refresh 10s
