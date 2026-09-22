@@ -1,0 +1,13 @@
+# Works out the variables of the run and puts them on the nodes, which is what
+# every script the playbooks execute reads its input from.
+#
+# The step after begin-playbook.yml, except in the playbooks that have to get
+# something in before it: setup-cluster.yml and add-node.yml mount the ephemeral
+# storage first, because gather-facts.yml measures the filesystem it provides, and
+# remove-broken-node.yml checks the broken_node group first. reset-vars-file.yml
+# is what takes the files back off at the end of the run
+- import_playbook: gather-facts.yml
+
+- import_playbook: validate-hostvars.yml
+
+- import_playbook: setup-vars-file.yml

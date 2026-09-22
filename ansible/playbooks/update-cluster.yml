@@ -1,16 +1,8 @@
-- import_playbook: tasks/check-k8s-installer-setup.yml
-
-- import_playbook: tasks/sync-ansible.yml
-
-- import_playbook: tasks/preflight-playbook.yml
+- import_playbook: tasks/begin-playbook.yml
   vars:
     playbook: "update-cluster"
 
-- import_playbook: tasks/gather-facts.yml
-
-- import_playbook: tasks/validate-hostvars.yml
-
-- import_playbook: tasks/setup-vars-file.yml
+- import_playbook: tasks/prepare-vars.yml
 
 - import_playbook: tasks/diff-applied-vars.yml
 

@@ -1,0 +1,26 @@
+# Runs one of the scripts of the bundle on the managed nodes.
+#
+# Most steps of a playbook are exactly that and differ in nothing but the script
+# they name, so they import this file and pass the path instead of each carrying
+# its own copy of the same play
+#
+#   - import_playbook: tasks/run-all-node-script.yml
+#     vars:
+#       script: all-node/containerd/setup-containerd.sh
+#
+# The script runs on the node the playbook was pointed at, and on every node when
+# it was not pointed at one. Setting every_node runs it everywhere either way,
+# which is what a script whose result depends on the cluster as a whole needs: the
+# node being added or removed is not the only one whose file changes
+- hosts: all:!localhost:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: "Execute {{ script | basename }}"
+      shell: "sudo {{ ki_opt_scripts_path }}/{{ script }} {{ vars_path_arg }}"
+      when: >-
+        every_node | default(false)
+        or target_node is none
+        or inventory_hostname == target_node

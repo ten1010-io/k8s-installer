@@ -1,40 +1,60 @@
+# begin-playbook.yml is not used here. It syncs the ansible directory out to the
+# ki cp nodes, and a run whose whole purpose is to take the cluster apart has no
+# reason to push anything to the nodes first
 - import_playbook: tasks/check-k8s-installer-setup.yml
 
 - import_playbook: tasks/preflight-playbook.yml
   vars:
     playbook: "reset-cluster"
 
-- import_playbook: tasks/gather-facts.yml
+- import_playbook: tasks/prepare-vars.yml
 
-- import_playbook: tasks/validate-hostvars.yml
-
-- import_playbook: tasks/setup-vars-file.yml
-
-- import_playbook: tasks/check-node-state.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/check-node-state.sh
+    every_node: true
 
 - import_playbook: tasks/reset-k8s-cluster.yml
 
-- import_playbook: tasks/reset-ntp-client.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/ntp-client/reset-ntp-client.sh
 
-- import_playbook: tasks/reset-resolv-conf.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/resolv-conf/reset-resolv-conf.sh
 
 - import_playbook: tasks/reset-ki-cp.yml
 
-- import_playbook: tasks/reset-docker.yml
+- import_playbook: tasks/run-all-node-script-control-node-last.yml
+  vars:
+    script: all-node/docker/reset-docker.sh
 
-- import_playbook: tasks/reset-containerd.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/containerd/reset-containerd.sh
 
 - import_playbook: tasks/reset-ephemeral-storage.yml
 
-- import_playbook: tasks/uninstall-programs.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/linux-bin/uninstall-programs.sh
 
-- import_playbook: tasks/reset-crictl.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/crictl/reset-crictl.sh
 
-- import_playbook: tasks/reset-nfs-client.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/nfs-client/reset-nfs-client.sh
 
-- import_playbook: tasks/uninstall-packages.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/linux-package/uninstall-packages.sh
 
-- import_playbook: tasks/reset-ki-ca-crt.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/ki-ca-crt/reset-ki-ca-crt.sh
 
 - import_playbook: tasks/reset-pki.yml
 

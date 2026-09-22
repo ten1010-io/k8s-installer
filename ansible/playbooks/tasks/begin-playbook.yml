@@ -1,0 +1,16 @@
+# The opening every playbook that works on a deployed cluster shares: check that
+# the installer is on every node and that they all hold the same release, bring
+# the ansible directory of the ki cp nodes up to date with the one being run
+# from, and validate the arguments the playbook was given.
+#
+# The name of the playbook is passed straight through to preflight-playbook.yml,
+# which is where the arguments that belong to each one are validated
+#
+#   - import_playbook: tasks/begin-playbook.yml
+#     vars:
+#       playbook: "backup-etcd"
+- import_playbook: check-k8s-installer-setup.yml
+
+- import_playbook: sync-ansible.yml
+
+- import_playbook: preflight-playbook.yml

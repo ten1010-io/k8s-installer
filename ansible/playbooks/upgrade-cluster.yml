@@ -1,16 +1,14 @@
-- import_playbook: tasks/check-k8s-installer-setup.yml
-
-- import_playbook: tasks/sync-ansible.yml
-
-- import_playbook: tasks/preflight-playbook.yml
+- import_playbook: tasks/begin-playbook.yml
   vars:
     playbook: "upgrade-cluster"
 
+# The three plays of prepare-vars.yml are spelled out here rather than imported,
+# because the upgradability check has to sit in the middle of them: after
+# gather-facts, which is what works out which node the control plane is asked
+# from, and before upgrade-k8s-registry, which is the first thing here that
+# changes anything
 - import_playbook: tasks/gather-facts.yml
 
-# After gather-facts, which is what works out which node the control plane is
-# asked from, and before upgrade-k8s-registry, which is the first thing here that
-# changes anything
 - import_playbook: tasks/check-cluster-upgradable.yml
 
 - import_playbook: tasks/validate-hostvars.yml

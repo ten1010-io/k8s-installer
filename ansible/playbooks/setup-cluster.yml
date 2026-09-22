@@ -1,42 +1,56 @@
-- import_playbook: tasks/check-k8s-installer-setup.yml
-
-- import_playbook: tasks/sync-ansible.yml
-
-- import_playbook: tasks/preflight-playbook.yml
+- import_playbook: tasks/begin-playbook.yml
   vars:
     playbook: "setup-cluster"
 
+# Before prepare-vars.yml, whose gather-facts measures the filesystem this
+# provides. See tasks/setup-ephemeral-storage.yml
 - import_playbook: tasks/setup-ephemeral-storage.yml
 
-- import_playbook: tasks/gather-facts.yml
+- import_playbook: tasks/prepare-vars.yml
 
-- import_playbook: tasks/validate-hostvars.yml
-
-- import_playbook: tasks/setup-vars-file.yml
-
-- import_playbook: tasks/check-node-state.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/check-node-state.sh
+    every_node: true
 
 - import_playbook: tasks/init-pki.yml
 
 - import_playbook: tasks/setup-ki-ca-crt.yml
 
-- import_playbook: tasks/install-packages.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/linux-package/install-packages.sh
 
-- import_playbook: tasks/setup-nfs-client.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/nfs-client/setup-nfs-client.sh
 
-- import_playbook: tasks/setup-crictl.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/crictl/setup-crictl.sh
 
-- import_playbook: tasks/install-programs.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/linux-bin/install-programs.sh
 
-- import_playbook: tasks/setup-containerd.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/containerd/setup-containerd.sh
 
-- import_playbook: tasks/setup-docker.yml
+- import_playbook: tasks/run-all-node-script-control-node-last.yml
+  vars:
+    script: all-node/docker/setup-docker.sh
 
 - import_playbook: tasks/init-ki-cp.yml
 
-- import_playbook: tasks/setup-all-node-resolv-conf.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/resolv-conf/setup-resolv-conf.sh
+    every_node: true
 
-- import_playbook: tasks/setup-ntp-client.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/ntp-client/setup-ntp-client.sh
 
 - import_playbook: tasks/init-k8s-cluster.yml
 

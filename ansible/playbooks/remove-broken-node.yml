@@ -24,23 +24,18 @@
 #
 # What is left behind on purpose: nothing is uninstalled, because there is
 # nothing to uninstall it from
-- import_playbook: tasks/check-k8s-installer-setup.yml
-
-- import_playbook: tasks/sync-ansible.yml
-
-- import_playbook: tasks/preflight-playbook.yml
+- import_playbook: tasks/begin-playbook.yml
   vars:
     playbook: "remove-broken-node"
 
 - import_playbook: tasks/check-broken-node.yml
 
-- import_playbook: tasks/gather-facts.yml
+- import_playbook: tasks/prepare-vars.yml
 
-- import_playbook: tasks/validate-hostvars.yml
-
-- import_playbook: tasks/setup-vars-file.yml
-
-- import_playbook: tasks/check-node-state.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/check-node-state.sh
+    every_node: true
 
 # Before the ki cp services are reconfigured rather than after. Both of these
 # need a working control plane, and reconfiguring the services restarts the load
@@ -52,7 +47,10 @@
 - import_playbook: tasks/remove-ki-cp-node.yml
   when: target_node in groups['ki_cp_node']
 
-- import_playbook: tasks/setup-all-node-resolv-conf.yml
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/resolv-conf/setup-resolv-conf.sh
+    every_node: true
 
 - import_playbook: tasks/reset-vars-file.yml
 
