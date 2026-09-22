@@ -118,6 +118,51 @@ binaries:
 없습니다. 도구마다 묻는 법이 달라서, `binaries` 에 이름을 더하는 것은 `install-programs.sh`
 에 그 도구를 어떻게 묻는지 알려 주는 일이기도 합니다. 모르는 이름은 넘어가지 않고 멈춥니다.
 
+==== 이 릴리스가 담고 있는 것
+
+`release.yml` 이 말하는 그대로입니다. 그쪽이 원본이고 이 표는 읽기 편하라고 옮겨 둔 것이므로,
+어긋나면 `release.yml` 이 맞습니다. 쿠버네티스는 위의 `k8s_versions` 를 보세요.
+
+두 곳이 어긋나지 않는지는 `tools/check-release-docs.sh` 가 봅니다. 릴리스를 자르기 전에
+돌리세요 — 무엇이 어긋났는지 짚어 주고 실패합니다.
+
+// check-release-docs reads the table below and compares it against packages of
+// release.yml. Keep this marker if you move the table
+// check-release-docs: packages
+.패키지
+[cols="2,1"]
+|===
+|이름 |버전
+
+|containerd.io |2.3.5
+|docker-ce |29.8.1
+|docker-ce-cli |29.8.1
+|docker-ce-rootless-extras |29.8.1
+|docker-buildx-plugin |0.37.1
+|docker-compose-plugin |5.5.1
+|libnvidia-container1 |1.20.1
+|libnvidia-container-tools |1.20.1
+|nvidia-container-toolkit |1.20.1
+|nvidia-container-toolkit-base |1.20.1
+|===
+
+// check-release-docs: binaries
+.바이너리 (`bundle/bin`)
+[cols="2,1"]
+|===
+|이름 |버전
+
+|helm |4.3.0
+|etcdctl |3.6.14
+|etcdutl |3.6.14
+|nerdctl |2.4.0
+|yq |4.53.6
+|crane |0.22.1
+|===
+
+`nftables` 처럼 번들이 들고는 있지만 여기 없는 것도 있습니다. 배포판이 주는 것은 선언하지
+않는다는 위의 기준 그대로이고, 그것들의 버전은 OS 마다 다릅니다.
+
 == 시작하기
 
 클러스터를 처음 세울 때 한 번 하는 일들입니다. 이미 서 있는 클러스터에 하는 일은
