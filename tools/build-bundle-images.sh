@@ -76,6 +76,7 @@ YQ_CMD="$BUNDLE_PATH"/bin/yq
 CRANE_CMD="$BUNDLE_PATH"/bin/crane
 
 CONSTANT_VARS_PATH="$KI_ROOT_PATH"/ansible/group_vars/all/constant-vars.yml
+RELEASE_META_PATH="$KI_ROOT_PATH"/release.yml
 SERVICE_IMAGES_PATH="$BUNDLE_PATH"/ki-cp-service-images
 
 # The one registry the bundle carries. Named here rather than found by looking
@@ -87,6 +88,7 @@ K8S_REGISTRY_IMAGES_YML_PATH="$KI_ROOT_PATH/$K8S_REGISTRY_NAME-images.yml"
 
 main() {
   require_bundle
+  require_version_matches_window
 
   build_service_images
   build_registry_images
@@ -103,8 +105,36 @@ require_bundle() {
   [[ ! -x $CRANE_CMD ]] && die "[ERROR] File[\"$CRANE_CMD\"] not exists or is not executable"
   [[ ! -f $CONSTANT_VARS_PATH ]] && die "[ERROR] No such file or directory of which path is \"$CONSTANT_VARS_PATH\""
   [[ ! -f $K8S_REGISTRY_IMAGES_YML_PATH ]] && die "[ERROR] No such file or directory of which path is \"$K8S_REGISTRY_IMAGES_YML_PATH\""
+  [[ ! -f $RELEASE_META_PATH ]] && die "[ERROR] No such file or directory of which path is \"$RELEASE_META_PATH\""
 
   return 0
+}
+
+# The minor of the version is the highest minor of the window, by the definition
+# of the scheme rather than by convention: the number exists so that what a
+# release can run is readable without a table. A release whose version and window
+# disagree is one whose number says something untrue, and nothing downstream can
+# work that out. Caught while the bundle is built, which is the last point at
+# which the two are still being decided. See release.yml
+require_version_matches_window() {
+  local version
+  version=$($YQ_CMD '.version' < "$RELEASE_META_PATH")
+  [[ -z $version || $version = "null" ]] && die "[ERROR] File[\"$RELEASE_META_PATH\"] has no version"
+
+  # 1.36.1-SNAPSHOT -> 1.36
+  local version_minor="${version%%-*}"
+  version_minor="${version_minor%.*}"
+
+  local top
+  top=$(get_k8s_minor_versions | sort -t. -k1,1n -k2,2n | tail -1)
+  [[ -z $top ]] && die "[ERROR] File[\"$RELEASE_META_PATH\"] declares no kubernetes versions"
+
+  [[ $version_minor = "$top" ]] && return 0
+
+  msg "[ERROR] Release[\"$version\"] and the window it declares disagree"
+  msg "[ERROR]   the version says kubernetes[\"$version_minor\"]"
+  msg "[ERROR]   the highest minor of k8s_versions is kubernetes[\"$top\"]"
+  die "[ERROR] The minor of the version is the highest minor the release carries. Fix whichever of the two is wrong"
 }
 
 # The ki cp services are run by docker, which loads them from a tar rather than
@@ -187,21 +217,49 @@ get_svc_name() {
 # to preserve the digest of the image it was given, which a docker archive does
 # not. These are oci layouts, one per image, because crane refuses to push a
 # layout holding more than one entry to a single reference
+# One directory per kubernetes minor the release carries, because a node is
+# given the images of the minor its cluster runs and the registry is filled from
+# that directory alone. release.yml decides which minors those are, so a minor
+# in the window with no images declared for it is a failed build rather than a
+# bundle that is quietly missing half of what a cluster will ask for
 build_registry_images() {
+  local output_root
+  output_root="$BUNDLE_PATH/$K8S_REGISTRY_NAME-images"
+
+  rm -rf "$output_root"
+
+  local minor
+  for minor in $(get_k8s_minor_versions); do
+    build_registry_images_of_minor "$minor" "$output_root/$minor"
+  done
+
+  return 0
+}
+
+get_k8s_minor_versions() {
+  $YQ_CMD '.k8s_versions | keys | .[]' < "$RELEASE_META_PATH"
+
+  return 0
+}
+
+build_registry_images_of_minor() {
+  local minor=$1
+  local output_path=$2
+
   local yml="$K8S_REGISTRY_IMAGES_YML_PATH"
 
-  local output_path
-  output_path="$BUNDLE_PATH/$K8S_REGISTRY_NAME-images"
+  msg "[INFO] Building the images of the registry[\"$K8S_REGISTRY_NAME\"] for kubernetes[\"$minor\"]"
 
-  msg "[INFO] Building the images of the registry[\"$K8S_REGISTRY_NAME\"]"
-
-  rm -rf "$output_path"
   mkdir -p "$output_path"
 
   local images
   local mappings
-  images=$($YQ_CMD -o json '.images' < "$yml")
-  mappings=$($YQ_CMD -o json '.mappings // []' < "$yml")
+  images=$($YQ_CMD -o json ".[\"$minor\"].images" < "$yml")
+  mappings=$($YQ_CMD -o json ".[\"$minor\"].mappings // []" < "$yml")
+  [[ -z $images || $images = "null" ]] &&
+    die "[ERROR] File[\"$yml\"] declares no images for kubernetes[\"$minor\"], which release.yml says this release carries. Ask the kubeadm of that minor for them. See the comment at the top of that file"
+
+  require_declared_pause "$minor" "$images"
 
   local full_name
   local repo_and_tag
@@ -212,14 +270,43 @@ build_registry_images() {
     [[ -z $repo_and_tag ]] &&
       die "[ERROR] Invalid image name[\"$full_name\"]"
 
-    # The path under the output directory is the reference the image is pushed
-    # to, so nothing else has to carry the mapping from a file to a reference
+    # The path under the directory of the minor is the reference the image is
+    # pushed to, so nothing else has to carry the mapping from a file to a
+    # reference
     msg "[INFO]   $repo_and_tag  <-  $full_name"
     mkdir -p "$(dirname "$output_path/$repo_and_tag")"
     "$CRANE_CMD" pull --platform "$platform" --format oci --annotate-ref "$full_name" "$output_path/$repo_and_tag"
   done
 
   return 0
+}
+
+# The nodes are told which sandbox image to pull by k8s_versions of release.yml,
+# and the registry is filled from the list here. Those are two files, so they can
+# disagree, and a node whose containerd asks for a pause the registry does not
+# hold is a node where nothing starts at all. Compared while the bundle is built,
+# which is the one moment both are in hand
+require_declared_pause() {
+  local minor=$1
+  local images=$2
+
+  local in_list
+  in_list=$($YQ_CMD --null-input "$images | map(select(test(\"/pause:\"))) | .[0] // \"\"")
+  in_list=${in_list##*:}
+  [[ -z $in_list ]] &&
+    die "[ERROR] File[\"$K8S_REGISTRY_IMAGES_YML_PATH\"] declares no pause image for kubernetes[\"$minor\"]. kubeadm asks for one, so the list is incomplete"
+
+  local declared
+  declared=$($YQ_CMD ".k8s_versions[\"$minor\"].pause" < "$RELEASE_META_PATH")
+  [[ -z $declared || $declared = "null" ]] &&
+    die "[ERROR] File[\"$RELEASE_META_PATH\"] declares no pause for kubernetes[\"$minor\"]. The nodes read it from there and never from the image list"
+
+  [[ $declared = "$in_list" ]] && return 0
+
+  msg "[ERROR] The pause of kubernetes[\"$minor\"] is declared twice and the two disagree"
+  msg "[ERROR]   release.yml:                   $declared"
+  msg "[ERROR]   $K8S_REGISTRY_NAME-images.yml: $in_list"
+  die "[ERROR] The registry would be filled with one and the nodes told to pull the other. Take the one the kubeadm of that minor asks for"
 }
 
 get_repo_and_tag_from_mappings() {

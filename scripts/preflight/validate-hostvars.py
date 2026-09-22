@@ -12,6 +12,7 @@ from pydantic import BaseModel, ValidationError, StringConstraints, ConfigDict, 
     PositiveInt
 
 FQDN_PATTERN = r"^((?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,}$"
+K8S_MINOR_VERSION_PATTERN = r"^[0-9]+\.[0-9]+$"
 VALIDITY_PERIOD_PATTERN = r"^[0-9]+h$"
 STORAGE_SIZE_PATTERN = r"^[0-9]+[EPTGMK]i$"
 CPU_QUANTITY_PATTERN = r"^([0-9]+m|[0-9]+(\.[0-9]+)?)$"
@@ -40,6 +41,7 @@ def main():
     validate_ki_cp_ha_mode_vip(hostvars_errors, hostvars)
     validate_internal_network_subnets(hostvars_errors, hostvars)
     validate_kubelet_reservations(hostvars_errors, hostvars)
+    validate_k8s_minor_version(hostvars_errors, hostvars)
 
     if len(hostvars_errors) > 0:
         print("[ERROR] Invalid hostvars", file=sys.stderr)
@@ -298,6 +300,70 @@ def validate_internal_network_subnets(hostvars_errors: List[HostvarsError], host
             hostvars_errors.append(error)
 
 
+def validate_k8s_minor_version(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects a kubernetes minor that this release does not carry.
+
+    The minor is the choice of whoever runs the cluster and the patch of it
+    belongs to the release, so k8s_version is read out of the k8s_versions of
+    release.yml rather than set anywhere. A minor that is no key there leaves
+    k8s_version empty, and everything downstream would be building a cluster of
+    no particular version: kubeadm asked for nothing, packages looked for under
+    a bundle directory that does not exist. Saying which minors the release
+    holds answers all of it at once.
+
+    An upgrade keeps the vars.yml of the user, so this is also what a cluster
+    sitting below the window of a new release runs into. That cluster reaches
+    the bottom of the window on the release it is already on, and is upgraded
+    after
+    """
+    lo_hostvars = hostvars["localhost"]
+    k8s_minor_version = lo_hostvars.get("k8s_minor_version")
+    k8s_versions = lo_hostvars.get("ki_release_k8s_versions")
+    # Nothing to say without the release metadata, which is read from the
+    # installer directory of the control node and not from any of this
+    if not k8s_versions:
+        return
+
+    carried = ", ".join(sorted(k8s_versions, reverse=True))
+    release_version = lo_hostvars.get("ki_release_version")
+
+    if k8s_minor_version is None:
+        hostvars_errors.append(HostvarsError(
+            "localhost",
+            ("k8s_minor_version",),
+            str(k8s_minor_version),
+            f"Variable[\"k8s_minor_version\"] of vars.yml is not set, so nothing says which"
+            f" kubernetes minor this cluster runs. Release[\"{release_version}\"] carries"
+            f" {carried}. A cluster that already exists takes the one it is running, which"
+            f" \"kubectl version\" prints"))
+        return
+
+    if k8s_minor_version in k8s_versions:
+        # Carried but not described. The release author left a field out, and
+        # every one of them is something a node is built or configured with
+        entry = k8s_versions[k8s_minor_version] or {}
+        missing = [f for f in ("kubernetes", "pause") if not entry.get(f)]
+        if missing:
+            hostvars_errors.append(HostvarsError(
+                "localhost",
+                ("k8s_minor_version",),
+                str(k8s_minor_version),
+                f"Release[\"{release_version}\"] carries kubernetes[\"{k8s_minor_version}\"] but says"
+                f" nothing about its {' and '.join(missing)}. Every field of an entry of"
+                f" k8s_versions in release.yml is something a node is built with, so the"
+                f" release is incomplete rather than the cluster misconfigured"))
+        return
+
+    error = HostvarsError(
+        "localhost",
+        ("k8s_minor_version",),
+        str(k8s_minor_version),
+        f"Release[\"{release_version}\"] does not carry"
+        f" kubernetes[\"{k8s_minor_version}\"]. It carries {carried}."
+        f" A cluster below that window is raised to the lowest minor of it on the"
+        f" release it is already on, and upgraded to this one after")
+    hostvars_errors.append(error)
+
 def validate_kubelet_reservations(hostvars_errors: List[HostvarsError], hostvars):
     """Validates the values calculated by create-kubelet-reservations.py.
 
@@ -387,6 +453,12 @@ class VarsModel(BaseModel):
         ]
     ]
 
+    # Optional to the model and required all the same. An upgrade keeps the
+    # vars.yml of the user, so the release that adds this variable meets clusters
+    # whose file has no line for it, and "Field required" is not an instruction.
+    # validate_k8s_minor_version says what to write instead
+    k8s_minor_version: Optional[
+        Annotated[str, StringConstraints(pattern=K8S_MINOR_VERSION_PATTERN)]] = None
     k8s_certificate_validity_period: Annotated[str, StringConstraints(pattern=VALIDITY_PERIOD_PATTERN)]
 
     # Explicit overrides. None means the value is calculated from the resources

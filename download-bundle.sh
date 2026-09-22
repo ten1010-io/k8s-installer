@@ -65,7 +65,6 @@ KI_ROOT_PATH=$SCRIPT_DIR_PATH
 RELEASE_META_PATH="$KI_ROOT_PATH"/release.yml
 
 version=""
-bundle_version=""
 bundle_archive_path=""
 download_url=""
 
@@ -77,9 +76,8 @@ main() {
   version=$(grep -oP '^version: "\K[^"]+' < "$RELEASE_META_PATH")
   [[ -z $version ]] && die "[ERROR] File[\"$RELEASE_META_PATH\"] has no version"
 
-  bundle_version=$(get_bundle_version "$version")
-  bundle_archive_path="$KI_ROOT_PATH/bundle-$bundle_version.tgz"
-  download_url="$DOWNLOAD_BASE_URL/bundle-$bundle_version.tgz"
+  bundle_archive_path="$KI_ROOT_PATH/bundle-$version.tgz"
+  download_url="$DOWNLOAD_BASE_URL/bundle-$version.tgz"
 
   [[ -e $bundle_archive_path ]] && die "[ERROR] File[\"$bundle_archive_path\"] already exists"
 
@@ -91,23 +89,6 @@ main() {
   download_bundle_tgz
 
   msg "[INFO] Bundle saved to \"$bundle_archive_path\""
-}
-
-# A patch release exists to fix what is in this repository, and republishing a
-# gigabyte of packages and images to carry a corrected shell script is waste. The
-# releases of one minor line therefore share one bundle, which in turn means the
-# bundle of a minor line can never change: anything that needs a different package
-# or image is a minor bump rather than a patch. See release.yml
-#
-# Snapshots are no exception. A patch being developed reads the bundle its line was
-# released with and has nothing to publish, and a minor being developed reads a line
-# that is not in the field yet
-get_bundle_version() {
-  local version=$1
-
-  echo "${version%.*}.x"
-
-  return 0
 }
 
 has_command() {

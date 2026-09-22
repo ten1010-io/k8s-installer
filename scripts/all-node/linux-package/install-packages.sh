@@ -83,6 +83,9 @@ ki_opt_venv_path=""
 
 yq_cmd=""
 
+k8s_minor_version=""
+k8s_packages_path=""
+
 os_info=""
 os_distribution=""
 os_major_version=""
@@ -95,6 +98,8 @@ main() {
   require_directory_exists "$ki_opt_root_path"
   validate_ki_opt_directory
   get_os_version
+
+  k8s_minor_version=$($yq_cmd '.k8s_minor_version' < "$vars_path")
 
   if [[ $os_distribution = "ubuntu" && $os_major_version = "22.04" && $os_minor_version -le "$UBUNTU2204_SUPPORTED_MINOR_VERSION" ]]; then
     ubuntu2204_install
@@ -116,6 +121,7 @@ main() {
 
 ubuntu2204_install() {
   require_packages_installable
+  set_k8s_packages_path ubuntu22.04
 
   begin_apt
 
@@ -150,7 +156,7 @@ ubuntu2204_install() {
 
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/ethtool
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/socat
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/k8s
+  dpkg -R -i "$k8s_packages_path"
 
   end_apt
 
@@ -163,6 +169,7 @@ ubuntu2204_install() {
 
 ubuntu2404_install() {
   require_packages_installable
+  set_k8s_packages_path ubuntu24.04
 
   begin_apt
 
@@ -196,7 +203,7 @@ ubuntu2404_install() {
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/nvidia-container-toolkit
 
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/ethtool
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/k8s
+  dpkg -R -i "$k8s_packages_path"
 
   end_apt
 
@@ -209,6 +216,7 @@ ubuntu2404_install() {
 
 rhel8_install() {
   require_packages_installable
+  set_k8s_packages_path rhel8
 
   [[ $(getenforce) != "Disabled" ]] && setenforce 0
 
@@ -269,11 +277,25 @@ rhel8_install() {
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libbpf/*.rpm
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/iproute/*.rpm
   rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/socat/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/k8s/*.rpm
+  rpm --force -Uvh --oldpackage --replacepkgs "$k8s_packages_path"/*.rpm
 
   "$ki_opt_scripts_path/systemctl.sh" reload
 
   settle_units
+
+  return 0
+}
+
+# The packages of kubernetes sit one directory below the rest, under the name of
+# the minor they are, because the bundle carries every minor the release supports
+# and this node may only be given the one the cluster runs. Handing dpkg the
+# directory above would hand it three kubelets
+set_k8s_packages_path() {
+  local os_dir=$1
+
+  k8s_packages_path="$ki_opt_bundle_path/linux-packages/$os_dir/k8s/$k8s_minor_version"
+  [[ ! -d $k8s_packages_path ]] &&
+    die "[ERROR] No such directory of which path is \"$k8s_packages_path\". The bundle of this release does not carry the packages of kubernetes[\"$k8s_minor_version\"]"
 
   return 0
 }

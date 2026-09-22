@@ -86,6 +86,7 @@ crane_cmd=""
 ki_var_root_path=""
 ki_etc_services_path=""
 ki_cp_k8s_registry_port=""
+k8s_minor_version=""
 
 etc_svc_root_path=""
 var_svc_root_path=""
@@ -102,10 +103,15 @@ main() {
   ki_var_root_path=$($yq_cmd '.ki_var_root_path' < "$vars_path")
   ki_etc_services_path=$($yq_cmd '.ki_etc_services_path' < "$vars_path")
   ki_cp_k8s_registry_port=$($yq_cmd '.ki_cp_k8s_registry_port' < "$vars_path")
+  k8s_minor_version=$($yq_cmd '.k8s_minor_version' < "$vars_path")
 
   etc_svc_root_path="$ki_etc_services_path"/$SVC_NAME
   var_svc_root_path="$ki_var_root_path"/$SVC_NAME
-  images_path="$ki_opt_bundle_path"/$SVC_NAME-images
+  # Below the minor rather than above it. The bundle holds the images of every
+  # minor the release supports, one directory each, and the path of a layout
+  # under this one is the reference it is pushed to, so the minor has to be part
+  # of where the walk starts and not something it walks through
+  images_path="$ki_opt_bundle_path"/$SVC_NAME-images/$k8s_minor_version
   pushed_images_path="$var_svc_root_path"/pushed-images
   [[ $update = "false" ]] && require_not_setup $SVC_NAME
   require_directory_exists "$images_path"

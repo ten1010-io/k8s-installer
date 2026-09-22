@@ -63,9 +63,10 @@
 # The kubernetes version the cluster records, asked of the node that would be the
 # first one upgraded. Which release may upgrade to which is declared once, by
 # upgradable_from in release.yml, and nothing here second guesses it. What is
-# checked is the thing kubeadm enforces underneath that declaration, so that a
-# release cut with the wrong upgradable_from is refused rather than discovered
-# half way through
+# checked is the two things underneath that declaration: the minor the cluster is
+# being taken to has to be one this release carries, and the step has to be one
+# kubeadm makes. Either way the answer is available here, before the registry is
+# filled and before the first node leaves the load balancer
 - hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
@@ -87,12 +88,12 @@
           set_fact:
             cluster_k8s_version_result: null
 
-# What kubeadm allows is one minor at a time and never backwards. Reaching that
+# What kubeadm allows is one minor at a time and never backwards, and what this
+# release can hand a node is one of the minors its bundle carries. Reaching either
 # answer with the node already drained, its packages replaced and its services
-# written again is the worst place to find it: the run stops with that node
-# holding the new release against a cluster on the old one. The same answer is
-# available here, before the registry is filled and before the first node is
-# taken out of the load balancer
+# written again is the worst place to find it: the run stops with that node holding
+# the new release against a cluster on the old one. Both are available here, before
+# the registry is filled and before the first node is taken out of the load balancer
 - hosts: localhost
   gather_facts: false
   any_errors_fatal: true
@@ -102,6 +103,11 @@
     cluster_minor: "{{ (cluster_version | replace('v', '')).split('.')[1] }}"
     release_major: "{{ (k8s_version | replace('v', '')).split('.')[0] }}"
     release_minor: "{{ (k8s_version | replace('v', '')).split('.')[1] }}"
+    # The window of the release, read off the keys rather than off k8s_version,
+    # which is empty when the minor asked for is not one of them
+    window_minors: "{{ ki_release_k8s_versions | list | join(', ') }}"
+    window_major: "{{ (ki_release_k8s_versions | list | first).split('.')[0] }}"
+    window_floor_minor: "{{ ki_release_k8s_versions | list | map('regex_replace', '^[0-9]+[.]', '') | map('int') | min }}"
   tasks:
     # Answered by every cluster that is running, so an empty one is a cluster
     # that could not be asked rather than a cluster without a version
@@ -114,13 +120,44 @@
           control plane is up and run this playbook again
       when: cluster_version | length == 0
 
+    # k8s_version is the patch this release pins for the minor vars.yml asked
+    # for, so an empty one means it pins none: the minor is outside the window.
+    # validate-hostvars.py says the same thing, and says it later than this
+    - name: Check the release carries the kubernetes minor that was asked for
+      fail:
+        msg: >-
+          Release["{{ ki_release_version }}"] does not carry
+          kubernetes["{{ k8s_minor_version }}"], which variable["k8s_minor_version"] of
+          vars.yml asks for. It carries {{ window_minors }}
+      when: k8s_version | length == 0
+
+    # A release carries three minors at most, so a cluster can sit below all of
+    # them. Told apart from the one minor check below because the answer is a
+    # different one: nothing is wrong with upgradable_from, and no minor of this
+    # release is reachable from where the cluster is. It moves up on the release
+    # it is on now, which is the one that still carries the minor it needs
+    - name: Check the cluster is not below the kubernetes window of the release
+      fail:
+        msg: >-
+          The cluster records kubernetes["{{ cluster_version }}"] and
+          release["{{ ki_release_version }}"] carries {{ window_minors }}, none of which is
+          one minor above it. Raise the cluster to
+          kubernetes["{{ window_major }}.{{ window_floor_minor | int - 1 }}"] or higher on the
+          release it is on now, which is the one that still carries the minors in between,
+          and upgrade to this one after
+      when:
+        - cluster_version | length > 0
+        - cluster_major | int == window_major | int
+        - cluster_minor | int + 1 < window_floor_minor | int
+
     - name: Check the release is not older than the cluster
       fail:
         msg: >-
           The cluster records kubernetes["{{ cluster_version }}"] and
-          release["{{ ki_release_version }}"] holds kubernetes["{{ k8s_version }}"], which is
-          older. kubeadm does not downgrade a cluster, and neither does this. Upgrade to a
-          release holding kubernetes["{{ cluster_version }}"] or newer
+          release["{{ ki_release_version }}"] was asked for kubernetes["{{ k8s_version }}"],
+          which is older. kubeadm does not downgrade a cluster, and neither does this. Ask
+          for kubernetes["{{ cluster_version }}"] or newer with
+          variable["k8s_minor_version"] of vars.yml
       when:
         - cluster_version | length > 0
         - k8s_version is version(cluster_version, '<')
@@ -129,10 +166,11 @@
       fail:
         msg: >-
           The cluster records kubernetes["{{ cluster_version }}"] and
-          release["{{ ki_release_version }}"] holds kubernetes["{{ k8s_version }}"], which is
-          further ahead than the one minor kubeadm upgrades at a time, so this has to go
-          through the releases in between. Check upgradable_from of release.yml: it lists a
-          release this one can not actually be reached from
+          release["{{ ki_release_version }}"] was asked for kubernetes["{{ k8s_version }}"],
+          which is further ahead than the one minor kubeadm upgrades at a time. Set
+          variable["k8s_minor_version"] of vars.yml to
+          kubernetes["{{ cluster_major }}.{{ cluster_minor | int + 1 }}"], and move up again
+          once the cluster records it
       when:
         - cluster_version | length > 0
         - release_major | int != cluster_major | int or release_minor | int > cluster_minor | int + 1

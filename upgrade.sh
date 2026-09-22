@@ -94,7 +94,7 @@ main() {
   [[ -z $version ]] && die "[ERROR] File[\"$SRC_RELEASE_META_PATH\"] has no version"
   installed_version=$(<"$KI_OPT_RELEASE_PATH")
 
-  src_bundle_archive_path="$SCRIPT_DIR_PATH/bundle-$(get_bundle_version "$version").tgz"
+  src_bundle_archive_path="$SCRIPT_DIR_PATH/bundle-$version.tgz"
   require_bundle_archive
   require_upgradable
 
@@ -184,22 +184,9 @@ require_upgradable() {
   die "[ERROR] Releases that it can be upgraded from are $upgradable_from"
 }
 
-# A patch release exists to fix what is in this repository, and republishing a
-# gigabyte of packages and images to carry a corrected shell script is waste. The
-# releases of one minor line therefore share one bundle, which in turn means the
-# bundle of a minor line can never change: anything that needs a different package
-# or image is a minor bump rather than a patch. See release.yml
-get_bundle_version() {
-  local version=$1
-
-  echo "${version%.*}.x"
-
-  return 0
-}
-
-# The bundle is expected as the archive it is published as, named after the minor
-# line it belongs to. Two releases of one line share an archive, so an upgrade
-# within a line finds the one that is already there
+# The bundle is expected as the archive it is published as, named after the whole
+# release version. Every release has one of its own, so an upgrade needs the
+# bundle of the release being moved to and not the one already unpacked
 require_bundle_archive() {
   [[ ! -e $src_bundle_archive_path ]] &&
     die "[ERROR] File[\"$src_bundle_archive_path\"] not exists. execute \"download-bundle.sh\", or place the bundle of this release there"

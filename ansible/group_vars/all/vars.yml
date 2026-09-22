@@ -35,6 +35,15 @@ ki_cp_ntp_server_upstream_servers:
   - "time1.google.com"
   - "time2.google.com"
 
+# The kubernetes minor this cluster runs. It has to be one the release carries:
+# release.yml lists them under k8s_versions, and the patch of that minor is the
+# release to pin rather than this file to choose.
+#
+# Left where it is, a release upgrade keeps the cluster on this minor and moves
+# it only to the patch the new release pins. Raised by one, upgrade-cluster.yml
+# takes the cluster up a minor, which is as far as kubeadm goes at a time
+k8s_minor_version: "1.36"
+
 k8s_certificate_validity_period: "26280h" # 26280h = 3 year
 
 # How many etcd snapshots each k8s cp node keeps. The oldest over this are

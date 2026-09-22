@@ -1,14 +1,34 @@
 # Release metadata of this source tree.
 #
 # A release pins every component the installer deploys, so a cluster is described
-# by this one version rather than by a combination of component versions. setup.sh
-# places this file in the installer directory, and setup-k8s-installer.yml stamps
-# the version onto every managed node once the deployment succeeds.
+# by this release and the kubernetes minor it was told to run rather than by a
+# combination of component versions. setup.sh places this file in the installer
+# directory, and setup-k8s-installer.yml stamps the version onto every managed
+# node once the deployment succeeds.
+#
+# *** the version is the kubernetes version this release was cut around ***
+#
+#   major  the kubernetes major. It moves when kubernetes moves and not before
+#   minor  the highest kubernetes minor of k8s_versions below. 1.36.x is the
+#          release whose window tops out at kubernetes 1.36
+#   patch  everything else: a fix to what is in this repository, a different
+#          package or image, a different pinned kubernetes patch, a minor added
+#          to or dropped from the window while the top of it stays put
+#
+# So the version says which kubernetes a cluster can run without a table to look
+# it up in, and that is the whole reason it is spelled this way.
+#
+# What it does not say is anything about the installer itself. A release that
+# renames a variable of vars.yml or adds a group to inventory.yml is a patch like
+# any other. Nothing is lost by that: upgradable_from below is what decides
+# whether a release may be taken at all, and the playbooks stop and say what to
+# edit when a file of the user is behind. But it does mean a patch is not
+# automatically a quiet one, so read the release notes of one before taking it.
 #
 # A version ending in -SNAPSHOT is a development build. It keeps its name while
 # its content changes, which makes it the one thing a release version must never
-# be: ambiguous. Two nodes both reporting 1.1.0-SNAPSHOT are not known to hold the
-# same thing, so the checks that compare versions can not do their job, and
+# be: ambiguous. Two nodes both reporting 1.36.0-SNAPSHOT are not known to hold
+# the same thing, so the checks that compare versions can not do their job, and
 # neither upgradable_from below nor the changed flags of a release describe a
 # delta from it. That leaves a snapshot with exactly one transition:
 #
@@ -22,25 +42,48 @@
 # Upgrading a release to a snapshot is allowed, because it is the only way to try
 # an upgrade path out before the release is cut. The cluster it produces is a
 # development cluster and can only be rebuilt from there.
+version: "1.36.0-SNAPSHOT"
+
+# The kubernetes minors this release can deploy, and the patch each one is pinned
+# to. k8s_minor_version of vars.yml names one of these keys and k8s_version of
+# constant-vars.yml is what that key holds, so a cluster only ever runs a patch
+# this release was built around. A minor the user asks for that is not a key here
+# is refused by validate-hostvars.py before anything is touched.
 #
-# The bundle is served per minor line rather than per version. 1.2.0 and 1.2.7
-# are both fetched from 1.2.x, so a patch that fixes what is in this repository
-# does not republish a gigabyte of packages and images to carry it. The cost is a
-# rule that has to be kept by hand:
+# Three keys at most, which is the window kubernetes itself supports, and the
+# highest key is the minor of the version above. A minor leaves the window when
+# the top moves, so a release supporting 1.35, 1.34 and 1.33 can not take a
+# cluster still on 1.32: that cluster reaches 1.33 on the release it is already
+# on, and is upgraded after. check-cluster-upgradable.yml says so before the
+# first node is touched.
 #
-#   *** the bundle of a minor line never changes once it is published ***
+# Every key costs bundle. The packages of that minor and the images its kubeadm
+# asks for are all carried, one directory per minor, and the images have to be
+# listed by asking the kubeadm of that minor rather than by editing the versions
+# in the list a different one answered. See ki-cp-k8s-registry-images.yml.
 #
-# A different package, a different image, a different binary: all of them are a
-# minor bump, never a patch. Republishing the bundle of a line already in the
-# field would make two clusters reporting the same version hold different things,
-# which is the ambiguity this whole scheme exists to avoid.
+# Only the packages and the images are per minor. The user binaries of bundle/bin
+# are one set for the whole window, which holds while the window does not span an
+# etcd or a helm the single etcdctl in there can not talk to.
 #
-# Snapshots follow the same mapping. A patch under development reads the bundle its
-# line was released with and has nothing of its own to publish, and a minor under
-# development reads a line that is not in the field yet. What keeps a published
-# bundle from being overwritten is the rule above and the permissions on the bucket,
-# not the name of the object, since the name only decides what is downloaded.
-version: "1.0.0-SNAPSHOT"
+# kubernetes  the patch of that minor this release runs
+# pause       the sandbox image of that minor, which is the pause its kubeadm
+#             asks for. containerd pulls the sandbox itself rather than being
+#             told about it by kubelet, so its configuration carries this and a
+#             wrong one is a node where nothing starts. It sits here beside the
+#             patch it follows rather than in the image list, because the nodes
+#             read this file and never that one, and build-bundle-images.sh
+#             refuses to build when the two disagree
+k8s_versions:
+  "1.36":
+    kubernetes: "v1.36.4"
+    pause: "3.10.2"
+  "1.35":
+    kubernetes: "v1.35.8"
+    pause: "3.10.1"
+  "1.34":
+    kubernetes: "v1.34.11"
+    pause: "3.10.1"
 
 # Releases that upgrade.sh and upgrade-k8s-installer.yml accept as a starting
 # point. Empty means this release can only be installed from scratch, which is the
@@ -50,3 +93,19 @@ version: "1.0.0-SNAPSHOT"
 # Snapshots are never listed here. A customer never starts from one, and a
 # development cluster that ran one is rebuilt rather than upgraded
 upgradable_from: []
+
+# The bundle is one archive per release, named after the whole version: release
+# 1.36.1 reads bundle-1.36.1.tgz and nothing else reads it. A patch therefore
+# publishes a bundle of its own, and that is what lets a patch carry a different
+# package, a different image or a different pinned kubernetes patch at all.
+#
+# *** a published bundle is never rebuilt ***
+#
+# Two nodes reporting the same release hold the same thing, and that is only true
+# while the object a release names keeps the content it was published with.
+# Nothing enforces it beyond the permissions on the bucket and this sentence.
+#
+# A snapshot is the exception and has to be, since it keeps its name while its
+# content changes: bundle-1.36.0-SNAPSHOT.tgz is overwritten as often as
+# development needs. Keep it somewhere a release bundle can not be overwritten
+# along with it

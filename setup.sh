@@ -90,7 +90,7 @@ main() {
   version=$(grep -oP '^version: "\K[^"]+' < "$SRC_RELEASE_META_PATH")
   [[ -z $version ]] && die "[ERROR] File[\"$SRC_RELEASE_META_PATH\"] has no version"
 
-  src_bundle_archive_path="$SCRIPT_DIR_PATH/bundle-$(get_bundle_version "$version").tgz"
+  src_bundle_archive_path="$SCRIPT_DIR_PATH/bundle-$version.tgz"
   require_bundle_archive
 
   msg "[INFO] Setting up k8s installer release[\"$version\"] in \"$KI_OPT_ROOT_PATH\""
@@ -142,22 +142,9 @@ require_not_setup() {
   die "[ERROR] Run \"upgrade.sh\" to upgrade it, or \"$KI_OPT_ROOT_PATH/reset.sh\" to remove it first"
 }
 
-# A patch release exists to fix what is in this repository, and republishing a
-# gigabyte of packages and images to carry a corrected shell script is waste. The
-# releases of one minor line therefore share one bundle, which in turn means the
-# bundle of a minor line can never change: anything that needs a different package
-# or image is a minor bump rather than a patch. See release.yml
-get_bundle_version() {
-  local version=$1
-
-  echo "${version%.*}.x"
-
-  return 0
-}
-
-# The bundle is expected as the archive it is published as, named after the minor
-# line it belongs to. An air gapped control node carries it in on media rather than
-# downloading it, and the name is what keeps the bundle of one line from being
+# The bundle is expected as the archive it is published as, named after the whole
+# release version. An air gapped control node carries it in on media rather than
+# downloading it, and the name is what keeps the bundle of one release from being
 # unpacked next to the source tree of another
 require_bundle_archive() {
   [[ ! -e $src_bundle_archive_path ]] &&

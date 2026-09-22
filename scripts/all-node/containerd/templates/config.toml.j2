@@ -4,7 +4,7 @@ version = 2
 [plugins]
 
   [plugins."io.containerd.grpc.v1.cri"]
-    sandbox_image = "{{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}/pause:3.10.1"
+    sandbox_image = "{{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}/pause:{{ k8s_pause_version }}"
 
     [plugins."io.containerd.grpc.v1.cri".containerd]
 

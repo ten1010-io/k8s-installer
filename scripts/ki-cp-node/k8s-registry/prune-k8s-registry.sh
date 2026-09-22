@@ -87,6 +87,7 @@ crane_cmd=""
 ki_var_root_path=""
 ki_etc_services_path=""
 ki_cp_k8s_registry_port=""
+k8s_minor_version=""
 
 etc_svc_root_path=""
 var_svc_root_path=""
@@ -102,12 +103,14 @@ registry_host=""
 # new one and leaves the images of the old. Measured on a three node cluster one
 # minor after it was built, the storage held two of everything and 355M.
 #
-# What to keep is not asked for. The bundle is the release and the release is
-# what the cluster runs, so the images directory of the bundle is the answer
-# already, and prune-user-registry.sh takes a keep file only because nothing on
-# the node can know what a workload needs. Getting it wrong here costs a
-# re-push from the bundle rather than a trip across the air gap, which is why
-# the two are not the same command.
+# What to keep is not asked for. The bundle is the release, and of the release
+# the cluster runs the kubernetes minor vars.yml named, so the images directory
+# of that minor is the answer already: the minors beside it in the bundle are
+# ones this cluster does not run, and a cluster that has just moved up one is
+# the reason anything is here to remove at all. prune-user-registry.sh takes a
+# keep file only because nothing on the node can know what a workload needs.
+# Getting it wrong here costs a re-push from the bundle rather than a trip
+# across the air gap, which is why the two are not the same command.
 #
 # Not part of an upgrade. upgrade-k8s-nodes.yml goes one node at a time, so an
 # upgrade that fails part way through leaves the nodes before it on the new
@@ -126,10 +129,15 @@ main() {
   ki_var_root_path=$($yq_cmd '.ki_var_root_path' < "$vars_path")
   ki_etc_services_path=$($yq_cmd '.ki_etc_services_path' < "$vars_path")
   ki_cp_k8s_registry_port=$($yq_cmd '.ki_cp_k8s_registry_port' < "$vars_path")
+  k8s_minor_version=$($yq_cmd '.k8s_minor_version' < "$vars_path")
 
   etc_svc_root_path="$ki_etc_services_path"/$SVC_NAME
   var_svc_root_path="$ki_var_root_path"/$SVC_NAME
-  images_path="$ki_opt_bundle_path"/$SVC_NAME-images
+  # Below the minor rather than above it. The bundle holds the images of every
+  # minor the release supports, one directory each, and the path of a layout
+  # under this one is the reference it is pushed to, so the minor has to be part
+  # of where the walk starts and not something it walks through
+  images_path="$ki_opt_bundle_path"/$SVC_NAME-images/$k8s_minor_version
   registry_host="127.0.0.1:$ki_cp_k8s_registry_port"
   require_directory_exists "$etc_svc_root_path"
   require_directory_exists "$images_path"

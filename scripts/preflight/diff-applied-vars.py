@@ -6,13 +6,18 @@ from typing import Any, Dict, List
 
 import yaml
 
-# The classes whose changes this refuses to apply, and why. Both are decided
+# The classes whose changes this refuses to apply, and why. All of them are decided
 # before anything is applied, so a run that is going to refuse does nothing at
 # all rather than leaving half of the change in place
 BLOCKING_CLASSES = {
     "immutable":
         "can not be changed on a cluster that already exists."
         " Put the old value back, or build the cluster again with the new one",
+    "cluster_upgrade":
+        "is applied by moving the cluster itself, which this playbook does not do."
+        " Run upgrade-cluster.yml, which takes the cluster up one kubernetes minor"
+        " at a time and is also what records the variable the first time,"
+        " so a record that predates it reads as a change here",
     "node_rebuild":
         "is settled while a node is provisioned and can not be reached afterwards."
         " Take each node below out with remove-node.yml and add it back with"

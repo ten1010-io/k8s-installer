@@ -38,6 +38,13 @@ ki_control_node_ih: "{{ hostvars['localhost']['control_node_ih'] | default(None)
 # the source tree even while a play targets the managed nodes
 ki_release_version: "{{ (lookup('file', ki_opt_release_meta_path) | from_yaml)['version'] }}"
 ki_release_upgradable_from: "{{ (lookup('file', ki_opt_release_meta_path) | from_yaml)['upgradable_from'] }}"
+# The kubernetes minors this release carries, each mapped to what that minor runs.
+# k8s_minor_version of vars.yml names one of these keys
+ki_release_k8s_versions: "{{ (lookup('file', ki_opt_release_meta_path) | from_yaml)['k8s_versions'] }}"
+# What the minor this cluster was told to run holds, or an empty mapping when
+# vars.yml names a minor the release does not carry. Read once here so that each
+# value below is a key lookup rather than a repeat of this line
+ki_release_k8s: "{{ ki_release_k8s_versions[k8s_minor_version | default('')] | default({}) }}"
 # A version carrying this suffix is a development build. It keeps its name while
 # its content changes, so a node holding one can only have it replaced by itself.
 # See release.yml. Kept in sync with SNAPSHOT_SUFFIX of setup.sh and upgrade.sh
@@ -115,7 +122,7 @@ internal_network_ki_cp_dns_name: "ki-cp.{{ internal_network_zone }}"
 # on a public registry is a name and not a version: whoever owns the repository
 # can move it, and two of these move by design, since cturra/ntp publishes
 # nothing but latest and ubuntu/bind9 publishes channels rather than releases.
-# Without the digest, rebuilding the bundle of a line that is already in the
+# Without the digest, rebuilding the bundle of a release that is already in the
 # field could put something else in it and nothing would say so, which is the one
 # thing the release scheme can not allow. See release.yml.
 #
@@ -165,7 +172,22 @@ ki_cp_k8s_registry_port: 5000
 # carried in with push-user-registry-images.yml, so no release ever fills it
 ki_cp_user_registry_port: 5001
 
-k8s_version: "v1.34.1"
+# The kubernetes version this cluster runs, which is the patch the release pins
+# for the minor vars.yml asked for. Not set directly anywhere: the minor is the
+# choice of whoever runs the cluster and the patch belongs to the release, so a
+# cluster can not be pointed at a patch no bundle holds.
+#
+# Empty when the minor asked for is not one this release carries, and empty again
+# when vars.yml names no minor at all, which is what the file of a cluster older
+# than this variable looks like. Both are defaulted rather than left to fail,
+# because the play that renders the vars file onto the nodes runs before
+# validate-hostvars.py: without the defaults that play dies on a jinja error and
+# the report that says what to write is never reached
+k8s_version: "{{ ki_release_k8s['kubernetes'] | default('') }}"
+# The sandbox image containerd pulls for every pod, rendered into its
+# configuration. Per minor because the pause kubeadm asks for is, so a node runs
+# the one its cluster's registry was filled with. See release.yml
+k8s_pause_version: "{{ ki_release_k8s['pause'] | default('') }}"
 # Where kubeadm keeps the certificates of the cluster. Fixed by kubeadm
 k8s_pki_path: "/etc/kubernetes/pki"
 # Where kubelet looks for the static pods of the control plane, and where etcd
@@ -237,6 +259,12 @@ ki_var_classes:
     - kubelet_system_reserved_ephemeral_storage
     - kubelet_system_reserved_memory
     - kubelet_system_reserved_pid
+  # Applied by kubeadm moving the cluster, which is what upgrade-cluster.yml does
+  # and update-cluster.yml does not. Raising the kubernetes minor is a cluster
+  # upgrade whether or not the release changed with it, so update-cluster.yml
+  # refuses it and says which playbook to run instead
+  cluster_upgrade:
+    - k8s_minor_version
   # Written into the kubeadm configuration of the cluster and read the next time
   # kubeadm issues something. Nothing already issued changes: a shorter validity
   # period applies to the certificates renewed after it, not to the ones held
