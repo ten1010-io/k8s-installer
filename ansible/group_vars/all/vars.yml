@@ -35,6 +35,24 @@ ki_cp_ntp_server_upstream_servers:
   - "time1.google.com"
   - "time2.google.com"
 
+# The addresses kubernetes hands out inside the cluster. Fixed while a cluster
+# exists: the service subnet decides the address of every service, including the
+# one kubelet is told is the cluster dns, and the pod subnet is what the cni was
+# installed around. Moving either is a cluster rebuilt rather than a value
+# changed, and update-cluster.yml refuses it.
+#
+# They are here because they can collide with a network that was there first.
+# Every node, every service the workloads reach and every address the cluster
+# routes to has to sit outside both, so a site already using 10.244 or 10.96 for
+# something needs them somewhere else, and there is nothing this installer could
+# pick that is right everywhere.
+#
+# Nothing installs a cni here, so whatever does has to be given these same two
+# values. A cni brought up around a different pod subnet leaves nodes that never
+# reach Ready, and the reason does not show up where the symptom does
+k8s_pod_subnet: "10.244.0.0/16"
+k8s_service_subnet: "10.96.0.0/12"
+
 # The kubernetes minor this cluster runs. It has to be one the release carries:
 # release.yml lists them under k8s_versions, and the patch of that minor is the
 # release to pin rather than this file to choose.

@@ -202,8 +202,6 @@ k8s_pki_path: "/etc/kubernetes/pki"
 k8s_manifests_path: "/etc/kubernetes/manifests"
 k8s_etcd_data_path: "/var/lib/etcd"
 k8s_apiserver_port: 6443
-k8s_service_subnet: "10.96.0.0/12"
-k8s_pod_subnet: "10.244.0.0/16"
 k8s_ca_certificate_validity_period: "87600h" # 87600h = 10 year
 k8s_cp: false
 
@@ -311,12 +309,17 @@ ki_var_classes:
     # Read by backup-etcd.sh the next time it runs and by nothing else, so a
     # changed count applies itself without anything being done to a node
     - ki_etcd_backup_retention_count
-  # Not changeable on a cluster that exists. The subnets decide the internal
-  # address of every node, which the etcd peers and the apiserver of each one
-  # are published under, and turning ha mode on or off changes which services
-  # run at all. update-cluster.yml refuses rather than applying half of it
+  # Not changeable on a cluster that exists. The internal subnets decide the
+  # address of every node, which the etcd peers and the apiserver of each one are
+  # published under; the pod and service subnets decide the addresses kubernetes
+  # hands out inside the cluster, which the cni was installed around and which
+  # every kubelet was told the cluster dns sits in; and turning ha mode on or off
+  # changes which services run at all. update-cluster.yml refuses rather than
+  # applying half of it
   immutable:
     - internal_network_subnets
+    - k8s_pod_subnet
+    - k8s_service_subnet
     - ki_cp_ha_mode
 
 target_node: null
