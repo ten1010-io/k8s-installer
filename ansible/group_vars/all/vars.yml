@@ -62,6 +62,43 @@ k8s_service_subnet: "10.96.0.0/12"
 # takes the cluster up a minor, which is as far as kubeadm goes at a time
 k8s_minor_version: "1.36"
 
+# Flags and host paths added to the kube-apiserver of every control plane node.
+# Empty leaves it exactly as kubeadm builds it.
+#
+# What this is for is the apiserver options a cluster is required to run with and
+# the installer has no opinion about: an audit policy, an oidc issuer, a feature
+# gate, a runtime-config. Without it the only way to set one is to edit the static
+# pod manifest by hand on each node, which the next kubeadm upgrade overwrites.
+#
+# They go into the ClusterConfiguration of the cluster, so kubeadm applies them to
+# a node that joins later and to every node an upgrade passes through, rather than
+# to the nodes that happened to exist when they were set.
+#
+#   k8s_apiserver_extra_args:
+#     - name: audit-policy-file
+#       value: /etc/kubernetes/audit/policy.yaml
+#     - name: audit-log-path
+#       value: /var/log/kubernetes/audit/audit.log
+#   k8s_apiserver_extra_volumes:
+#     - name: audit
+#       hostPath: /etc/kubernetes/audit
+#       mountPath: /etc/kubernetes/audit
+#       readOnly: true
+#     - name: audit-log
+#       hostPath: /var/log/kubernetes/audit
+#       mountPath: /var/log/kubernetes/audit
+#       pathType: DirectoryOrCreate
+#
+# The name of an argument carries no dashes. A flag that can be given more than
+# once is listed more than once.
+#
+# A volume is a host path of the control plane node, and nothing here puts a file
+# there. An argument naming a file that is not on the node is an apiserver that
+# does not start, and it is a control plane node that does not come back, so put
+# the file on every control plane node first and change these after
+k8s_apiserver_extra_args: []
+k8s_apiserver_extra_volumes: []
+
 k8s_certificate_validity_period: "26280h" # 26280h = 3 year
 
 # How many etcd snapshots each k8s cp node keeps. The oldest over this are

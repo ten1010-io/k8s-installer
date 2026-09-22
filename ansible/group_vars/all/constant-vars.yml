@@ -282,6 +282,14 @@ ki_var_classes:
   # period applies to the certificates renewed after it, not to the ones held
   cluster_config:
     - k8s_certificate_validity_period
+  # Written into the same kubeadm configuration, and then into the static pod
+  # manifest of every control plane node, one node at a time. Uploading it is not
+  # enough for these: what the apiserver of a node is running with is the manifest
+  # kubelet reads, so it is rewritten from the configuration that was just
+  # uploaded and the node is out of the load balancer while it restarts
+  control_plane:
+    - k8s_apiserver_extra_args
+    - k8s_apiserver_extra_volumes
   # Decided while a node is being provisioned and not reachable afterwards. The
   # device is formatted, the container and installer state lives under these
   # paths, so moving any of them means the node is built again rather than

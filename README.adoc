@@ -342,6 +342,51 @@ NOTE: 기록에 없는 것은 변경이 아닙니다. 기록이 아예 없는 �
 없는 변수도, 첫 실행은 지금 값을 기준점으로 삼고 그렇게 알려 줍니다. 변경 감지는 그 다음
 실행부터입니다.
 
+=== apiserver 에 인자와 볼륨 더하기
+
+클러스터가 반드시 켜고 돌아야 하는 apiserver 옵션 — 감사 정책, oidc 발급자, feature gate,
+`runtime-config` — 을 `vars.yml` 에 적습니다. 설치본은 이것들에 대해 의견을 갖지 않고 그대로
+넘깁니다.
+
+[source,yaml]
+----
+k8s_apiserver_extra_args:
+  - name: audit-policy-file
+    value: /etc/kubernetes/audit/policy.yaml
+  - name: audit-log-path
+    value: /var/log/kubernetes/audit/audit.log
+k8s_apiserver_extra_volumes:
+  - name: audit
+    hostPath: /etc/kubernetes/audit
+    mountPath: /etc/kubernetes/audit
+    readOnly: true
+  - name: audit-log
+    hostPath: /var/log/kubernetes/audit
+    mountPath: /var/log/kubernetes/audit
+    pathType: DirectoryOrCreate
+----
+
+인자의 `name` 에는 대시를 붙이지 않습니다. 여러 번 줄 수 있는 플래그는 여러 줄로 적습니다.
+
+값은 클러스터의 kubeadm 설정에 들어갑니다. 그래서 나중에 들어오는 컨트롤 플레인 노드와
+업그레이드가 지나가는 모든 노드에 그대로 적용되고, 정적 파드 매니페스트를 손으로 고쳤을 때처럼
+다음 업그레이드에 지워지지 않습니다.
+
+[IMPORTANT]
+====
+*볼륨은 컨트롤 플레인 노드의 호스트 경로이고, 그 경로에 파일을 놓아 주는 것은 설치본이 하지
+않습니다.* 없는 파일을 가리키는 인자는 뜨지 않는 apiserver 입니다. 파일을 모든 컨트롤 플레인
+노드에 먼저 놓고 값을 바꾸세요.
+====
+
+그렇게 되면 kubeadm 이 그 노드의 매니페스트를 되돌립니다. 노드는 5분쯤 뒤 예전 설정으로 스스로
+돌아오고, 그 사이 자기 apiserver 가 없어서 `NotReady` 로 보입니다. 첫 노드에서 멈추므로 뒤
+노드는 손대지 않고, 값을 고치는 것은 노드를 살리기 위해서가 아니라 변경을 반영하기 위해서입니다.
+
+이미 서 있는 클러스터에 반영하는 것은 <<설정 변경 적용>> 입니다. 설정을 올린 뒤 컨트롤 플레인
+노드를 한 대씩 로드밸런서에서 빼고 매니페스트를 다시 쓰고 다시 넣습니다. 3노드에서 6분쯤
+걸립니다.
+
 === 사용자 레지스트리
 
 클러스터에는 레지스트리가 둘 있습니다. kubeadm 이 쓰는 것(`ki-cp-k8s-registry`, 5000)은 릴리스가

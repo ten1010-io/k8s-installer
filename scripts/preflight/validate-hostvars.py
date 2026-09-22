@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 import sys
 from ipaddress import IPv4Network, IPv4Address
 from pathlib import Path
-from typing import List, Any, Optional, Annotated, Union
+from typing import List, Any, Literal, Optional, Annotated, Union
 
 import yaml
 from pydantic import BaseModel, ValidationError, StringConstraints, ConfigDict, field_validator, Field, \
@@ -17,6 +18,37 @@ VALIDITY_PERIOD_PATTERN = r"^[0-9]+h$"
 STORAGE_SIZE_PATTERN = r"^[0-9]+[EPTGMK]i$"
 CPU_QUANTITY_PATTERN = r"^([0-9]+m|[0-9]+(\.[0-9]+)?)$"
 EVICTION_THRESHOLD_PATTERN = r"^([0-9]+(\.[0-9]+)?%|[0-9]+[EPTGMK]i)$"
+# A volume of a pod is named with a dns 1123 label, which bounds its length at 63
+DNS_1123_LABEL_PATTERN = r"[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?"
+APISERVER_ARG_NAME_PATTERN = r"[a-z0-9][a-z0-9-]*"
+
+# The volumes kubeadm gives the control plane pods itself. It keys them by name
+# and the last one in wins, so a volume declared under one of these does not add
+# a mount, it takes the place of the one kubeadm meant to make: k8s-certs is
+# /etc/kubernetes/pki, and an apiserver that lost it does not start. Read off the
+# mounts kubeadm builds, so a kubeadm that grows one is a line to add here
+KUBEADM_CONTROL_PLANE_VOLUME_NAMES = frozenset({
+    "ca-certs",
+    "etc-ca-certificates",
+    "etc-pki",
+    "flexvolume-dir",
+    "k8s-certs",
+    "kubeconfig",
+    "usr-local-share-ca-certificates",
+    "usr-share-ca-certificates",
+})
+
+# The flags this installer decides and then reads back. kubeadm lets extraArgs
+# override what it builds, so one of these set here leaves the apiserver
+# somewhere nothing goes looking: wait-k8s-apiserver.sh asks k8s_apiserver_port
+# of the node it is on, and the load balancer sends traffic to the same place
+KI_DECIDED_APISERVER_ARGS = frozenset({
+    "advertise-address",
+    "bind-address",
+    "etcd-servers",
+    "secure-port",
+    "service-cluster-ip-range",
+})
 
 
 def main():
@@ -31,6 +63,7 @@ def main():
     validate_internal_network_subnets(hostvars_errors, hostvars)
     validate_k8s_subnets(hostvars_errors, hostvars)
     validate_kubelet_reservations(hostvars_errors, hostvars)
+    validate_k8s_apiserver_extra_volumes(hostvars_errors, hostvars)
     validate_k8s_minor_version(hostvars_errors, hostvars)
 
     if len(hostvars_errors) > 0:
@@ -324,6 +357,30 @@ def validate_k8s_subnets(hostvars_errors: List[HostvarsError], hostvars):
             hostvars_errors.append(error)
 
 
+def validate_k8s_apiserver_extra_volumes(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects two apiserver volumes that carry the same name.
+
+    The name is the name of a volume of the static pod, so two of them is a
+    manifest kubernetes refuses, and the manifest is written by kubeadm on a node
+    that has just been taken out of the load balancer to restart its apiserver.
+    The node comes back without one, which is the most expensive place to find a
+    duplicated word
+    """
+    lo_hostvars = hostvars["localhost"]
+
+    names = [extra_volume["name"]
+             for extra_volume in lo_hostvars.get("k8s_apiserver_extra_volumes") or []
+             if isinstance(extra_volume, dict) and "name" in extra_volume]
+
+    for name in sorted({name for name in names if names.count(name) > 1}):
+        error = HostvarsError("localhost",
+                              ("k8s_apiserver_extra_volumes",),
+                              name,
+                              f"Variable[\"k8s_apiserver_extra_volumes\"] carries name[{name}] more than"
+                              " once. A volume of a pod is named once")
+        hostvars_errors.append(error)
+
+
 def validate_k8s_minor_version(hostvars_errors: List[HostvarsError], hostvars):
     """Rejects a kubernetes minor that this release does not carry.
 
@@ -473,6 +530,11 @@ class VarsModel(BaseModel):
     k8s_minor_version: Annotated[str, StringConstraints(pattern=K8S_MINOR_VERSION_PATTERN)]
     k8s_certificate_validity_period: Annotated[str, StringConstraints(pattern=VALIDITY_PERIOD_PATTERN)]
 
+    # What is added to the apiserver of every control plane node. Empty leaves it
+    # as kubeadm builds it
+    k8s_apiserver_extra_args: List[ApiServerExtraArgModel]
+    k8s_apiserver_extra_volumes: List[ApiServerExtraVolumeModel]
+
     # Explicit overrides. None means the value is calculated from the resources
     # of the node by create-kubelet-reservations.py
     kubelet_system_reserved_cpu: Optional[
@@ -585,6 +647,73 @@ class HostvarsError:
 class ARecordModel(BaseModel):
     name: str
     ip: IPv4Address
+
+
+class ApiServerExtraArgModel(BaseModel):
+    @field_validator("name")
+    @classmethod
+    def must_be_a_flag_name(cls, name: str) -> str:
+        # The dashes first. Writing the flag the way it appears on a command line
+        # is the mistake to expect, and the pattern below would answer it by
+        # listing which characters are allowed
+        if name.startswith("-"):
+            raise ValueError("name is the flag without its dashes")
+        if re.fullmatch(APISERVER_ARG_NAME_PATTERN, name) is None:
+            raise ValueError("name is the name of a flag, which carries lower case letters,"
+                             " digits and dashes and nothing else")
+        if name in KI_DECIDED_APISERVER_ARGS:
+            raise ValueError(f"name[{name}] is decided by this installer and read back by it."
+                             " Setting it here moves the apiserver out from under the wait that"
+                             " follows a manifest being written and out from under the load"
+                             " balancer")
+        return name
+
+    # Closed, because readOnly and pathType are the only optional fields of any
+    # model here: everywhere else a misspelt key is already caught as the
+    # required one being missing, and here it would be dropped without a word
+    model_config = ConfigDict(regex_engine='python-re', extra='forbid')
+
+    name: str
+    # Written into the configuration as a string whatever it is here, since that
+    # is what the field is. Taking a number as well as a string means a port does
+    # not have to be quoted by whoever writes it, and a yaml true arrives as 1
+    # here, which the template does not read: it renders from the vars file
+    value: Annotated[Union[str, int], Field(union_mode='left_to_right')]
+
+
+class ApiServerExtraVolumeModel(BaseModel):
+    # The name reaches two places that both refuse what the other would take.
+    # kubernetes reads it as the name of a volume of the static pod, and kubeadm
+    # reads it as the key it files the volume under. The manifest is written by
+    # kubeadm on a node that has just been taken out of the load balancer to
+    # restart its apiserver, which is the most expensive place to find either
+    @field_validator("name")
+    @classmethod
+    def must_be_a_volume_name(cls, name: str) -> str:
+        if re.fullmatch(DNS_1123_LABEL_PATTERN, name) is None:
+            raise ValueError("name is the name of a volume of a pod, which is a dns 1123 label:"
+                             " at most 63 lower case letters, digits and dashes, starting and"
+                             " ending with a letter or a digit")
+        if name in KUBEADM_CONTROL_PLANE_VOLUME_NAMES:
+            raise ValueError(f"name[{name}] is a volume kubeadm gives the control plane itself."
+                             " A volume declared here under that name replaces it rather than"
+                             " being added beside it")
+        return name
+
+    @field_validator("hostPath", "mountPath")
+    @classmethod
+    def must_be_absolute(cls, path: Path) -> Path:
+        if not path.is_absolute():
+            raise ValueError("path must be absolute")
+        return path
+
+    model_config = ConfigDict(regex_engine='python-re', extra='forbid')
+
+    name: str
+    hostPath: Path
+    mountPath: Path
+    readOnly: bool = False
+    pathType: Optional[Literal["DirectoryOrCreate", "Directory", "FileOrCreate", "File"]] = None
 
 
 class KubeletReservedModel(BaseModel):

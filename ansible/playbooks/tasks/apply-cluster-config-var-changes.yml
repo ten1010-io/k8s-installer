@@ -2,6 +2,12 @@
 # configuration again and uploading it. Nothing kubeadm has already issued
 # changes: what this decides is what the next thing it issues looks like.
 #
+# It also runs for a change of class["control_plane"], which is written into the
+# same configuration. Those need this upload as their first half and
+# apply-control-plane-var-changes.yml as their second: a node writes its
+# manifests from what the cluster holds, so the upload has to have happened
+# whether or not a variable of this class changed with it.
+#
 # On one control plane node, since what it updates is a ConfigMap of the cluster
 # rather than anything on a node
 - hosts: k8s_node:!broken_node
@@ -14,4 +20,6 @@
       shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/upload-k8s-cluster-config.sh {{ vars_path_arg }}"
       when:
         - inventory_hostname == k8s_cp_nodes[0]
-        - hostvars['localhost']['ki_var_changes']['cluster_config'] | length > 0
+        - >-
+            hostvars['localhost']['ki_var_changes']['cluster_config'] | length > 0
+            or hostvars['localhost']['ki_var_changes']['control_plane'] | length > 0
