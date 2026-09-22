@@ -122,6 +122,7 @@ main() {
 ubuntu2204_install() {
   require_packages_installable
   set_k8s_packages_path ubuntu22.04
+  require_declared_packages ubuntu22.04 deb
 
   begin_apt
 
@@ -150,6 +151,7 @@ ubuntu2204_install() {
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/containerd
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/conntrack
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/ebtables
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/nftables
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/docker
 
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/nvidia-container-toolkit
@@ -170,6 +172,7 @@ ubuntu2204_install() {
 ubuntu2404_install() {
   require_packages_installable
   set_k8s_packages_path ubuntu24.04
+  require_declared_packages ubuntu24.04 deb
 
   begin_apt
 
@@ -198,6 +201,7 @@ ubuntu2404_install() {
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/containerd
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/iptables
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/conntrack
+  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/nftables
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/docker
 
   dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/nvidia-container-toolkit
@@ -217,6 +221,7 @@ ubuntu2404_install() {
 rhel8_install() {
   require_packages_installable
   set_k8s_packages_path rhel8
+  require_declared_packages rhel8 rpm
 
   [[ $(getenforce) != "Disabled" ]] && setenforce 0
 
@@ -269,6 +274,7 @@ rhel8_install() {
     rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libibverbs
   fi
   rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/ebtables
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nftables
   rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/docker
 
   rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nvidia-container-toolkit
@@ -296,6 +302,91 @@ set_k8s_packages_path() {
   k8s_packages_path="$ki_opt_bundle_path/linux-packages/$os_dir/k8s/$k8s_minor_version"
   [[ ! -d $k8s_packages_path ]] &&
     die "[ERROR] No such directory of which path is \"$k8s_packages_path\". The bundle of this release does not carry the packages of kubernetes[\"$k8s_minor_version\"]"
+
+  return 0
+}
+
+# Refuses a bundle that does not hold what the release says it holds.
+#
+# The packages release.yml declares are the ones the installer chose: they come
+# from the repository of whoever makes them rather than from the distribution,
+# which is why one name and one upstream version cover every os here. Everything
+# else under linux-packages is the dependency closure an offline install needs,
+# named and versioned per distribution and picked by nobody, so it is neither
+# declared nor checked. A package in the bundle that is not declared is fine; a
+# package declared and not in the bundle is not.
+#
+# Left unchecked, the version of containerd or docker a node ends up with is
+# whatever the directory the bundle was filled from happened to hold, and two
+# nodes of one cluster can differ without anything saying so. Which is not
+# hypothetical: the bundle this check was written against carried docker compose
+# 2.40.3 for ubuntu 22.04 and 5.1.0 for ubuntu 24.04, and both ki cp nodes of the
+# test cluster were running the ki cp services under them
+require_declared_packages() {
+  local os_dir=$1
+  local pkg_kind=$2
+
+  local declared
+  declared=$($yq_cmd '.ki_release_packages // {} | to_entries | .[] | .key + " " + (.value | tostring)' < "$vars_path")
+  [[ -z $declared ]] &&
+    die "[ERROR] Variable[\"ki_release_packages\"] of file[\"$vars_path\"] is empty. it is read from packages of release.yml, so a vars file without it was not written by the playbooks of this release"
+
+  local bundled
+  bundled=$(list_bundled_packages "$ki_opt_bundle_path/linux-packages/$os_dir" "$pkg_kind")
+
+  local errors=""
+  local name
+  local version
+  local found
+  while read -r name version; do
+    [[ -z $name ]] && continue
+
+    found=$(awk -v n="$name" '$1 == n { print $2; exit }' <<< "$bundled")
+    if [[ -z $found ]]; then
+      errors+="\n  package[\"$name\"] is declared as version[\"$version\"] and is not in the bundle"
+      continue
+    fi
+
+    [[ $found != "$version" ]] &&
+      errors+="\n  package[\"$name\"] is declared as version[\"$version\"] and the bundle holds version[\"$found\"]"
+  done <<< "$declared"
+
+  [[ -n $errors ]] &&
+    die "[ERROR] The bundle does not hold what release[\"$($yq_cmd '.ki_release_version' < "$vars_path")\"] declares under packages, for os[\"$os_dir\"]:$errors"
+
+  return 0
+}
+
+# The name and the upstream version of every package file under a directory, one
+# line each.
+#
+# Upstream version alone: a deb carries an epoch in front and a packaging release
+# behind, an rpm carries a release behind, and those differ per os by design.
+# 28.5.2 arrives as docker-ce_5:28.5.2-1~ubuntu.22.04~jammy on one node and as
+# docker-ce-28.5.2-1.el8 on another, and both are the docker a release names.
+# "rpm --queryformat %{VERSION}" already answers that way and a deb version is cut
+# down to it here.
+#
+# The k8s directory is left out. Those packages are pinned per minor by
+# k8s_versions rather than once for the release, and this node is only handed the
+# minor its cluster runs
+list_bundled_packages() {
+  local dir=$1
+  local pkg_kind=$2
+
+  local files=()
+  mapfile -t files < <(find "$dir" -path "$dir/k8s" -prune -o -type f -name "*.$pkg_kind" -print)
+  [[ ${#files[@]} = 0 ]] && return 0
+
+  if [[ $pkg_kind = "rpm" ]]; then
+    rpm -qp --queryformat '%{NAME} %{VERSION}\n' "${files[@]}" 2>/dev/null
+    return 0
+  fi
+
+  local file
+  for file in "${files[@]}"; do
+    dpkg-deb -W --showformat='${Package} ${Version}\n' "$file"
+  done | sed -e 's/ [0-9]*:/ /' -e 's/-[^ -]*$//'
 
   return 0
 }

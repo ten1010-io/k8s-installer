@@ -85,6 +85,71 @@ k8s_versions:
     kubernetes: "v1.34.11"
     pause: "3.10.1"
 
+# The packages this release chose, as the upstream version of each.
+#
+# These are the ones that do not come from the distribution: they are fetched from
+# the repository of whoever makes them, which is why the same name and the same
+# upstream version exist on every os the installer supports. Choosing them is what
+# a release does, so they are what a release can state.
+#
+# The rest of bundle/linux-packages is the dependency closure an offline install
+# needs, such as systemd, libselinux and nettle. Those are whatever the os
+# repository served, they are named and versioned differently on each os, and
+# nobody picked them, so writing them down here would be churn rather than a
+# statement. They are not declared and not checked.
+#
+# install-packages.sh reads this before it installs anything and refuses a bundle
+# that does not hold what is written here. A package named here and missing from
+# the bundle is the same refusal: half the reason to write a version down is to
+# catch a directory that was filled from the wrong place, and an empty one is that
+# with the evidence removed.
+#
+# What is compared is the upstream version alone, without the epoch and the
+# packaging release around it, because those differ per os by design. 28.5.2 is
+# docker-ce_5:28.5.2-1~ubuntu.22.04~jammy on one node and docker-ce-28.5.2-1.el8
+# on another, and both are the docker this release names.
+#
+# The packages of kubernetes are not here. Those are pinned per minor by
+# k8s_versions above, and which of the three a node is handed depends on the
+# minor its cluster runs
+packages:
+  containerd.io: "2.3.5"
+  docker-ce: "29.8.1"
+  docker-ce-cli: "29.8.1"
+  docker-ce-rootless-extras: "29.8.1"
+  docker-buildx-plugin: "0.37.1"
+  docker-compose-plugin: "5.5.1"
+  libnvidia-container1: "1.20.1"
+  libnvidia-container-tools: "1.20.1"
+  nvidia-container-toolkit: "1.20.1"
+  nvidia-container-toolkit-base: "1.20.1"
+
+# The binaries of bundle/bin, which are one set for the whole window rather than
+# one per minor. helm, etcdctl, etcdutl and nerdctl are laid down under
+# /usr/local/bin for whoever runs the cluster, so these are the versions a user
+# sees; yq and crane are what the installer itself runs on.
+#
+# install-programs.sh checks these the only way they can be checked, by asking
+# each binary. A package carries its version in the file; bundle/bin holds a file
+# called "helm" and nothing about the name says which helm it is, which is the
+# whole reason a bundle can quietly hold a different one.
+#
+# Each tool is asked its own way and answers in its own shape, so adding a name
+# here means teaching that script the invocation. It refuses a name it does not
+# know rather than passing it
+#
+# etcdctl and etcdutl follow the etcd kubeadm deploys rather than the newest etcd
+# there is. restore-etcd.sh has etcdutl write a data directory that the etcd of the
+# cluster then serves, and a newer etcdutl writing for an older server is the
+# direction that breaks. The kubeadm of this window asks for 3.6.x
+binaries:
+  helm: "4.3.0"
+  etcdctl: "3.6.14"
+  etcdutl: "3.6.14"
+  nerdctl: "2.4.0"
+  yq: "4.53.6"
+  crane: "0.22.1"
+
 # Releases that upgrade.sh and upgrade-k8s-installer.yml accept as a starting
 # point. Empty means this release can only be installed from scratch, which is the
 # case for the first release that lays out the installer under /opt/k8s-installer.

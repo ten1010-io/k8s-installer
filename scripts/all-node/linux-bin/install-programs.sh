@@ -83,6 +83,7 @@ main() {
   setup_cmd_vars
   require_directory_exists "$ki_opt_root_path"
   validate_ki_opt_directory
+  require_declared_binaries
 
   mkdir -p /etc/sudoers.d
   cp -f "$SCRIPT_DIR_PATH/templates/z-k8s-installer" /etc/sudoers.d/
@@ -101,6 +102,78 @@ install_program() {
   cp -f "$ki_opt_bundle_path/bin/$program" "/usr/local/bin/$program"
   chown root:root "/usr/local/bin/$program"
   chmod 755 "/usr/local/bin/$program"
+}
+
+# Refuses a bundle whose binaries are not the ones release.yml names.
+#
+# Asking them is the only way. A package file carries its version inside it, but
+# bundle/bin holds a file called "helm" and nothing about that name says which
+# helm it is, which is exactly how a bundle ends up quietly holding another one.
+#
+# Every binary declared is checked rather than only the four this script lays
+# down. What is being checked is the bundle, and yq and crane never leave it
+require_declared_binaries() {
+  local declared
+  declared=$($yq_cmd '.ki_release_binaries // {} | to_entries | .[] | .key + " " + (.value | tostring)' < "$vars_path")
+  [[ -z $declared ]] &&
+    die "[ERROR] Variable[\"ki_release_binaries\"] of file[\"$vars_path\"] is empty. it is read from binaries of release.yml, so a vars file without it was not written by the playbooks of this release"
+
+  local errors=""
+  local name
+  local version
+  local found
+  while read -r name version; do
+    [[ -z $name ]] && continue
+
+    if [[ ! -f "$ki_opt_bundle_path/bin/$name" ]]; then
+      errors+="\n  binary[\"$name\"] is declared as version[\"$version\"] and is not in the bundle"
+      continue
+    fi
+
+    found=$(binary_version "$name")
+    [[ $found != "$version" ]] &&
+      errors+="\n  binary[\"$name\"] is declared as version[\"$version\"] and the bundle holds version[\"${found:-unknown}\"]"
+  done <<< "$declared"
+
+  [[ -n $errors ]] &&
+    die "[ERROR] The bundle does not hold what release[\"$($yq_cmd '.ki_release_version' < "$vars_path")\"] declares under binaries:$errors"
+
+  return 0
+}
+
+# What a binary of bundle/bin answers when asked its version.
+#
+# Each one is asked its own way and answers in its own shape:
+#
+#   helm     v3.13.1+g3547a4b
+#   etcdctl  etcdctl version: 3.5.23
+#   crane    0.22.1
+#   yq       yq (https://github.com/mikefarah/yq/) version v4.47.1
+#   nerdctl  nerdctl version 2.1.5
+#
+# so the invocation is per tool and what is taken from the output is the first
+# thing in it shaped like a version. A name this does not know stops the run
+# rather than being passed over: adding a binary to release.yml means saying how
+# it is asked, the same way adding a variable means saying what changing it does
+binary_version() {
+  local program=$1
+
+  local output
+  case $program in
+  helm | crane | etcdctl | etcdutl)
+    output=$("$ki_opt_bundle_path/bin/$program" version 2>&1) || true
+    ;;
+  yq | nerdctl)
+    output=$("$ki_opt_bundle_path/bin/$program" --version 2>&1) || true
+    ;;
+  *)
+    die "[ERROR] Binary[\"$program\"] is declared by release.yml and this script does not know how to ask its version. Add it to binary_version of install-programs.sh"
+    ;;
+  esac
+
+  grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' <<< "$output" | head -1 | sed 's/^v//' || true
+
+  return 0
 }
 
 import_ki_opt_vars() {

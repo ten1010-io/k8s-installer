@@ -1,20 +1,27 @@
 imports = ["/etc/containerd/config.d/*.toml"]
-version = 2
+version = 4
 
 [plugins]
 
-  [plugins."io.containerd.grpc.v1.cri"]
-    sandbox_image = "{{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}/pause:{{ k8s_pause_version }}"
+  [plugins."io.containerd.cri.v1.images"]
 
-    [plugins."io.containerd.grpc.v1.cri".containerd]
+    # The sandbox image, which containerd pulls itself for every pod rather than
+    # being told about it by kubelet. Named here as a pinned image, which is where
+    # containerd 2 moved what version 2 of this file called sandbox_image
+    [plugins."io.containerd.cri.v1.images".pinned_images]
+      sandbox = "{{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}/pause:{{ k8s_pause_version }}"
 
-      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
+  [plugins."io.containerd.cri.v1.runtime"]
 
-        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+    [plugins."io.containerd.cri.v1.runtime".containerd]
+
+      [plugins."io.containerd.cri.v1.runtime".containerd.runtimes]
+
+        [plugins."io.containerd.cri.v1.runtime".containerd.runtimes.runc]
           runtime_type = "io.containerd.runc.v2"
-          sandbox_mode = "podsandbox"
+          sandboxer = "podsandbox"
 
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+          [plugins."io.containerd.cri.v1.runtime".containerd.runtimes.runc.options]
             BinaryName = ""
             CriuImagePath = ""
             CriuPath = ""

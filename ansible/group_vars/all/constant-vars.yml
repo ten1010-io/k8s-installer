@@ -45,6 +45,13 @@ ki_release_k8s_versions: "{{ (lookup('file', ki_opt_release_meta_path) | from_ya
 # vars.yml names a minor the release does not carry. Read once here so that each
 # value below is a key lookup rather than a repeat of this line
 ki_release_k8s: "{{ ki_release_k8s_versions[k8s_minor_version | default('')] | default({}) }}"
+# What the release says the bundle holds, carried onto the nodes because the
+# scripts that install it are what check it and they read this vars file rather
+# than release.yml. install-packages.sh compares the packages against the bundle
+# directory of the os it is running on, and install-programs.sh asks each binary
+# of bundle/bin its version. See release.yml
+ki_release_packages: "{{ (lookup('file', ki_opt_release_meta_path) | from_yaml)['packages'] }}"
+ki_release_binaries: "{{ (lookup('file', ki_opt_release_meta_path) | from_yaml)['binaries'] }}"
 # A version carrying this suffix is a development build. It keeps its name while
 # its content changes, so a node holding one can only have it replaced by itself.
 # See release.yml. Kept in sync with SNAPSHOT_SUFFIX of setup.sh and upgrade.sh
