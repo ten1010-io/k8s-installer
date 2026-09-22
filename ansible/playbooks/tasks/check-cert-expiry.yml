@@ -10,9 +10,14 @@
   any_errors_fatal: true
   tasks:
     # A path that does not exist is skipped, so the same call covers a worker
-    # holding only the cluster ca and a ki cp node holding the installer pki too
+    # holding only the cluster ca and a ki cp node holding the installer pki too.
+    #
+    # --metrics-path is what leaves the same measurement where a monitoring
+    # system can read it. It is written here rather than by a step of its own
+    # because the certificates move only when a playbook moves them, and every
+    # playbook that moves them ends by importing this file
     - name: Execute check-cert-expiry.sh
-      shell: "sudo {{ ki_opt_scripts_path }}/all-node/check-cert-expiry.sh --days {{ ki_cert_expiry_warning_days }} {{ k8s_pki_path }} {{ ki_etc_pki_path }}"
+      shell: "sudo {{ ki_opt_scripts_path }}/all-node/check-cert-expiry.sh --days {{ ki_cert_expiry_warning_days }} --metrics-path {{ ki_metrics_path }}/certificate-expiry.prom {{ k8s_pki_path }} {{ ki_etc_pki_path }}"
       register: shell_result
 
     - name: Report certificates that are close to expiring

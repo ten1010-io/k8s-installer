@@ -207,6 +207,14 @@ k8s_cp: false
 
 nvidia_gpu: false
 
+# Where the certificate expiry of a node is written, for a monitoring system to
+# read. Under the variable data of the installer like the etcd snapshots, so that
+# everything it writes on a node is under one root, and named for what it holds
+# rather than for the collector that reads it: the format is the one a node
+# exporter textfile collector takes, and pointing that collector at this
+# directory is a decision of whoever runs the monitoring
+ki_metrics_path: "{{ ki_var_root_path }}/metrics"
+
 # How long before a certificate expires it starts being reported. Generous on
 # purpose: the certificates kubeadm issues last three years and are renewed,
 # while the ki pki lasts ten and its ca and its leaf expire together, which makes

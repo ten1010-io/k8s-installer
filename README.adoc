@@ -525,6 +525,8 @@ ansible-playbook -i inventory.yml playbooks/tasks/check-cert-expiry.yml
 ki PKI가 만료되면 레지스트리 TLS가 깨져 모든 노드에서 이미지 pull이 실패합니다.
 설치 시점 + 10년이 이 배포의 하드 리밋이고, 재설치할 때마다 초기화됩니다.
 
+같은 측정을 모니터링 시스템이 읽을 수 있게 파일로도 남깁니다. <<인증서 만료 메트릭>> 을 보세요.
+
 === K8S Installer 업그레이드
 
 [source,shell,subs="+attributes"]
@@ -745,9 +747,13 @@ sudo /opt/k8s-installer/reset.sh
 
 == 모니터링
 
+설치본이 내보내는 것을 사이트의 수집기에 물리는 방법입니다. 수집기 자체는 깔지 않습니다 —
+이미 돌리고 있는 것을 쓰시면 됩니다.
+
 ki cp 서비스는 노드에서 도커 컨테이너로 돕니다. 쿠버네티스 오브젝트가 아니라서 클러스터 안의
-수집기가 서비스 디스커버리로 찾지 못하므로, 긁으려면 주소를 직접 적어 줘야 합니다. 무엇을
-적어야 하는지가 여기에 있습니다.
+수집기가 서비스 디스커버리로 찾지 못하므로, 긁으려면 주소를 직접 적어 줘야 합니다. 노드의
+인증서 만료처럼 긁을 표면이 아예 없는 것은 파일로 남깁니다. 무엇을 적고 어디를 봐야 하는지가
+여기에 있습니다.
 
 === apiserver 로드밸런서
 
@@ -770,6 +776,47 @@ http://<노드 내부망 주소>:18404/metrics
 
 NOTE: 이미 서 있는 클러스터에는 <<클러스터 업그레이드>> 가 반영합니다. <<설정 변경 적용>> 은
 바뀐 변수가 있을 때만 서비스를 다시 쓰므로 이 변경만으로는 반영되지 않습니다.
+
+=== 인증서 만료 메트릭
+
+각 노드가 자기 인증서의 만료를 파일로 씁니다. 형식은 node exporter 의 textfile collector 가
+읽는 것이고, 수집기 자체는 설치본이 깔지 않습니다.
+
+[source]
+----
+/var/lib/k8s-installer/metrics/certificate-expiry.prom
+----
+
+[source]
+----
+# HELP ki_certificate_not_after_seconds Unix time at which the certificate expires
+# TYPE ki_certificate_not_after_seconds gauge
+ki_certificate_not_after_seconds{path="/etc/kubernetes/pki/apiserver.crt"} 1852934400
+ki_certificate_not_after_seconds{path="/etc/k8s-installer/pki/ki-ca.crt"} 2074204800
+...
+----
+
+node exporter 를 이 디렉토리로 향하게 하면 됩니다. 로드밸런서와 달리 긁을 주소가 아니라
+읽을 디렉토리이므로, 노드마다 수집기를 따로 겨눌 필요는 없습니다.
+
+[source,shell]
+----
+node_exporter --collector.textfile.directory=/var/lib/k8s-installer/metrics
+----
+
+남은 일수가 아니라 만료 시각입니다. 얼마나 남았는지는 읽는 쪽에서 빼서 씁니다.
+
+[source]
+----
+(ki_certificate_not_after_seconds - time()) / 86400 < 180
+----
+
+주기적으로 다시 쓰지 않습니다. 만료 시각은 인증서가 발급되거나 갱신될 때만 바뀌고, 그 둘은
+모두 플레이북이 하는 일이기 때문입니다. 클러스터 설치·노드 추가·인증서 갱신·클러스터 업그레이드가
+끝나면서 파일이 다시 쓰이므로, 놓여 있는 값은 계속 맞습니다.
+
+NOTE: <<인증서 만료 확인>> 을 직접 돌려도 같은 파일이 쓰입니다. 이 기능이 들어오기 전에 설치된
+클러스터에 파일을 만드는 방법이기도 합니다.
 
 == 지원하는 쿠버네티스 버전
 
