@@ -29,6 +29,7 @@ def main():
     validate_control_node(hostvars_errors, hostvars)
     validate_ki_cp_ha_mode_vip(hostvars_errors, hostvars)
     validate_internal_network_subnets(hostvars_errors, hostvars)
+    validate_k8s_subnets(hostvars_errors, hostvars)
     validate_kubelet_reservations(hostvars_errors, hostvars)
     validate_k8s_minor_version(hostvars_errors, hostvars)
 
@@ -271,6 +272,58 @@ def validate_internal_network_subnets(hostvars_errors: List[HostvarsError], host
             hostvars_errors.append(error)
 
 
+def validate_k8s_subnets(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects pod and service subnets that overlap something else.
+
+    Both are addresses kubernetes routes to inside the cluster, so anything a
+    node also has to reach by the same address is unreachable from every pod on
+    it. The internal subnets are the ones that matter here: they carry the
+    apiserver, the etcd peers, the dns server and the registries, so an overlap
+    there is a cluster that installs and then can not pull an image, and the
+    failure names the registry rather than the subnet that swallowed it.
+
+    Checked here rather than left to kubeadm, which takes an overlap happily and
+    says nothing about it. Only what this installer knows about is covered: an
+    address a workload has to reach outside the cluster is something the site
+    knows and this file does not, so the same care belongs on any subnet a node
+    routes to
+    """
+    lo_hostvars = hostvars["localhost"]
+
+    try:
+        pod_subnet = ipaddress.ip_network(lo_hostvars["k8s_pod_subnet"])
+        service_subnet = ipaddress.ip_network(lo_hostvars["k8s_service_subnet"])
+        internal_network_subnets = [ipaddress.ip_network(subnet)
+                                    for subnet in lo_hostvars["internal_network_subnets"]]
+    except (KeyError, ValueError):
+        # check_type has already reported whatever is not an address here
+        return
+
+    if pod_subnet.overlaps(service_subnet):
+        error = HostvarsError("localhost",
+                              ("k8s_pod_subnet",),
+                              str(pod_subnet),
+                              f"Value for variable[\"k8s_pod_subnet\"] overlaps value for variable"
+                              f"[\"k8s_service_subnet\"][{service_subnet}]. A pod and a service can not be"
+                              " given the same address")
+        hostvars_errors.append(error)
+
+    for var_name, subnet in (("k8s_pod_subnet", pod_subnet), ("k8s_service_subnet", service_subnet)):
+        for internal_network_subnet in internal_network_subnets:
+            if not subnet.overlaps(internal_network_subnet):
+                continue
+
+            error = HostvarsError("localhost",
+                                  (var_name,),
+                                  str(subnet),
+                                  f"Value for variable[\"{var_name}\"] overlaps a subnet of variable"
+                                  f"[\"internal_network_subnets\"][{internal_network_subnet}]. The nodes,"
+                                  " the load balancer, the dns server and the registries are reached at"
+                                  " addresses of that subnet, and a pod can not reach an address the"
+                                  " cluster routes to itself")
+            hostvars_errors.append(error)
+
+
 def validate_k8s_minor_version(hostvars_errors: List[HostvarsError], hostvars):
     """Rejects a kubernetes minor that this release does not carry.
 
@@ -415,6 +468,8 @@ class VarsModel(BaseModel):
         ]
     ]
 
+    k8s_pod_subnet: IPv4Network
+    k8s_service_subnet: IPv4Network
     k8s_minor_version: Annotated[str, StringConstraints(pattern=K8S_MINOR_VERSION_PATTERN)]
     k8s_certificate_validity_period: Annotated[str, StringConstraints(pattern=VALIDITY_PERIOD_PATTERN)]
 
@@ -510,8 +565,6 @@ class ConstantVarsModel(BaseModel):
 
     k8s_version: str
     k8s_apiserver_port: int = Field(ge=0, le=65535)
-    k8s_service_subnet: IPv4Network
-    k8s_pod_subnet: IPv4Network
     k8s_ca_certificate_validity_period: Annotated[str, StringConstraints(pattern=VALIDITY_PERIOD_PATTERN)]
     k8s_cp: bool
 
