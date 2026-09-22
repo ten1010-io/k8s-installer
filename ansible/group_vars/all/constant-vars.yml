@@ -134,6 +134,11 @@ internal_network_ki_cp_dns_name: "ki-cp.{{ internal_network_zone }}"
 # it names the index and holds whatever architecture the bundle is built for
 ki_cp_dns_server_image: "ubuntu/bind9:9.18-22.04_beta"
 ki_cp_dns_server_image_digest: "sha256:770db6e381fa54a991b31e32496334fa9e69c322473eb95abca8a05a3d4b7739"
+# The stats frontend answers /metrics with the exporter compiled into this image
+# (USE_PROMEX=1, which the docker library build carries). An image without it
+# makes the configuration unparseable, and nothing checks that before the load
+# balancer is reloaded. See the stats frontend of
+# scripts/ki-cp-node/k8s-cp-lb/templates/haproxy.cfg.j2
 ki_cp_k8s_cp_lb_image: "haproxy:2.6"
 ki_cp_k8s_cp_lb_image_digest: "sha256:7e35a0edd273556c03461da98bdef80421de2253c781b6cf48a5a277ae8bbb30"
 ki_cp_keepalived_image: "osixia/keepalived:2.0.20"
