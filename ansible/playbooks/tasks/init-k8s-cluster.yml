@@ -15,6 +15,17 @@
         - name: Execute init-k8s-cluster.sh
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/init-k8s-cluster.sh {{ vars_path_arg }}"
 
+        # kubeadm init returns once the apiserver of this node answers, and what
+        # runs next reaches it through ki cp rather than through localhost:
+        # admin.conf names the load balancer, whose backend only goes up once
+        # /readyz returns 200. A freshly initialised apiserver reaches that well
+        # after it starts answering at all, and nothing here waited for it, so a
+        # clean install raced it and kubeadm spent a minute failing to reach a
+        # cluster that was already running. The same wait is what
+        # upgrade-k8s-nodes.yml puts a node back into rotation behind
+        - name: Execute wait-k8s-apiserver.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/wait-k8s-apiserver.sh {{ vars_path_arg }}"
+
         - name: Execute create-join-credentials-file.sh
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/create-join-credentials-file.sh {{ vars_path_arg }}"
 
