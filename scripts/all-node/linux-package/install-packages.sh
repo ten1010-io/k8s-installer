@@ -230,54 +230,54 @@ rhel8_install() {
     runc \
     systemd-container
 
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/nfs-utils/*.rpm
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nfs-utils
 
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/p11-kit/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/autogen-libopts/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/gmp/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libidn2/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libtasn1/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/nettle/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/gnutls/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/chrony/*.rpm
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/p11-kit
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/autogen-libopts
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/gmp
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libidn2
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libtasn1
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nettle
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/gnutls
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/chrony
 
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/audit/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libsepol/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/pcre2/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libselinux/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libsemanage/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/python3-setools/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/checkpolicy/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/mcstrans/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/policycoreutils/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/selinux-policy/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/container-selinux/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libseccomp/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/containerd/*.rpm
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/audit
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libsepol
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/pcre2
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libselinux
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libsemanage
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/python3-setools
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/checkpolicy
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/mcstrans
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/policycoreutils
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/selinux-policy
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/container-selinux
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libseccomp
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/containerd
 
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/systemd/*.rpm
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/systemd
   kill -TERM 1
   wait_systemd_ready 300
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libaio/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/device-mapper/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/fuse3/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/fuse-overlayfs/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libcgroup/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/slirp/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/conntrack/*.rpm
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libaio
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/device-mapper
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/fuse3
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/fuse-overlayfs
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libcgroup
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/slirp
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/conntrack
   if [[ $(rhel8_is_installed "^libibverbs\.") = "false" ]]; then
-    rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libibverbs/*.rpm
+    rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libibverbs
   fi
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/ebtables/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/docker/*.rpm
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/ebtables
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/docker
 
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/nvidia-container-toolkit/*.rpm
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nvidia-container-toolkit
 
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/ethtool/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/libbpf/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/iproute/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$ki_opt_bundle_path"/linux-packages/rhel8/socat/*.rpm
-  rpm --force -Uvh --oldpackage --replacepkgs "$k8s_packages_path"/*.rpm
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/ethtool
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libbpf
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/iproute
+  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/socat
+  rhel8_install_rpms "$k8s_packages_path"
 
   "$ki_opt_scripts_path/systemctl.sh" reload
 
@@ -296,6 +296,52 @@ set_k8s_packages_path() {
   k8s_packages_path="$ki_opt_bundle_path/linux-packages/$os_dir/k8s/$k8s_minor_version"
   [[ ! -d $k8s_packages_path ]] &&
     die "[ERROR] No such directory of which path is \"$k8s_packages_path\". The bundle of this release does not carry the packages of kubernetes[\"$k8s_minor_version\"]"
+
+  return 0
+}
+
+# Hands rpm the packages of a directory, less the ones already installed at the
+# version the bundle holds.
+#
+# Reinstalling a package that is already there reads like a no-op, and on the
+# ubuntu path dpkg treats it as one. containerd.io is not: it declares
+# "Provides: containerd" and "Conflicts: containerd" at once, and rpm exempts a
+# package from its own conflict only while the incoming one replaces a different
+# version of itself. Handed the copy that is already installed, it finds the
+# incoming conflict met by the installed provide and refuses the transaction:
+#
+#   containerd conflicts with containerd.io-1.7.28-1.el8.x86_64
+#   containerd conflicts with (installed) containerd.io-1.7.28-1.el8.x86_64
+#
+# Which is every --update of a release that left containerd where it was, and
+# most releases do: the run stops there, with the packages after it untouched and
+# the node half updated. containerd.io is the only package of the bundle that
+# declares a conflict on something it provides without a version bound, but that
+# is a fact about what the bundle holds today rather than about rpm, so the skip
+# is not written around that one name.
+#
+# Leaving what is already installed alone is also what an update is asking for. A
+# version the node does not have still goes in, downgrade and all
+rhel8_install_rpms() {
+  local dir=$1
+
+  local to_install=()
+  local rpm_file
+  local nvr
+  for rpm_file in "$dir"/*.rpm; do
+    # An unmatched glob arrives as itself, which is a directory holding no rpm
+    [[ -e $rpm_file ]] || continue
+
+    # The epoch is left out, since that is the form "rpm -q" takes
+    nvr=$(rpm -qp --queryformat '%{NAME}-%{VERSION}-%{RELEASE}' "$rpm_file" 2>/dev/null)
+    [[ -n $nvr ]] && rpm -q "$nvr" &>/dev/null && continue
+
+    to_install+=("$rpm_file")
+  done
+
+  [[ ${#to_install[@]} = 0 ]] && return 0
+
+  rpm --force -Uvh --oldpackage --replacepkgs "${to_install[@]}"
 
   return 0
 }

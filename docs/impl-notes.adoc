@@ -656,6 +656,34 @@ kubeadm 은 업그레이드하면서 새 버전의 이미지를 당깁니다. �
 멈추는 것은 그것이 요청받지 않은 업그레이드이기 때문이고, 업그레이드는 바로 그 일을 하러 온
 것입니다.
 
+=== rhel8 에서는 이미 깔린 rpm 을 다시 주지 않습니다
+
+`containerd.io` 는 `containerd` 를 **Provides 하면서 동시에 Conflicts** 로 선언합니다. rpm 이
+자기 충돌을 면제해 주는 것은 들어오는 패키지가 자신의 *다른* 버전을 대체할 때뿐이라, 이미 깔린
+것과 같은 NEVRA 를 건네면 들어오는 쪽의 Conflicts 가 깔린 쪽의 Provides 와 맞아떨어져 트랜잭션
+전체가 거부됩니다.
+
+----
+error: Failed dependencies:
+        containerd conflicts with containerd.io-1.7.28-1.el8.x86_64
+        containerd conflicts with (installed) containerd.io-1.7.28-1.el8.x86_64
+----
+
+containerd 를 그대로 둔 릴리스의 `--update` 는 전부 여기서 멈춥니다. 그 뒤의 패키지는 손대지
+못한 채 노드가 반쯤 갱신된 상태로 남고, 패치 릴리스가 컴포넌트를 그대로 두는 일이 흔하므로 자주
+만나게 됩니다.
+
+그래서 `rhel8_install_rpms` 가 이미 그 버전으로 깔려 있는 rpm 을 목록에서 빼고 남은 것만 rpm 에
+넘깁니다. 번들이 이미 넣어둔 것을 그대로 두는 것이 업그레이드가 요구하는 바이기도 하고, 덤으로
+134개를 매번 다시 깔던 rhel8 의 `--update` 가 실제로 바뀐 것만 다룹니다. 실측으로 3분에서 9초가
+되었습니다.
+
+무버전 self-conflict 를 선언하는 것은 번들 안에서 `containerd.io` 하나뿐입니다
+(`pkgconf-pkg-config` 도 `pkgconfig` 를 양쪽에 걸지만 `< 1:0.29.1-3` 제약이 있어 걸리지
+않습니다). 그래도 그것은 지금 번들이 무엇을 담고 있는지에 대한 사실이지 rpm 에 대한 사실이
+아니므로, 건너뛰기를 그 이름으로 쓰지 않았습니다. ubuntu 쪽 dpkg 는 같은 버전 재설치를 그냥
+받아들이므로 이 문제가 없습니다.
+
 === 노드 안의 순서는 의존관계가 정합니다
 
 drain 이 패키지보다 먼저입니다. 컨테이너 런타임을 갈아치우면 그 노드의 파드가 전부 재생성되기
