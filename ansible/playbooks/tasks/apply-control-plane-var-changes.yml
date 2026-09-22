@@ -1,0 +1,78 @@
+# Applies the changes of class["control_plane"] to the control plane nodes, one
+# at a time, taking each node out of every load balancer while its apiserver is
+# replaced and putting it back once it is serving again.
+#
+# apply-cluster-config-var-changes.yml has already uploaded the kubeadm
+# configuration these variables are part of. That is what a node reads here, and
+# it is why the upload runs whether or not a variable of its own class changed.
+#
+# Only the control plane nodes: the apiserver is what these variables describe,
+# and a worker runs none.
+#
+# renew-k8s-certs.yml is the same play around a different script. Two copies is
+# one fewer than it takes to be worth a shared play taking the script as a
+# variable, but a change to the drain, the rescue or the waiting belongs in both
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    lb_admin_cmd: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-cp-lb/lb-admin.sh {{ vars_path_arg }}"
+    ki_cp_ihs: "{{ groups['ki_cp_node'] | difference(ki_broken_nodes) }}"
+    control_plane_changed: "{{ hostvars['localhost']['ki_var_changes']['control_plane'] | length > 0 }}"
+  tasks:
+    - when:
+        - inventory_hostname in k8s_cp_nodes
+        - control_plane_changed | bool
+      block:
+        # Every ki cp node runs a load balancer of its own and the vip can move
+        # between them at any moment, so a node is only really out of rotation
+        # once every one of them has been told
+        - name: Take this node out of the load balancer of every ki cp node
+          shell: "{{ lb_admin_cmd }} drain {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+
+        - name: Execute update-k8s-cp-config.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/update-k8s-cp-config.sh {{ vars_path_arg }}"
+
+      # A drained node that is never put back takes no work for good, which is
+      # worse than the failure that got here. It goes back into rotation and the
+      # run stops after that, so the operator is left with a cluster serving from
+      # every node it was serving from before.
+      #
+      # An apiserver that will not start because of what was added is the failure
+      # this is most likely to meet. The manifest has been written by then, so the
+      # node is left holding it and comes back once the variable that named a file
+      # it does not have is corrected
+      rescue:
+        - name: Put this node back into the load balancer of every ki cp node
+          shell: "{{ lb_admin_cmd }} ready {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+
+        - name: Report that writing the control plane manifests failed
+          fail:
+            msg: >-
+              Writing the control plane manifests of node["{{ inventory_hostname }}"] failed.
+              The node was put back into the load balancer of every ki cp node, so it is
+              serving again if its apiserver is up. The nodes after it in the inventory
+              were not touched
+
+    - when:
+        - inventory_hostname in k8s_cp_nodes
+        - control_plane_changed | bool
+      block:
+        - name: Put this node back into the load balancer of every ki cp node
+          shell: "{{ lb_admin_cmd }} ready {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+
+        # Before the next node is taken out. Moving on while this one is not
+        # being given traffic again would take the control plane down to one
+        # fewer node than it looks like
+        - name: Wait for every ki cp node to be giving this node traffic again
+          shell: "{{ lb_admin_cmd }} wait-ready {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"

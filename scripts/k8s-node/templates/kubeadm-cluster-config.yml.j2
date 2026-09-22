@@ -5,6 +5,29 @@ networking:
   serviceSubnet: {{ k8s_service_subnet }}
   podSubnet: {{ k8s_pod_subnet }}
 kubernetesVersion: {{ k8s_version }}
+{%- if k8s_apiserver_extra_args or k8s_apiserver_extra_volumes %}
+apiServer:
+{%- if k8s_apiserver_extra_args %}
+  extraArgs:
+{%- for extra_arg in k8s_apiserver_extra_args %}
+{%- set arg_value = ('true' if extra_arg.value else 'false') if extra_arg.value is boolean else extra_arg.value | string %}
+  - name: {{ extra_arg.name | tojson }}
+    value: {{ arg_value | tojson }}
+{%- endfor %}
+{%- endif %}
+{%- if k8s_apiserver_extra_volumes %}
+  extraVolumes:
+{%- for extra_volume in k8s_apiserver_extra_volumes %}
+  - name: {{ extra_volume.name | tojson }}
+    hostPath: {{ extra_volume.hostPath | tojson }}
+    mountPath: {{ extra_volume.mountPath | tojson }}
+    readOnly: {{ extra_volume.readOnly | default(false) | lower }}
+{%- if extra_volume.pathType is defined %}
+    pathType: {{ extra_volume.pathType }}
+{%- endif %}
+{%- endfor %}
+{%- endif %}
+{%- endif %}
 controlPlaneEndpoint: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_cp_lb_port }}
 certificateValidityPeriod: {{ k8s_certificate_validity_period }}
 caCertificateValidityPeriod: {{ k8s_ca_certificate_validity_period }}
