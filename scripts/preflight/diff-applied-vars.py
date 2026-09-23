@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set
 
 import yaml
 
@@ -32,6 +32,7 @@ def main():
 
     changes: Dict[str, List[dict]] = {cls: [] for cls in var_classes}
     baseline_ihs: List[str] = []
+    baseline_names: Set[str] = set()
 
     for ih in sorted(hostvars):
         if ih == "localhost":
@@ -51,13 +52,24 @@ def main():
                 continue
 
             current = node_hostvars[name]
-            if name in applied and applied[name] == current:
+            # A variable a release added is in no record written before it. There
+            # is no value it was applied with, so there is nothing that could have
+            # been applied differently, and reading it as a change is how a
+            # cluster that is exactly as it was is told to roll its control plane,
+            # or is refused outright when the class it landed in is a blocking
+            # one. What the node holds now is where the comparing starts, which is
+            # already what a node carrying no record at all does
+            if name not in applied:
+                baseline_names.add(name)
+                continue
+
+            if applied[name] == current:
                 continue
 
             changes[cls].append({
                 "ih": ih,
                 "name": name,
-                "applied": applied.get(name),
+                "applied": applied[name],
                 "current": current,
             })
 
@@ -69,6 +81,7 @@ def main():
     yaml.safe_dump({
         "changes": changes,
         "baseline_ihs": baseline_ihs,
+        "baseline_names": sorted(baseline_names),
         # Built here rather than in the playbook. Reporting a change is walking
         # two levels of a mapping of lists, which jinja does badly and reads
         # worse, and the playbook only ever wants to print it

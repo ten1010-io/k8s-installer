@@ -44,6 +44,7 @@
       set_fact:
         ki_var_changes: "{{ (shell_result.stdout | from_yaml)['changes'] }}"
         ki_baseline_ihs: "{{ (shell_result.stdout | from_yaml)['baseline_ihs'] }}"
+        ki_baseline_names: "{{ (shell_result.stdout | from_yaml)['baseline_names'] }}"
         ki_var_change_summary: "{{ (shell_result.stdout | from_yaml)['summary'] }}"
 
     - name: Remove temporary variable[\"shell_result\"]
@@ -61,6 +62,17 @@
           so this run takes the values it has now as the starting point.
           Changes to them are reported from the next run on
       when: ki_baseline_ihs | length > 0
+
+    # And the variables a release added, which are in no record written before
+    # it. Same rule, one level down: nothing was applied with a value, so there
+    # is nothing that could have been applied differently
+    - name: Report the variables with nothing recorded yet
+      debug:
+        msg: >-
+          Variable[{{ ki_baseline_names | join(", ") }}] has no record on the nodes that
+          carry it, so this run takes the values they have now as the starting point.
+          Changes to them are reported from the next run on
+      when: ki_baseline_names | length > 0
 
     - name: Report what changed
       debug:
