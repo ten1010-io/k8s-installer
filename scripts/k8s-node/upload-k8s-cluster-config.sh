@@ -80,6 +80,9 @@ jinja2_cmd=""
 ki_etc_kubeadm_path=""
 ki_tmp_root_path=""
 
+node_internal_ip=""
+k8s_apiserver_port=""
+
 # Writes the kubeadm cluster configuration again and uploads it to the cluster,
 # so that what kubeadm issues from now on follows the current variables. What it
 # has already issued is untouched: a certificate validity period that changed
@@ -93,6 +96,8 @@ main() {
 
   ki_etc_kubeadm_path=$($yq_cmd '.ki_etc_kubeadm_path' < "$vars_path")
   ki_tmp_root_path=$($yq_cmd '.ki_tmp_root_path' < "$vars_path")
+  node_internal_ip=$($yq_cmd '.internal_network_interfaces[0].ip' < "$vars_path")
+  k8s_apiserver_port=$($yq_cmd '.k8s_apiserver_port' < "$vars_path")
 
   create_cluster_config_file
   upload_cluster_config
@@ -110,10 +115,47 @@ create_cluster_config_file() {
 }
 
 upload_cluster_config() {
+  local kubeadm_config_path
+  kubeadm_config_path=$(mktemp)
+  cat "$ki_etc_kubeadm_path""/kubeadm-cluster-config.yml" > "$kubeadm_config_path"
+  echo "---" >> "$kubeadm_config_path"
+  write_init_config >> "$kubeadm_config_path"
+
   msg "[INFO] Uploading the kubeadm cluster configuration"
-  kubeadm init phase upload-config kubeadm \
-      --config "$ki_etc_kubeadm_path""/kubeadm-cluster-config.yml" ||
+  kubeadm init phase upload-config kubeadm --config "$kubeadm_config_path" || {
+    rm -f "$kubeadm_config_path"
     die "[ERROR] Failed to upload the kubeadm cluster configuration"
+  }
+  rm -f "$kubeadm_config_path"
+
+  return 0
+}
+
+# kubeadm builds the client it reaches the cluster with from the address it is
+# told the apiserver serves on, and without an InitConfiguration it takes that
+# from the default route of the node. That is the address the node answers the
+# outside on rather than the one the apiserver certificate carries, so the client
+# is refused by the very apiserver it is for and the phase spends its whole
+# deadline retrying:
+#
+#   unable to create ClusterRoleBinding: client rate limiter Wait returned an
+#   error: rate: Wait(n=1) would exceed context deadline
+#
+# which names a rate limiter and means a deadline that ran out. Handed the
+# address of the node the phase takes a tenth of a second.
+#
+# Written here rather than read off the node. Only the node that ran kubeadm init
+# holds a kubeadm-init-config.yml, so a file is not something every control plane
+# node can be asked for, and localAPIEndpoint is the whole of what is missing:
+# kubeadm reads the rest of the configuration out of the cluster
+write_init_config() {
+  cat <<EOF
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: $node_internal_ip
+  bindPort: $k8s_apiserver_port
+EOF
 
   return 0
 }

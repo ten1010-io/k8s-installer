@@ -78,7 +78,9 @@ yq_cmd=""
 jinja2_cmd=""
 
 ki_tmp_join_credentials_path=""
-ki_etc_kubeadm_path=""
+
+node_internal_ip=""
+k8s_apiserver_port=""
 
 main() {
   require_file_exists "$vars_path"
@@ -88,7 +90,8 @@ main() {
   validate_ki_opt_directory
 
   ki_tmp_join_credentials_path=$($yq_cmd '.ki_tmp_join_credentials_path' < "$vars_path")
-  ki_etc_kubeadm_path=$($yq_cmd '.ki_etc_kubeadm_path' < "$vars_path")
+  node_internal_ip=$($yq_cmd '.internal_network_interfaces[0].ip' < "$vars_path")
+  k8s_apiserver_port=$($yq_cmd '.k8s_apiserver_port' < "$vars_path")
 
   # Both of these are captured together with their stderr, so a failure has to be
   # looked at here rather than left to set -e. Dying on the assignment takes the
@@ -109,25 +112,10 @@ main() {
     die "[ERROR] Failed to read a join token out of what kubeadm printed:\n$join_command"
 
   # --config is not optional here, however little this phase seems to need it.
-  # Run without one, kubeadm reads the ClusterConfiguration out of the cluster and
-  # has no InitConfiguration at all, so the timeouts of v1beta4 keep their zero
-  # value and kubernetesAPICall becomes no time whatsoever. The client then
-  # refuses before it sends anything:
-  #
-  #   unable to create ClusterRoleBinding: client rate limiter Wait returned an
-  #   error: rate: Wait(n=1) would exceed context deadline
-  #
-  # which names a rate limiter and means an expired deadline. Handed the same
-  # configuration the node was built from, the phase takes a tenth of a second.
-  # The two files are what init-k8s-cluster.sh rendered and they stay on the node,
-  # which matters because add-node runs this on a cp node that is already up
-  require_file_exists "$ki_etc_kubeadm_path/kubeadm-cluster-config.yml"
-  require_file_exists "$ki_etc_kubeadm_path/kubeadm-init-config.yml"
-
+  # See write_init_config for what kubeadm does without one, and for why only
+  # the address of the node is written rather than a file being read off it
   kubeadm_config_path=$(mktemp)
-  cat "$ki_etc_kubeadm_path/kubeadm-cluster-config.yml" > "$kubeadm_config_path"
-  echo "---" >> "$kubeadm_config_path"
-  cat "$ki_etc_kubeadm_path/kubeadm-init-config.yml" >> "$kubeadm_config_path"
+  write_init_config > "$kubeadm_config_path"
 
   exit_code=0
   upload_certs_output=$(kubeadm init phase upload-certs --upload-certs --config "$kubeadm_config_path" 2>&1) || exit_code=$?
@@ -156,6 +144,36 @@ import_ki_opt_vars() {
   ki_opt_bundle_path=$(grep -oP  "^ki_opt_bundle_path: \K(.+)" < "$vars_path")
   ki_opt_venv_path=$(grep -oP  "^ki_opt_venv_path: \K(.+)" < "$vars_path")
 }
+
+# kubeadm builds the client it reaches the cluster with from the address it is
+# told the apiserver serves on, and without an InitConfiguration it takes that
+# from the default route of the node. That is the address the node answers the
+# outside on rather than the one the apiserver certificate carries, so the client
+# is refused by the very apiserver it is for and the phase spends its whole
+# deadline retrying:
+#
+#   unable to create ClusterRoleBinding: client rate limiter Wait returned an
+#   error: rate: Wait(n=1) would exceed context deadline
+#
+# which names a rate limiter and means a deadline that ran out. Handed the
+# address of the node the phase takes a tenth of a second.
+#
+# Written here rather than read off the node. Only the node that ran kubeadm init
+# holds a kubeadm-init-config.yml, so a file is not something every control plane
+# node can be asked for, and localAPIEndpoint is the whole of what is missing:
+# kubeadm reads the rest of the configuration out of the cluster
+write_init_config() {
+  cat <<EOF
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: $node_internal_ip
+  bindPort: $k8s_apiserver_port
+EOF
+
+  return 0
+}
+
 
 setup_cmd_vars() {
   yq_cmd="$ki_opt_bundle_path/bin/yq"
