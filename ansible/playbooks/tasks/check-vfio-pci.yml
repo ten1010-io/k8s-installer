@@ -1,0 +1,53 @@
+# Reports nodes that were configured for vfio-pci and have not taken it. It only
+# reports: nothing in the installer reboots a node, so a node still waiting for
+# one is not a failed node, it is a node with something left to do, and whoever
+# can reboot it may not be whoever is running this.
+#
+# What it is for is that the waiting does not get forgotten. Nothing the setup
+# writes is true before a reboot, and a node carrying the configuration looks
+# exactly like a node where it worked, so this repeats itself at the end of every
+# run until the devices are actually bound.
+#
+# Runnable on its own, which is what the report itself tells the operator to do
+# once the node has been rebooted:
+#
+#   ansible-playbook -i inventory.yml playbooks/tasks/check-vfio-pci.yml
+#
+# That is why the ids are passed as arguments rather than read from the vars file
+# of the node: ki_tmp_vars_path only exists while a playbook is running, and
+# reset-vars-file.yml takes it away before the end of one. check-cert-expiry.yml
+# is the same shape for the same reason.
+#
+# Only the k8s nodes: setup-vfio-pci.sh runs on those and on no others, so they
+# are the only nodes that can have taken this or failed to
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Execute check-vfio-pci.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/vfio-pci/check-vfio-pci.sh --node {{ inventory_hostname }} {{ vfio_pci_device_ids | join(' ') }}"
+      register: shell_result
+
+    # Kept as a fact because the line below has to know whether any node in the
+    # play said anything, and shell_result is about to be cleared
+    - name: "Record what node[\"{{ inventory_hostname }}\"] reported"
+      set_fact:
+        vfio_pci_report: "{{ shell_result.stdout | trim }}"
+
+    - name: Report nodes whose vfio-pci configuration is not applied
+      debug:
+        msg: "{{ shell_result.stdout_lines }}"
+      when: vfio_pci_report | length > 0
+
+    # Silence is the answer when every node is where it should be, and silence is
+    # also what a check that did not run looks like. Someone who has just
+    # rebooted a node and come back to confirm it is owed the difference
+    - name: Report that every node has taken its vfio-pci configuration
+      debug:
+        msg: "[INFO] Every node that names vfio_pci_device_ids has its devices bound to vfio-pci"
+      run_once: true
+      when: ansible_play_hosts | map('extract', hostvars, 'vfio_pci_report') | select('ne', '') | list | length == 0
+
+    - name: "Remove temporary variable[\"shell_result\"]"
+      set_fact:
+        shell_result: null

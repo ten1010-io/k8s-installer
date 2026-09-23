@@ -19,3 +19,5 @@
     ki_recorded_classes: all
 
 - import_playbook: tasks/reset-vars-file.yml
+
+- import_playbook: tasks/check-vfio-pci.yml
