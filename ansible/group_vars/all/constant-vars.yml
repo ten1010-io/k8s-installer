@@ -212,6 +212,17 @@ nvidia_gpu: false
 # initramfs is touched on a node that names none
 vfio_pci_device_ids: []
 
+# Whether the installer may reboot a node it has just configured for vfio-pci.
+# Off by default, because rebooting a machine is the site's call and plenty of
+# them only allow it in a window. On, it happens while the node is still empty,
+# which is the cheapest that reboot will ever be, and the run then refuses a node
+# that came back without its devices bound. Off, the node is configured and
+# reported at the end of every run until somebody reboots it.
+#
+# The control node is never rebooted either way. It is the machine ansible runs
+# from, so the run would not survive it
+vfio_pci_reboot: false
+
 # Where the certificate expiry of a node is written, for a monitoring system to
 # read. Under the variable data of the installer like the etcd snapshots, so that
 # everything it writes on a node is under one root, and named for what it holds
@@ -331,6 +342,10 @@ ki_var_classes:
     # Read by backup-etcd.sh the next time it runs and by nothing else, so a
     # changed count applies itself without anything being done to a node
     - ki_etcd_backup_retention_count
+    # Read while a node is being provisioned and never again. Changing it does
+    # not reach a node that already exists, and does not need to: whether the
+    # installer rebooted that node once is not a property the node carries
+    - vfio_pci_reboot
   # Not changeable on a cluster that exists. The internal subnets decide the
   # address of every node, which the etcd peers and the apiserver of each one are
   # published under; the pod and service subnets decide the addresses kubernetes

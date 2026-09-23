@@ -13,6 +13,10 @@
     script: all-node/check-node-state.sh
     every_node: true
 
+# Before anything is built on the node, because this is the last point at which
+# rebooting it is free. See tasks/setup-vfio-pci.yml
+- import_playbook: tasks/setup-vfio-pci.yml
+
 - import_playbook: tasks/init-pki.yml
 
 - import_playbook: tasks/setup-ki-ca-crt.yml
