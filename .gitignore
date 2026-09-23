@@ -27,6 +27,9 @@ build/
 /bundle/
 /bundle-*.tgz
 
+### Python ###
+__pycache__/
+
 ### Claude ###
 .claude/
 
