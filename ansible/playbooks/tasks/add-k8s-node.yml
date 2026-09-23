@@ -13,9 +13,6 @@
         - name: Execute configure-linux.sh
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/configure-linux.sh {{ vars_path_arg }}"
 
-        - name: Execute setup-vfio-pci.sh
-          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/vfio-pci/setup-vfio-pci.sh {{ vars_path_arg }}"
-
         - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
           shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
 

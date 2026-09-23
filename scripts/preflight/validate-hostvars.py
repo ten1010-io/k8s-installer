@@ -665,6 +665,7 @@ class ConstantVarsModel(BaseModel):
     # vendor:device, as lspci -nn prints it
     vfio_pci_device_ids: List[
         Annotated[str, StringConstraints(pattern=PCI_DEVICE_ID_PATTERN)]]
+    vfio_pci_reboot: bool
 
     target_node: str | None
     target_node_op: str | None
