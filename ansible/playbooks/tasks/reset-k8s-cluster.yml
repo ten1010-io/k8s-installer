@@ -55,3 +55,9 @@
       shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/reset-k8s-node-cni.sh {{ vars_path_arg }}"
       throttle: 1
       when: inventory_hostname in k8s_cp_nodes
+
+    # Every node of the play and not the cp ones alone: the card that was passed
+    # through is usually on a worker, and the node is leaving the cluster either
+    # way. Nothing here talks to the cluster, so it needs no throttle
+    - name: Execute reset-vfio-pci.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/vfio-pci/reset-vfio-pci.sh {{ vars_path_arg }}"

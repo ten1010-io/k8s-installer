@@ -18,6 +18,7 @@ VALIDITY_PERIOD_PATTERN = r"^[0-9]+h$"
 STORAGE_SIZE_PATTERN = r"^[0-9]+[EPTGMK]i$"
 CPU_QUANTITY_PATTERN = r"^([0-9]+m|[0-9]+(\.[0-9]+)?)$"
 EVICTION_THRESHOLD_PATTERN = r"^([0-9]+(\.[0-9]+)?%|[0-9]+[EPTGMK]i)$"
+PCI_DEVICE_ID_PATTERN = r"^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}$"
 # A volume of a pod is named with a dns 1123 label, which bounds its length at 63
 DNS_1123_LABEL_PATTERN = r"[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?"
 APISERVER_ARG_NAME_PATTERN = r"[a-z0-9][a-z0-9-]*"
@@ -62,6 +63,7 @@ def main():
     validate_ki_cp_ha_mode_vip(hostvars_errors, hostvars)
     validate_internal_network_subnets(hostvars_errors, hostvars)
     validate_k8s_subnets(hostvars_errors, hostvars)
+    validate_vfio_pci_device_ids(hostvars_errors, hostvars)
     validate_kubelet_reservations(hostvars_errors, hostvars)
     validate_k8s_apiserver_extra_volumes(hostvars_errors, hostvars)
     validate_k8s_minor_version(hostvars_errors, hostvars)
@@ -431,6 +433,35 @@ def validate_k8s_minor_version(hostvars_errors: List[HostvarsError], hostvars):
         f" kubernetes[\"{k8s_minor_version}\"]. It carries {carried}")
     hostvars_errors.append(error)
 
+def validate_vfio_pci_device_ids(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects a node that is told to pass a device through and to have a gpu.
+
+    The two are opposite ends of the same card. nvidia_gpu means the node runs
+    the driver of the vendor and containers are given the device through it,
+    while vfio_pci_device_ids means the device is claimed at boot by vfio-pci
+    and handed to a guest whole. A node set both ways loads a driver that is
+    told to stand back, and which of the two wins is decided by what comes up
+    first at boot rather than by what was asked for
+    """
+    for ih in sorted(hostvars):
+        if ih == "localhost":
+            continue
+
+        node_hostvars = hostvars[ih]
+        if not node_hostvars.get("nvidia_gpu"):
+            continue
+        if not node_hostvars.get("vfio_pci_device_ids"):
+            continue
+
+        error = HostvarsError(ih,
+                              ("vfio_pci_device_ids",),
+                              str(node_hostvars["vfio_pci_device_ids"]),
+                              "Variable[\"vfio_pci_device_ids\"] is set on a node whose variable"
+                              "[\"nvidia_gpu\"] is true. A device bound to vfio-pci is given to a guest"
+                              " whole and is not one containers can use, so a node does one or the other")
+        hostvars_errors.append(error)
+
+
 def validate_kubelet_reservations(hostvars_errors: List[HostvarsError], hostvars):
     """Validates the values calculated by create-kubelet-reservations.py.
 
@@ -631,6 +662,9 @@ class ConstantVarsModel(BaseModel):
     k8s_cp: bool
 
     nvidia_gpu: bool
+    # vendor:device, as lspci -nn prints it
+    vfio_pci_device_ids: List[
+        Annotated[str, StringConstraints(pattern=PCI_DEVICE_ID_PATTERN)]]
 
     target_node: str | None
     target_node_op: str | None
