@@ -67,3 +67,5 @@
 - import_playbook: tasks/check-cert-expiry.yml
 
 - import_playbook: tasks/check-vfio-pci.yml
+
+- import_playbook: tasks/check-nvidia-cdi.yml
