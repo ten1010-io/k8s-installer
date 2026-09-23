@@ -244,6 +244,17 @@ k8s_node:
 개 있으면 전부 묶입니다. GPU 를 넘길 때는 같은 IOMMU 그룹에 들어 있는 오디오 기능까지 함께
 적어야 합니다 — 그룹은 통째로 넘어가거나 아예 안 넘어갑니다.
 
+ID 와 IOMMU 그룹은 노드마다 들어가 보지 않고 아래로 확인합니다. 스크립트를 올리는 것은
+`setup-k8s-installer.yml` 이므로, 아직 클러스터에 넣기 전인 노드에도 그 다음부터는 돌아갑니다.
+
+[source,shell]
+----
+ansible-playbook -i inventory.yml playbooks/list-pci-devices.yml --limit node3
+----
+
+IOMMU 그룹은 그 노드가 IOMMU 를 켜고 부팅한 뒤에야 보입니다. 처음 조회에서는 ID 만 나오므로,
+지정하고 재부팅한 다음 다시 조회하면 그룹과 `vfio-pci` 로 바뀐 드라이버가 함께 보입니다.
+
 지정하면 그 노드에 다음이 설정됩니다.
 
 * 커널 명령줄에 `intel_iommu=on iommu=pt` (AMD 이면 `amd_iommu=on`). 프로세서를 보고 고릅니다

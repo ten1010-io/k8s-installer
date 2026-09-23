@@ -366,8 +366,10 @@ initramfs 도 갈립니다 — 우분투는 `/etc/initramfs-tools/modules` 의 �
 
 재부팅 전에는 아무것도 참이 아니므로, 확인은 전부 재부팅을 끼고 합니다.
 
-. ID 를 적고 add-node. 스크립트가 `Configured ...` 와 IOMMU 상태를 말하고, 아직 꺼져 있다고 함
-. 재부팅. `lspci -k` 가 그 장치에 `vfio-pci` 를 보이고, 목록에 없는 다른 카드는 원래 드라이버를 그대로 들고 있음
+. `list-pci-devices.yml` 로 ID 를 확인. 아직 IOMMU 가 꺼져 있으므로 그룹은 안 보인다고 나옴
+. ID 를 적고 add-node. 플레이북 끝에서 그 노드가 "not taken it / iommu: off" 로 보고됨
+. 재부팅 후 `check-vfio-pci.yml`. 아무 노드도 보고되지 않고 "Every node ... bound to vfio-pci" 가 나옴.
+  `list-pci-devices.yml` 에는 그룹과 `driver["vfio-pci"]` 가 보이고, 목록에 없는 다른 카드는 원래 드라이버를 그대로 들고 있음
 . 없는 ID 를 적고 add-node. 노드가 만들어지기 전에 거부됨
 . `nvidia_gpu` 와 같은 노드에 적고 실행. 플레이북이 시작 전에 거부됨
 . remove-node 후 *재부팅하지 않고* add-node. rhel8 에서 `grubby --info=ALL` 에 IOMMU 인자가 다시 들어 있음
@@ -382,7 +384,7 @@ initramfs 도 갈립니다 — 우분투는 `/etc/initramfs-tools/modules` 의 �
 . 목록을 비우고 upgrade-cluster. 그 노드의 `/etc/modprobe.d`, `/etc/modules-load.d`, drop in, dracut 파일이 사라짐
 . `/etc/initramfs-tools/modules` 에 사이트 항목을 넣고 add-node 와 remove-node. 그 항목이 살아 있음
 
-5번과 6번과 7번이 이 기능의 실질적 회귀 테스트입니다. 셋 다 "재부팅하지 않은 상태"나 "설치본이
+6번과 7번과 8번이 이 기능의 실질적 회귀 테스트입니다. 셋 다 "재부팅하지 않은 상태"나 "설치본이
 소유하지 않은 설정"을 건드리는 쪽이고, 그것이 이 기능에서 조용히 틀리는 지점입니다.
 
 == 번들에 담는 컨테이너 이미지
