@@ -2,13 +2,52 @@
 # playbook that did it. Last on purpose: a run that failed half way through
 # leaves the files describing the state the node was actually left in, so the
 # next update sees the change it still has to apply rather than believing it was
-# already made
+# already made.
+#
+# ki_recorded_classes is what the calling playbook applied, either the word all
+# or a list of class names of ki_var_classes, and it has no default. Written from
+# vars.yml alone this file said what that file held rather than what the node was
+# left with, which is a different thing in every playbook but update-cluster.yml.
+# A class that is not named keeps the value it was last applied with, and a
+# variable that has never been recorded stays unrecorded, which is where
+# diff-applied-vars.py takes what the node holds now as its starting point
 - hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
+  vars:
+    recordable_names: >-
+      {{ (ki_var_classes.keys() | list if ki_recorded_classes == "all" else ki_recorded_classes)
+         | map("extract", ki_var_classes) | flatten }}
   tasks:
+    # Rather than a default of every class, which is what this did before and is
+    # the shape that goes wrong quietly: a class added later and forgotten here
+    # would be recorded by a playbook that never applied it. Unrecorded is the
+    # safe direction, since diff-applied-vars.py reads it as a starting point
+    - name: Check that the playbook said which classes it applied
+      assert:
+        that: ki_recorded_classes is defined
+        fail_msg: >-
+          record-applied-state.yml was imported without variable["ki_recorded_classes"].
+          The playbook importing it has to name the classes of ki_var_classes it applied,
+          or a node is recorded as holding values nothing put on it
+
     - name: "Create directory[\"{{ ki_etc_root_path }}\"]"
       shell: "sudo mkdir -p {{ ki_etc_root_path }}"
+
+    # What the node already holds, so that a class this playbook did not apply
+    # keeps the value it was last applied with. Read here rather than taken from
+    # diff-applied-vars.yml, which upgrade-cluster.yml and add-node.yml do not run
+    - name: "Read file[\"{{ ki_etc_applied_vars_path }}\"]"
+      shell: "sudo cat {{ ki_etc_applied_vars_path }} 2>/dev/null || true"
+      register: shell_result
+
+    - name: Set_fact variable[\"ki_recorded_vars\"]
+      set_fact:
+        ki_recorded_vars: "{{ shell_result.stdout | from_yaml | default({}, true) }}"
+
+    - name: Remove temporary variable[\"shell_result\"]
+      set_fact:
+        shell_result: null
 
     - name: "Record the variables applied to this node in file[\"{{ ki_etc_applied_vars_path }}\"]"
       copy:
@@ -18,8 +57,10 @@
         # than written as null, which would read as a value on the next compare
         content: |
           {% for name in ki_var_classes.values() | flatten | sort %}
-          {% if name in hostvars[inventory_hostname] %}
+          {% if name in recordable_names and name in hostvars[inventory_hostname] %}
           {{ name }}: {{ hostvars[inventory_hostname][name] | to_json }}
+          {% elif name in ki_recorded_vars %}
+          {{ name }}: {{ ki_recorded_vars[name] | to_json }}
           {% endif %}
           {% endfor %}
         dest: "{{ ki_etc_applied_vars_path }}"

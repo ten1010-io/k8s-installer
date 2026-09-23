@@ -21,7 +21,15 @@
 
 - import_playbook: tasks/upgrade-k8s-nodes.yml
 
+# Only the classes this playbook applies. kubeadm reads its configuration out
+# of the cluster rather than out of vars.yml, so kubelet, cluster_config and
+# control_plane are not applied here, and node_rebuild and immutable are not
+# applied anywhere: recording any of them would say the node holds a value
+# nothing put on it, and for the two blocking classes it would also be what
+# stops update-cluster.yml from ever refusing the change again
 - import_playbook: tasks/record-applied-state.yml
+  vars:
+    ki_recorded_classes: ["cluster_upgrade", "service", "no_action"]
 
 - import_playbook: tasks/reset-vars-file.yml
 
