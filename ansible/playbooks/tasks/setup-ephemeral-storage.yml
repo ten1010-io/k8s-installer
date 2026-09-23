@@ -13,13 +13,9 @@
     device_arg: "--device {{ ephemeral_storage_device }}"
     mount_path_arg: "--mount-path {{ ki_ephemeral_root_path }}"
   tasks:
-    # Defaulted rather than read outright, because this play runs before
-    # validate-hostvars.yml and an upgrade keeps the vars.yml of the user, which
-    # does not carry a variable the release added until it is merged in. A node
-    # that has not been given a device keeps its ephemeral storage where it was
     - when:
         - target_node is none or inventory_hostname == target_node
-        - ephemeral_storage_device | default(None) is not none
+        - ephemeral_storage_device is not none
       block:
         - name: Execute setup-ephemeral-storage.sh
           shell: "sudo {{ ki_opt_scripts_path }}/all-node/ephemeral-storage/setup-ephemeral-storage.sh {{ device_arg }} {{ mount_path_arg }}"

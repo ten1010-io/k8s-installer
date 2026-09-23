@@ -18,23 +18,12 @@ STORAGE_SIZE_PATTERN = r"^[0-9]+[EPTGMK]i$"
 CPU_QUANTITY_PATTERN = r"^([0-9]+m|[0-9]+(\.[0-9]+)?)$"
 EVICTION_THRESHOLD_PATTERN = r"^([0-9]+(\.[0-9]+)?%|[0-9]+[EPTGMK]i)$"
 
-# Variables a release removed, and what to do with the line that is left behind
-REMOVED_VARS = {
-    "containerd_root_path":
-        "Variable[\"containerd_root_path\"] has been removed."
-        " The container runtime root is no longer configurable, a node that needs it"
-        " off the root filesystem sets variable[\"ephemeral_storage_device\"] instead,"
-        " which bind mounts /var/lib/containerd onto that device."
-        " Remove the line from vars.yml. See docs/impl-notes.adoc",
-}
-
 
 def main():
     hostvars = yaml.safe_load(sys.stdin)
     hostvars_errors: List[HostvarsError] = []
 
     check_type(hostvars_errors, hostvars)
-    validate_removed_vars(hostvars_errors, hostvars)
     validate_var_classes(hostvars_errors, hostvars)
     validate_broken_node_group(hostvars_errors, hostvars)
     validate_control_node(hostvars_errors, hostvars)
@@ -63,24 +52,6 @@ def check_type(hostvars_errors: List[HostvarsError], hostvars):
         except ValidationError as e:
             for error in e.errors():
                 hostvars_errors.append(build_hostvars_error(ih, error))
-
-
-def validate_removed_vars(hostvars_errors: List[HostvarsError], hostvars):
-    """Rejects a variable that a release has removed.
-
-    An upgrade keeps the vars.yml of the user, so a variable that is gone stays in
-    it. VarsModel ignores keys it does not know, which would leave the value
-    looking like it still applies while nothing reads it any more. Saying so is
-    the difference between a line to delete and a node that quietly behaves
-    differently than the file it is configured by
-    """
-    for ih in hostvars.keys():
-        for var_name, msg in REMOVED_VARS.items():
-            if var_name not in hostvars[ih]:
-                continue
-
-            error = HostvarsError(ih, (var_name,), str(hostvars[ih][var_name]), msg)
-            hostvars_errors.append(error)
 
 
 def validate_var_classes(hostvars_errors: List[HostvarsError], hostvars):
@@ -309,12 +280,7 @@ def validate_k8s_minor_version(hostvars_errors: List[HostvarsError], hostvars):
     k8s_version empty, and everything downstream would be building a cluster of
     no particular version: kubeadm asked for nothing, packages looked for under
     a bundle directory that does not exist. Saying which minors the release
-    holds answers all of it at once.
-
-    An upgrade keeps the vars.yml of the user, so this is also what a cluster
-    sitting below the window of a new release runs into. That cluster reaches
-    the bottom of the window on the release it is already on, and is upgraded
-    after
+    holds answers all of it at once
     """
     lo_hostvars = hostvars["localhost"]
     k8s_minor_version = lo_hostvars.get("k8s_minor_version")
@@ -324,19 +290,12 @@ def validate_k8s_minor_version(hostvars_errors: List[HostvarsError], hostvars):
     if not k8s_versions:
         return
 
+    # Not set is check_type's to report
+    if k8s_minor_version is None:
+        return
+
     carried = ", ".join(sorted(k8s_versions, reverse=True))
     release_version = lo_hostvars.get("ki_release_version")
-
-    if k8s_minor_version is None:
-        hostvars_errors.append(HostvarsError(
-            "localhost",
-            ("k8s_minor_version",),
-            str(k8s_minor_version),
-            f"Variable[\"k8s_minor_version\"] of vars.yml is not set, so nothing says which"
-            f" kubernetes minor this cluster runs. Release[\"{release_version}\"] carries"
-            f" {carried}. A cluster that already exists takes the one it is running, which"
-            f" \"kubectl version\" prints"))
-        return
 
     if k8s_minor_version in k8s_versions:
         # Carried but not described. The release author left a field out, and
@@ -359,9 +318,7 @@ def validate_k8s_minor_version(hostvars_errors: List[HostvarsError], hostvars):
         ("k8s_minor_version",),
         str(k8s_minor_version),
         f"Release[\"{release_version}\"] does not carry"
-        f" kubernetes[\"{k8s_minor_version}\"]. It carries {carried}."
-        f" A cluster below that window is raised to the lowest minor of it on the"
-        f" release it is already on, and upgraded to this one after")
+        f" kubernetes[\"{k8s_minor_version}\"]. It carries {carried}")
     hostvars_errors.append(error)
 
 def validate_kubelet_reservations(hostvars_errors: List[HostvarsError], hostvars):
@@ -405,6 +362,11 @@ def print_hostvars_errors(errors: List[HostvarsError]):
 
 
 def build_hostvars_error(ih, error) -> HostvarsError:
+    # The input of a missing field is the whole model, which is every variable of
+    # the node and the secrets among them, when all there is to say is that the
+    # line is not there
+    if error['type'] == 'missing':
+        return HostvarsError(ih, error['loc'], None, error['msg'])
     return HostvarsError(ih, error['loc'], error['input'], error['msg'])
 
 
@@ -453,12 +415,7 @@ class VarsModel(BaseModel):
         ]
     ]
 
-    # Optional to the model and required all the same. An upgrade keeps the
-    # vars.yml of the user, so the release that adds this variable meets clusters
-    # whose file has no line for it, and "Field required" is not an instruction.
-    # validate_k8s_minor_version says what to write instead
-    k8s_minor_version: Optional[
-        Annotated[str, StringConstraints(pattern=K8S_MINOR_VERSION_PATTERN)]] = None
+    k8s_minor_version: Annotated[str, StringConstraints(pattern=K8S_MINOR_VERSION_PATTERN)]
     k8s_certificate_validity_period: Annotated[str, StringConstraints(pattern=VALIDITY_PERIOD_PATTERN)]
 
     # Explicit overrides. None means the value is calculated from the resources

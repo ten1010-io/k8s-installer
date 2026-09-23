@@ -103,12 +103,6 @@ bind mount 없이 kubelet 과 containerd 가 뜨면 아무 에러 없이 루트 
 
 변수 검증도 `validate-hostvars` 보다 앞서 일어나므로 스크립트가 자체적으로 방어합니다.
 
-같은 이유로 플레이북의 조건식이 `ephemeral_storage_device` 를 그냥 읽지 않고
-`default(None)` 을 거칩니다. 업그레이드는 사용자의 `vars.yml` 을 보존하므로 새 릴리스가
-추가한 변수는 사용자가 병합하기 전까지 없고, `validate-hostvars` 의 pydantic 기본값은 아직
-적용되기 전입니다. 이 방어가 없으면 디바이스를 주지 않은 노드에서 조건식이
-"undefined" 로 터집니다.
-
 === reset 순서 제약
 
 `uninstall-packages.sh` 는 `rm -rf /var/lib/containerd` 를 합니다. bind mount 가 살아 있는
@@ -179,11 +173,6 @@ ephemeral-storage 사용량으로 잡히고, 디스크를 새로 붙이는 노�
 
 bind mount 방식에서는 의미가 없어져 없앴습니다. 대상 경로가 고정되면서 systemd drop-in 도
 템플릿이 아닌 고정 파일이 되었습니다.
-
-업그레이드하면 사용자의 `vars.yml` 은 보존되므로 이 키가 남습니다. `VarsModel` 은 pydantic
-기본 설정이라 모르는 키를 조용히 무시하는데, 그러면 커스텀 경로가 계속 먹는 줄 알지만
-실제로는 containerd 가 `/var/lib/containerd` 를 쓰게 되어 기존 이미지가 고아가 됩니다.
-그래서 `validate-hostvars.py` 가 이 키를 발견하면 실패시킵니다.
 
 === 모니터링 영향
 

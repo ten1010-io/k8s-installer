@@ -98,9 +98,8 @@ main() {
   ki_etcd_backup_path=$($yq_cmd '.ki_etcd_backup_path' < "$vars_path")
   ki_etcd_backup_retention_count=$($yq_cmd '.ki_etcd_backup_retention_count' < "$vars_path")
 
-  # Checked rather than used as it comes. An upgrade keeps the vars.yml of the
-  # user, so a cluster upgraded into this release has no count in it and yq
-  # answers "null", which the arithmetic below would read as the name of a
+  # Checked rather than used as it comes. A line missing from vars.yml makes yq
+  # answer "null", which the arithmetic below would read as the name of a
   # variable and abort on. Saying which variable is missing beats that
   [[ $ki_etcd_backup_retention_count =~ ^[0-9]+$ ]] ||
     die "[ERROR] Variable[\"ki_etcd_backup_retention_count\"] is \"$ki_etcd_backup_retention_count\", which is not a number of snapshots to keep. Add it to vars.yml"

@@ -97,11 +97,6 @@ ki_etc_applied_vars_path: "{{ ki_etc_root_path }}/applied-vars.yml"
 # the installer rather than /var/backups, so that everything it writes on a node
 # is under one root. On the root filesystem, which is why the count is bounded
 ki_etcd_backup_path: "{{ ki_var_root_path }}/etcd-backups"
-# The fallback for the count vars.yml carries. An upgrade keeps the vars.yml of
-# the user, so a cluster upgraded into the release that added this variable has
-# no count in it at all, and backup-etcd.sh would have nothing to read. group_vars
-# of all are merged with vars.yml winning, so a count set there still decides
-ki_etcd_backup_retention_count: 5
 # The release this node was last built or updated with, written next to the
 # variables by the same play and for the same reason. ki_opt_release_path is the
 # release the installer on the node holds, which upgrade-k8s-installer.yml raises
@@ -185,8 +180,7 @@ ki_cp_user_registry_port: 5001
 # cluster can not be pointed at a patch no bundle holds.
 #
 # Empty when the minor asked for is not one this release carries, and empty again
-# when vars.yml names no minor at all, which is what the file of a cluster older
-# than this variable looks like. Both are defaulted rather than left to fail,
+# when vars.yml names no minor at all. Both are defaulted rather than left to fail,
 # because the play that renders the vars file onto the nodes runs before
 # validate-hostvars.py: without the defaults that play dies on a jinja error and
 # the report that says what to write is never reached
