@@ -1,0 +1,11 @@
+# Reads the pci devices of the nodes and prints them. See
+# tasks/list-pci-devices.yml
+#
+# Without begin-playbook.yml, which every playbook that changes something opens
+# with. This one changes nothing, so what that gives - every node holding the
+# same release, the ansible directory of the ki cp nodes brought up to date, the
+# arguments of the playbook validated - buys it nothing, and it takes something
+# away: those plays walk the whole inventory, so a run narrowed with the --limit
+# of ansible dies in them before it reaches this. Looking at one node is the main
+# way this gets used
+- import_playbook: tasks/list-pci-devices.yml

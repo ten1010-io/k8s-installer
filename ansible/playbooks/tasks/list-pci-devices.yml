@@ -1,0 +1,32 @@
+# Lists the pci devices of every node, so that whoever is deciding what to pass
+# through to a guest can read the ids off a playbook rather than logging into
+# each machine in turn.
+#
+# Grouped by iommu group, which is the decision actually being made: a group goes
+# to a guest whole or not at all, so a gpu and the audio function sharing its
+# group have to be named together while the onboard audio of the same driver must
+# be left alone. That grouping is the thing lspci does not put in front of you,
+# and lspci is not on the nodes anyway - it comes from pciutils and the bundle
+# does not carry it.
+#
+# Narrow it to one node with the --limit of ansible:
+#
+#   ansible-playbook -i inventory.yml playbooks/list-pci-devices.yml --limit node4
+#
+# The right moment is between setup-k8s-installer.yml, which is what puts these
+# scripts on a node, and add-node.yml. The ids go into inventory.yml in between
+- hosts: all:!localhost:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Execute list-pci-devices.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/vfio-pci/list-pci-devices.sh --node {{ inventory_hostname }}"
+      register: shell_result
+
+    - name: Report the pci devices of this node
+      debug:
+        msg: "{{ shell_result.stdout_lines }}"
+
+    - name: "Remove temporary variable[\"shell_result\"]"
+      set_fact:
+        shell_result: null
