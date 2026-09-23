@@ -1,0 +1,43 @@
+# Reports a node that has nvidia gpus and can not hand them to a container.
+#
+# There is nothing here that configures anything, because nothing needs to be.
+# containerd carries enable_cdi and reads /etc/cdi and /var/run/cdi as it comes,
+# and what goes in those directories is written by nvidia-cdi-refresh, two
+# systemd units of nvidia-container-toolkit-base that fire when the toolkit is
+# installed, when the driver is installed, and at every boot. install-packages.sh
+# already puts that package on every node and the driver is the site's. So the
+# node is ready without the installer doing anything, and the only thing left
+# worth having is a report for when it is not.
+#
+# Nothing in the inventory declares which nodes have gpus. Whether one does is a
+# fact about the machine, and asking it is cheaper and truer than carrying a
+# variable that says so and can drift. A node with no driver is not a node that
+# failed, it is a node without gpus.
+#
+# Runnable on its own:
+#
+#   ansible-playbook -i inventory.yml playbooks/tasks/check-nvidia-cdi.yml
+- hosts: all:!localhost:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Execute check-nvidia-cdi.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/all-node/nvidia-cdi/check-nvidia-cdi.sh --node {{ inventory_hostname }}"
+      register: shell_result
+
+    - name: "Record what node[\"{{ inventory_hostname }}\"] reported"
+      set_fact:
+        nvidia_cdi_report: "{{ shell_result.stdout | trim }}"
+
+    - name: Report nodes whose gpus are not available to containers
+      debug:
+        msg: "{{ shell_result.stdout_lines }}"
+      when: nvidia_cdi_report | length > 0
+
+    # Only where there was something to say. Unlike the vfio check there is no
+    # line naming the nodes this covers, because nothing declares them: silence
+    # here means every node with a driver can serve its gpus, and on a cluster
+    # with no gpus at all it means nothing was asked
+    - name: "Remove temporary variable[\"shell_result\"]"
+      set_fact:
+        shell_result: null
