@@ -225,6 +225,50 @@ sudo ./setup.sh
 파일명은 `release.yml`의 버전에서 정해집니다. 다른 릴리스의 번들을 가져오면 이름이 맞지
 않아 `setup.sh`가 시작 단계에서 중단됩니다.
 
+=== 장치를 게스트에게 통과시키기 (vfio-pci)
+
+노드의 PCI 장치를 가상머신에 통째로 넘기려면 그 장치가 부팅 시점에 vfio-pci 에 묶여 있어야
+합니다. `inventory.yml` 에 노드별로 적습니다.
+
+[source,yaml]
+----
+k8s_node:
+  hosts:
+    node3:
+      vfio_pci_device_ids:
+        - "10de:2230"
+        - "10de:1aef"
+----
+
+`vendor:device` 이고 `lspci -nn` 이 대괄호 안에 찍어 주는 값입니다. 그 모델의 장치가 노드에 여러
+개 있으면 전부 묶입니다. GPU 를 넘길 때는 같은 IOMMU 그룹에 들어 있는 오디오 기능까지 함께
+적어야 합니다 — 그룹은 통째로 넘어가거나 아예 안 넘어갑니다.
+
+지정하면 그 노드에 다음이 설정됩니다.
+
+* 커널 명령줄에 `intel_iommu=on iommu=pt` (AMD 이면 `amd_iommu=on`). 프로세서를 보고 고릅니다
+* 커널 명령줄에 `vfio-pci.ids=...` 도 함께. vfio-pci 가 모듈이 아니라 커널에 내장된 배포판에서는
+  아래 `modprobe.d` 가 읽히지 않아서, ID 를 커널 명령줄로 줘야 장치가 묶입니다
+* initramfs 에 `vfio`, `vfio_iommu_type1`, `vfio-pci`
+* `/etc/modules-load.d/ki-vfio-pci.conf` 에 같은 모듈들
+* `/etc/modprobe.d/ki-vfio-pci.conf` 에 `options vfio-pci ids=...` 와, 같은 카드를 잡으러 오는
+  드라이버들이 vfio-pci 뒤에 오게 하는 `softdep`. 드라이버 이름은 적어 둔 목록이 아니라 그 장치의
+  modalias 로 알아냅니다
+
+[IMPORTANT]
+====
+* *재부팅해야 적용됩니다.* 설치본은 재부팅하지 않습니다. 스크립트가 지금 IOMMU 가 켜져 있는지
+  알려 주므로, 꺼져 있다고 나오면 아직 적용 전입니다
+* *`nvidia_gpu` 와 같은 노드에 쓸 수 없습니다.* vfio-pci 에 묶인 카드는 게스트에게 통째로 가는
+  카드라 컨테이너가 쓸 수 있는 카드가 아닙니다. 둘 다 적으면 플레이북이 시작 전에 거부합니다
+* *노드를 만들 때 정해집니다.* 이미 돌고 있는 노드에 지정하거나 바꾸려면 `remove-node` 후
+  `add-node` 입니다
+====
+
+한 번도 지정하지 않은 노드에는 아무것도 하지 않습니다. 부트로더도 initramfs 도 건드리지 않습니다.
+지정해 두었던 노드에서 목록을 비우면 그 노드에 쓴 것을 되돌립니다 — 되돌린 것도 재부팅해야
+적용됩니다.
+
 === ephemeral-storage 전용 디스크
 
 노드의 컨테이너 데이터는 기본적으로 루트 디스크에 쌓입니다. 이미지 하나가 크거나 파드 로그가

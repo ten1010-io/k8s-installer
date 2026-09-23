@@ -29,13 +29,19 @@
               reset either way, but it is left registered with the cluster, so take it
               out with kubectl delete node once the apiserver is back.
 
-    - name: Execute reset-k8s-node-kubelet.sh
-      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/reset-k8s-node-kubelet.sh {{ vars_path_arg }}"
-      when: inventory_hostname == target_node
+    # One condition over the three of them rather than one each. Everything below
+    # is done to the node that is leaving and to no other, and a task appended
+    # here inherits that instead of having to remember it
+    - when: inventory_hostname == target_node
+      block:
+        - name: Execute reset-k8s-node-kubelet.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/reset-k8s-node-kubelet.sh {{ vars_path_arg }}"
 
-    - name: Execute reset-k8s-node-cni.sh
-      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/reset-k8s-node-cni.sh {{ vars_path_arg }}"
-      when: inventory_hostname == target_node
+        - name: Execute reset-k8s-node-cni.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/reset-k8s-node-cni.sh {{ vars_path_arg }}"
+
+        - name: Execute reset-vfio-pci.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/vfio-pci/reset-vfio-pci.sh {{ vars_path_arg }}"
 
 - hosts: ki_cp_node:!broken_node
   gather_facts: false

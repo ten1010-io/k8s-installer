@@ -54,6 +54,13 @@
         - name: Execute configure-linux.sh
           shell: "{{ scripts }}/k8s-node/configure-linux.sh {{ vars_path_arg }}"
 
+        # Written again because a release may have changed what goes in those
+        # files. A node whose inventory names no device is left alone, and one
+        # whose files are already what this writes is only re-rendered: the
+        # devices keep the binding they took at the last boot either way
+        - name: Execute setup-vfio-pci.sh
+          shell: "{{ scripts }}/k8s-node/vfio-pci/setup-vfio-pci.sh {{ vars_path_arg }}"
+
         - name: Execute setup-crictl.sh
           shell: "{{ scripts }}/all-node/crictl/setup-crictl.sh {{ vars_path_arg }}"
 

@@ -207,6 +207,11 @@ k8s_cp: false
 
 nvidia_gpu: false
 
+# The pci devices of a node to bind to vfio-pci, as vendor:device, set per node
+# in inventory.yml. Empty leaves the node alone: neither the bootloader nor the
+# initramfs is touched on a node that names none
+vfio_pci_device_ids: []
+
 # Where the certificate expiry of a node is written, for a monitoring system to
 # read. Under the variable data of the installer like the etcd snapshots, so that
 # everything it writes on a node is under one root, and named for what it holds
@@ -307,6 +312,7 @@ ki_var_classes:
     - k8s_cp
     - ki_var_root_path
     - nvidia_gpu
+    - vfio_pci_device_ids
   # Changing it needs nothing done to any node. sync-ansible.yml already keeps
   # the ansible directory of every ki cp node in step, so moving the control
   # node is this declaration and nothing else.
