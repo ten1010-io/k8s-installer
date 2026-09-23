@@ -80,6 +80,7 @@ ki_opt_venv_path=""
 yq_cmd=""
 
 k8s_version=""
+ki_etc_kubeadm_path=""
 
 # Takes this node to the kubernetes version of the release the installer now
 # holds. The packages under it have already been replaced by the caller, so
@@ -98,6 +99,7 @@ main() {
   validate_ki_opt_directory
 
   k8s_version=$($yq_cmd '.k8s_version' < "$vars_path")
+  ki_etc_kubeadm_path=$($yq_cmd '.ki_etc_kubeadm_path' < "$vars_path")
 
   if [[ $first_cp_node = "true" ]]; then
     upgrade_cluster
@@ -121,6 +123,15 @@ get_cluster_k8s_version() {
   return 0
 }
 
+# Both calls are handed the patches directory. kubeadm upgrade writes
+# /var/lib/kubelet/config.yaml from the kubelet-config ConfigMap of the cluster,
+# which holds the reservations calculated for whichever node ran kubeadm init,
+# and without --patches the reservations calculated for this node are dropped on
+# the way past. They are not put back by anything until a variable of
+# class["kubelet"] changes, so the node runs on the wrong ones for as long as
+# nobody touches one. The node that ran init can not show this, since there its
+# own values are the baseline
+#
 # Raising the version the cluster records is done once, by the first node. Asked
 # again for a version it already holds, kubeadm rewrites and restarts the
 # control plane of this node for nothing, so a run repeated after a failure part
@@ -133,7 +144,7 @@ upgrade_cluster() {
   fi
 
   msg "[INFO] Raising the cluster to kubernetes[\"$k8s_version\"]"
-  kubeadm upgrade apply "$k8s_version" --yes ||
+  kubeadm upgrade apply "$k8s_version" --yes --patches "$ki_etc_kubeadm_path""/patches" ||
     die "[ERROR] Failed to raise the cluster to kubernetes[\"$k8s_version\"]. the cluster is left at the version it reports, and the nodes after this one were not touched"
 
   return 0
@@ -144,7 +155,7 @@ upgrade_cluster() {
 # changes nothing, so there is nothing to decide
 upgrade_node() {
   msg "[INFO] Bringing this node to kubernetes[\"$k8s_version\"]"
-  kubeadm upgrade node ||
+  kubeadm upgrade node --patches "$ki_etc_kubeadm_path""/patches" ||
     die "[ERROR] Failed to bring this node to kubernetes[\"$k8s_version\"]"
 
   return 0
