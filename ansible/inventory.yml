@@ -39,9 +39,7 @@ k8s_node:
       # Pci devices of this node to bind to vfio-pci, so that a virtual machine
       # can be given one. vendor:device as lspci -nn prints it, and every device
       # of that model on the node is bound. Not only gpus: a network card or a
-      # usb controller is named the same way. A card bound here is not a card
-      # containers can use, so it does not go with nvidia_gpu on the same node,
-      # which is why it is shown here rather than on the node below
+      # usb controller is named the same way
       #vfio_pci_device_ids:
       #  - "10de:2230"
       #  - "10de:1aef"
@@ -53,7 +51,6 @@ k8s_node:
       # setup-vfio-pci.sh refuses a node where this does not match what it finds
       #gpu_passthrough: true
     node4:
-      nvidia_gpu: true
       # The device given here holds everything kubelet accounts as ephemeral
       # storage. It gets formatted, so it has to be a disk with nothing on it
       #ephemeral_storage_device: "/dev/disk/by-id/nvme-eui.0123456789abcdef"

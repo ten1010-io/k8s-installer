@@ -83,8 +83,6 @@ ki_opt_venv_path=""
 yq_cmd=""
 jinja2_cmd=""
 
-nvidia_gpu=""
-
 main() {
   require_file_exists "$vars_path"
   import_ki_opt_vars
@@ -92,11 +90,8 @@ main() {
   require_directory_exists "$ki_opt_root_path"
   validate_ki_opt_directory
 
-  nvidia_gpu=$($yq_cmd '.nvidia_gpu' < "$vars_path")
 
   [[ $update = "false" ]] && require_docker_not_enabled
-
-  [[ $nvidia_gpu = "true" ]] && require_nvidia_gpu_exists
 
   $jinja2_cmd --format yaml -o "/etc/docker/daemon.json" "$SCRIPT_DIR_PATH"/templates/daemon.json.j2 "$vars_path"
   create_drop_in_file
@@ -133,15 +128,6 @@ create_drop_in_file() {
   mkdir -p "$DROP_IN_DIR_PATH"
   cp -f "$SCRIPT_DIR_PATH"/templates/override.conf "$DROP_IN_PATH"
   "$ki_opt_scripts_path"/systemctl.sh reload
-
-  return 0
-}
-
-require_nvidia_gpu_exists() {
-  local result
-  result=$("$ki_opt_scripts_path"/preflight/nvidia-gpu-exists.sh)
-
-  [[ $result = "false" ]] && die "[ERROR] Nvidia gpu not detected"
 
   return 0
 }

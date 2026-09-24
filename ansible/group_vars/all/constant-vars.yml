@@ -205,7 +205,17 @@ k8s_apiserver_port: 6443
 k8s_ca_certificate_validity_period: "87600h" # 87600h = 10 year
 k8s_cp: false
 
-nvidia_gpu: false
+# Variables an earlier release had and this one does not, with what replaced
+# them. An inventory that still names one is not an inventory with a variable
+# nobody classified, and telling its owner to go and put it in a class sends them
+# looking for somewhere to file a variable that no longer exists anywhere
+ki_removed_vars:
+  nvidia_gpu: >-
+    Containers are given gpus through the container device interface now.
+    containerd reads the specification without being configured for it and
+    nvidia-cdi-refresh writes it, so there is nothing left for this to turn on.
+    A pod is still given one only where a device plugin is running with
+    --device-list-strategy=cdi-cri. Take the variable out of inventory.yml
 
 # The pci devices of a node to bind to vfio-pci, as vendor:device, set per node
 # in inventory.yml. Empty leaves the node alone: neither the bootloader nor the
@@ -332,7 +342,6 @@ ki_var_classes:
     - internal_network_ip
     - k8s_cp
     - ki_var_root_path
-    - nvidia_gpu
     - vfio_pci_device_ids
     - gpu_passthrough
   # Changing it needs nothing done to any node. sync-ansible.yml already keeps

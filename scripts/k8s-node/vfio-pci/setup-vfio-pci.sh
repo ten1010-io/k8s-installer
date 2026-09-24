@@ -191,8 +191,8 @@ rhel8_setup() {
 # about the run says so: every file is written, the report says "Configured", and
 # it shows up only after a reboot as "passthrough does not work", which is the
 # one state this is unable to tell apart from a node that was never rebooted.
-# Refused here instead, the way a node told it has a gpu it does not have is
-# refused. See require_nvidia_gpu_exists of setup-containerd.sh
+# Refused here instead, before a file is written, which is the only moment the
+# answer is cheap
 require_vfio_pci_devices_exist() {
   local id
   local missing=()

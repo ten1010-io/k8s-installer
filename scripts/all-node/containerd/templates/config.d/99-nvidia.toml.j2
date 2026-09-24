@@ -1,16 +1,31 @@
+{#
+  Registers the nvidia runtime as a handler and nothing else.
+
+  What is deliberately absent is default_runtime_name. An earlier release set it
+  to "nvidia", which made every container of the node go through a shim it did
+  not need; containerd reads the container device interface itself, so runc stays
+  the default and only the pods that ask for this handler get it. nvidia-ctk
+  runtime configure draws the same line - it registers the handler and needs
+  --set-as-default before it touches the default.
+
+  Also absent are the runc handler and pinned_images, which the drop in this
+  replaces used to repeat. containerd merges this file into config.toml rather
+  than replacing what it says: with only the block below, runtimes.runc keeps its
+  options, default_runtime_name stays runc and enable_cdi stays true. Repeating
+  them here would be two places to keep in step for no gain.
+
+  Written on every node because /usr/bin/nvidia-container-runtime is on every
+  node - install-packages.sh puts nvidia-container-toolkit-base everywhere - so
+  there is nothing to ask the inventory. A handler nobody selects costs a node
+  nothing.
+#}
 version = 4
 
 [plugins]
 
-  [plugins."io.containerd.cri.v1.images"]
-
-    [plugins."io.containerd.cri.v1.images".pinned_images]
-      sandbox = "{{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}/pause:{{ k8s_pause_version }}"
-
   [plugins."io.containerd.cri.v1.runtime"]
 
     [plugins."io.containerd.cri.v1.runtime".containerd]
-      default_runtime_name = "nvidia"
 
       [plugins."io.containerd.cri.v1.runtime".containerd.runtimes]
 
@@ -20,30 +35,4 @@ version = 4
 
           [plugins."io.containerd.cri.v1.runtime".containerd.runtimes.nvidia.options]
             BinaryName = "/usr/bin/nvidia-container-runtime"
-            CriuImagePath = ""
-            CriuPath = ""
-            CriuWorkPath = ""
-            IoGid = 0
-            IoUid = 0
-            NoNewKeyring = false
-            NoPivotRoot = false
-            Root = ""
-            ShimCgroup = ""
-            SystemdCgroup = true
-
-        [plugins."io.containerd.cri.v1.runtime".containerd.runtimes.runc]
-          runtime_type = "io.containerd.runc.v2"
-          sandboxer = "podsandbox"
-
-          [plugins."io.containerd.cri.v1.runtime".containerd.runtimes.runc.options]
-            BinaryName = ""
-            CriuImagePath = ""
-            CriuPath = ""
-            CriuWorkPath = ""
-            IoGid = 0
-            IoUid = 0
-            NoNewKeyring = false
-            NoPivotRoot = false
-            Root = ""
-            ShimCgroup = ""
             SystemdCgroup = true
