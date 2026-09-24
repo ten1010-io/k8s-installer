@@ -21,6 +21,18 @@ MODPROBE_PATH=/etc/modprobe.d/ki-vfio-pci.conf
 INITRAMFS_MODULES_PATH=/etc/initramfs-tools/modules
 DRACUT_PATH=/etc/dracut.conf.d/99-ki-vfio-pci.conf
 GRUB_DROP_IN_PATH=/etc/default/grub.d/99-ki-vfio-pci.cfg
+# The one file here that is not about binding a device. nvidia-cdi-refresh.service
+# comes with nvidia-container-toolkit-base, which install-packages.sh puts on
+# every node, and its first ExecStart is nvidia-smi -L with no - prefix. On a node
+# that handed all of its gpus to guests that command can not succeed, and the unit
+# carries Restart=on-failure with RestartSec=1s, so it fails and restarts for as
+# long as the node is up. The vendor did bound it - StartLimitBurst=5 over
+# StartLimitIntervalSec=10s - but a failing nvidia-smi takes about three seconds
+# to give up, so five starts never fit in ten seconds and the limit never trips.
+# /lib belongs to the package and /etc to whoever runs the machine, which is why
+# this goes here and why the postinst, which unmasks and re-enables the unit on
+# every install, leaves it alone
+CDI_REFRESH_DROP_IN_PATH=/etc/systemd/system/nvidia-cdi-refresh.service.d/99-ki-vfio-pci.conf
 # Under ki_etc_root_path, which is read from the vars file, so the scripts build
 # the path rather than holding it
 KERNEL_ARGS_FILE_NAME=vfio-pci-kernel-args
@@ -91,6 +103,58 @@ iommu_group_of_sysfs_path() {
   basename "$(readlink -f "$path"/iommu_group)"
 
   return 0
+}
+
+# The class and subclass of a device, as the four hex digits of 0xCCSSPP that
+# name what a card is. Read here rather than in the one script that prints it,
+# because the setup has to decide whether a device is a gpu and both have to
+# agree on how that question is asked
+class_code() {
+  local path=$1
+  local class
+
+  class=$(< "$path"/class)
+  echo "${class:2:4}"
+
+  return 0
+}
+
+# Whether a device is a display controller, which is what "gpu" means to the pci
+# specification. 0300 is a vga controller and 0302 a 3d controller - a datacentre
+# card with no display output reports the latter, an L40S among them - and the
+# whole 03 class is taken rather than those two, so that a card reporting 0301 or
+# 0380 is not quietly treated as something other than a gpu
+is_display_device() {
+  local path=$1
+
+  [[ $(class_code "$path") = 03* ]]
+}
+
+# Whether the device would be driven by nvidia, asked of the device rather than
+# taken from a list of vendor ids, the same way the softdep list is built and for
+# the same reason: modalias is what the card says it is and does not change with
+# what is bound to it, so this still answers on a node whose cards have been on
+# vfio-pci since its last reboot.
+#
+# Naming nvidia here is not the written down list of cards that
+# vendor_drivers_of_device_ids exists to avoid. What is being asked after is not
+# "is this a gpu", which is the question nobody can write down, but "is this a
+# card the refresh unit needs", and that unit runs nvidia-smi. nouveau counts with
+# the rest: the question is whether an nvidia card is there, not which of its
+# drivers the node happens to carry
+is_nvidia_driven() {
+  local path=$1
+  local driver
+
+  [[ -f $path/modalias ]] || return 1
+
+  for driver in $(modprobe -R "$(< "$path"/modalias)" 2>/dev/null || true); do
+    case $driver in
+    nvidia | nvidia_* | nvidiafb | nouveau) return 0 ;;
+    esac
+  done
+
+  return 1
 }
 
 # Whether the iommu of this node is up now. A device bound to vfio-pci on a node
@@ -182,7 +246,7 @@ has_vfio_pci_config() {
   local kernel_args_path=$1
   local path
 
-  for path in "$MODULES_LOAD_PATH" "$MODPROBE_PATH" "$DRACUT_PATH" "$GRUB_DROP_IN_PATH" "$kernel_args_path"; do
+  for path in "$MODULES_LOAD_PATH" "$MODPROBE_PATH" "$DRACUT_PATH" "$GRUB_DROP_IN_PATH" "$CDI_REFRESH_DROP_IN_PATH" "$kernel_args_path"; do
     if [[ -f $path ]]; then
       return 0
     fi
@@ -193,4 +257,18 @@ has_vfio_pci_config() {
   fi
 
   return 1
+}
+
+# Takes the drop in away and gives the unit its own behaviour back. Shared
+# because both scripts do it: the reset removes it with everything else, and the
+# setup removes it on a node that still passes devices through but no longer
+# passes its gpus, which is the same file and must be the same removal
+remove_cdi_refresh_drop_in() {
+  [[ -f $CDI_REFRESH_DROP_IN_PATH ]] || return 0
+
+  rm -f "$CDI_REFRESH_DROP_IN_PATH"
+  rmdir --ignore-fail-on-non-empty "$(dirname "$CDI_REFRESH_DROP_IN_PATH")"
+  systemctl daemon-reload
+
+  return 0
 }

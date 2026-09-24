@@ -96,6 +96,7 @@ os_major_version=""
 os_minor_version=""
 
 vfio_pci_device_ids=""
+gpu_passthrough=""
 iommu_kernel_args=""
 # The iommu arguments and the ids, which is the whole of what goes on the kernel
 # line. The ids are there because modprobe options do not reach a vfio-pci that
@@ -124,6 +125,7 @@ main() {
   kernel_args_path="$ki_etc_root_path/$KERNEL_ARGS_FILE_NAME"
 
   vfio_pci_device_ids=$($yq_cmd '.vfio_pci_device_ids // [] | join(",")' < "$vars_path")
+  gpu_passthrough=$($yq_cmd '.gpu_passthrough // false' < "$vars_path")
 
   # Not simply nothing to do. A node whose ids were taken out of the inventory
   # still carries what an earlier run wrote and would go on binding its cards at
@@ -136,6 +138,8 @@ main() {
   fi
 
   require_vfio_pci_devices_exist
+  require_gpu_passthrough_matches_node
+  apply_cdi_refresh_drop_in
   set_iommu_kernel_args
   set_kernel_args
 
@@ -233,6 +237,83 @@ set_iommu_kernel_args() {
 # over when the module loads, which is the same value modprobe.d gives it
 set_kernel_args() {
   kernel_args="$iommu_kernel_args vfio-pci.ids=$vfio_pci_device_ids"
+
+  return 0
+}
+
+# gpu_passthrough says every gpu of this node goes to a guest and the driver of
+# the vendor is left with none. It is a statement of intent and not a fact about
+# the machine - the ids alone can not say it, since a device named there is as
+# likely to be a network card or a usb controller as a gpu - so it is declared.
+# Declared and then checked here, because a claim of "all of them" that is wrong
+# by one card is a node whose driver still sees a gpu while this takes the
+# retries away from the unit that serves it.
+#
+# Counted by what would drive a card and not by what class it reports. Every
+# server draws its console on a display device of its own - on this hardware a
+# matrox g200 beside four L40S - and nobody hands that one to a guest, so a plain
+# count of display devices makes this a claim no server could satisfy. The
+# primary display is not a way out of it either: which device that is comes from
+# the firmware, so it is the console on a server and the card itself on a
+# workstation or on a server whose bios was told to prefer pcie. What the refresh
+# unit needs is an nvidia card, so that is what is looked for
+require_gpu_passthrough_matches_node() {
+  local named
+  named=$(sysfs_paths_of_device_ids "$vfio_pci_device_ids")
+
+  local kept=()
+  local passed=()
+  local path
+  for path in "$PCI_DEVICES_PATH"/*; do
+    [[ -f $path/class ]] || continue
+    is_display_device "$path" || continue
+    is_nvidia_driven "$path" || continue
+
+    if grep -qxF "$path" <<< "$named"; then
+      passed+=("$(basename "$path")")
+    else
+      kept+=("$(basename "$path")")
+    fi
+  done
+
+  if [[ $gpu_passthrough = "true" && ${#kept[@]} -gt 0 ]]; then
+    die "[ERROR] Variable[\"gpu_passthrough\"] is true while displayDevices[\"${kept[*]}\"] of this node are not named by variable[\"vfio_pci_device_ids\"]"
+  fi
+
+  if [[ $gpu_passthrough != "true" && ${#passed[@]} -gt 0 ]]; then
+    die "[ERROR] Variable[\"vfio_pci_device_ids\"] names displayDevices[\"${passed[*]}\"] of this node while variable[\"gpu_passthrough\"] is false"
+  fi
+
+  return 0
+}
+
+# Written when this node keeps no gpu and taken away when it does, so that it
+# lives and dies with the configuration around it rather than being left behind
+# on a node that stopped passing its cards through.
+#
+# Restart=no rather than a wider start limit. The limit the vendor wrote fails
+# because it is timed against a failure whose length nobody controls, and a
+# number chosen here would be the same bet. On a node that declared it keeps no
+# gpu there is nothing a retry could find, so not retrying is the whole of what
+# is wanted and it does not depend on how long anything takes.
+#
+# Written whether or not the driver is on the node. A node that hands its cards
+# to guests has no use for the driver and usually does not carry one, in which
+# case the unit never runs at all and this file does nothing. It is the node
+# whose image brings the driver along anyway that needs it, and an image can
+# start bringing it along at any upgrade
+apply_cdi_refresh_drop_in() {
+  if [[ $gpu_passthrough != "true" ]]; then
+    remove_cdi_refresh_drop_in
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$CDI_REFRESH_DROP_IN_PATH")"
+  cat > "$CDI_REFRESH_DROP_IN_PATH" <<EOF
+[Service]
+Restart=no
+EOF
+  systemctl daemon-reload
 
   return 0
 }
