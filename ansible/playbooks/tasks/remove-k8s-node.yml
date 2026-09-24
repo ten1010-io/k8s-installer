@@ -4,11 +4,30 @@
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
-    - name: Execute delete-node.sh
-      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/delete-node.sh {{ vars_path_arg }}"
-      when:
+    # Run from a control plane node that is staying, and needing the cluster to
+    # answer, so the same thing that is true of reset-k8s-cluster.yml is true
+    # here: -e sdfc= is the way past it and the error does not mention it
+    - when:
         - inventory_hostname == k8s_cp_nodes | community.general.lists_difference([target_node]) | first
         - skip_deleting_from_cluster is undefined
+      block:
+        - name: Execute delete-node.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/delete-node.sh {{ vars_path_arg }}"
+          register: shell_result
+      rescue:
+        - name: Say that the cluster could not be reached and how to remove without it
+          fail:
+            msg: |-
+              delete-node.sh could not take node["{{ target_node }}"] out of the cluster:
+
+              {{ shell_result.stderr | default("") | trim }}
+
+              This step asks the apiserver to delete the node object, so it needs a
+              cluster that is still answering.
+
+              Run the playbook again with -e sdfc= to skip this step. The node is still
+              reset either way, but it is left registered with the cluster, so take it
+              out with kubectl delete node once the apiserver is back.
 
     - name: Execute reset-k8s-node-kubelet.sh
       shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/reset-k8s-node-kubelet.sh {{ vars_path_arg }}"

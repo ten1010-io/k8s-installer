@@ -4,11 +4,33 @@
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
-    - name: Execute delete-all-nodes.sh
-      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/delete-all-nodes.sh {{ vars_path_arg }}"
-      when:
+    # The one step of a reset that needs the cluster to still be answering, and
+    # so the one that a cluster which never finished coming up can not do. It is
+    # skipped with -e sdfc=, which nobody finds from what kubectl prints when it
+    # fails - "connection refused" says the apiserver is not there and says
+    # nothing about what to do next. The rescue says it
+    - when:
         - inventory_hostname == k8s_cp_nodes[0]
         - skip_deleting_from_cluster is undefined
+      block:
+        - name: Execute delete-all-nodes.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/delete-all-nodes.sh {{ vars_path_arg }}"
+          register: shell_result
+      rescue:
+        - name: Say that the cluster could not be reached and how to reset without it
+          fail:
+            msg: |-
+              delete-all-nodes.sh could not take the nodes out of the cluster:
+
+              {{ shell_result.stderr | default("") | trim }}
+
+              This step asks the apiserver to delete the node objects, so it needs a
+              cluster that is still answering. A cluster that never finished coming up,
+              or one whose control plane is already gone, can not do it and does not
+              need to - there is nothing left to delete from.
+
+              Run the playbook again with -e sdfc= to skip this step. Everything after
+              it is done to the nodes themselves and runs the same either way.
 
 - hosts: k8s_node:!broken_node
   gather_facts: false
