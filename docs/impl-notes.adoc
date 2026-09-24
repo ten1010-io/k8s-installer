@@ -201,9 +201,9 @@ bind mount 방식에서는 의미가 없어져 없앴습니다. 대상 경로가
 
 == 장치를 게스트에게 통과시키기
 
-`nvidia_gpu` 는 컨테이너가 쓰는 GPU 입니다. 노드가 벤더 드라이버를 들고 있고 containerd 와
-docker 에 런타임이 붙습니다. 가상머신에 카드를 통째로 넘기는 쪽은 그 반대입니다 — 호스트는
-그 카드를 건드리지 않아야 하고, 부팅 시점에 vfio-pci 가 먼저 잡고 있어야 합니다.
+컨테이너가 GPU 를 받는 쪽은 호스트가 벤더 드라이버를 들고 그 위로 장치를 빌려 주는 구조입니다.
+가상머신에 카드를 통째로 넘기는 쪽은 그 반대입니다 — 호스트는 그 카드를 건드리지 않아야 하고,
+부팅 시점에 vfio-pci 가 먼저 잡고 있어야 합니다.
 
 === 세 가지가 부팅 때 다 참이어야 합니다
 
@@ -226,10 +226,8 @@ IOMMU 가 켜져 있어야 하고, vfio 모듈이 initramfs 에 있어야 하고
 
 같은 이유로 적어 준 ID 가 그 노드에 실제로 있는지를 먼저 봅니다. 없으면 거부합니다. 오타 하나는
 파일이 다 써지고 "Configured" 까지 찍힌 뒤 재부팅하고 나서야 "통과가 안 된다" 로 나타나는데,
-그것이 위에서 말한 구분할 수 없는 두 상태 중 하나입니다. GPU 가 없는 노드에 `nvidia_gpu` 를 적은
-경우를 거부하는 것과 같은 자리입니다 — setup-containerd.sh 의 `require_nvidia_gpu_exists` 를
-보세요. 조회는 `lspci` 가 아니라 sysfs 로 합니다. `lspci` 는 pciutils 에 들어 있고 번들은 그것을
-나르지 않습니다.
+그것이 위에서 말한 구분할 수 없는 두 상태 중 하나입니다. 조회는 `lspci` 가 아니라 sysfs 로 합니다.
+`lspci` 는 pciutils 에 들어 있고 번들은 그것을 나르지 않습니다.
 
 === 재부팅을 미루면 사라지지 않고 제일 비싼 순간으로 옮겨집니다
 
@@ -399,7 +397,6 @@ initramfs 도 갈립니다 — 우분투는 `/etc/initramfs-tools/modules` 의 �
 . 재부팅 후 `check-vfio-pci.yml`. 아무 노드도 보고되지 않고 "Every node ... bound to vfio-pci" 가 나옴.
   `list-pci-devices.yml` 에는 그룹과 `driver["vfio-pci"]` 가 보이고, 목록에 없는 다른 카드는 원래 드라이버를 그대로 들고 있음
 . 없는 ID 를 적고 add-node. 노드가 만들어지기 전에 거부됨
-. `nvidia_gpu` 와 같은 노드에 적고 실행. 플레이북이 시작 전에 거부됨
 . remove-node 후 *재부팅하지 않고* add-node. rhel8 에서 `grubby --info=ALL` 에 IOMMU 인자가 다시 들어 있음
 . 사이트가 `intel_iommu=on` 을 미리 달아 둔 rhel8 노드에서 add-node 후 remove-node. 그 인자가 엔트리에 남아 있음
 . 사이트가 IOMMU 를 미리 켜 둔 노드에서 setup 을 돌리고 *재부팅하지 않은 채* 확인. setup 이 재부팅
@@ -464,6 +461,23 @@ containerd 2.3.5 가 `enable_cdi = true` 와 `cdi_spec_dirs = ['/etc/cdi', '/var
 즉 **노드는 설치본이 아무것도 안 해도 준비됩니다.** 남는 가치는 "안 됐을 때 말해 주는 것" 하나뿐이고,
 그래서 이 기능은 검사 스크립트와 보고 태스크가 전부입니다.
 
+=== 다만 파드가 받는 스펙은 refresh 의 것이 아닙니다
+
+실물에서 확인하고 고친 부분입니다. NVIDIA device plugin 을 `--device-list-strategy=cdi-cri` 로
+돌리면 그 플러그인이 **자기 CDI 스펙을 따로 생성해서** 그것을 넘깁니다 —
+`/var/run/cdi/k8s.device-plugin.nvidia.com-gpu.json`, 장치 이름은
+`k8s.device-plugin.nvidia.com/gpu=<uuid>` 입니다. `nvidia-cdi-refresh` 가 쓴 `nvidia.yaml` 을
+**치워도 파드는 GPU 를 정상적으로 받습니다** (k3s 와 이 설치본 클러스터 양쪽에서 확인).
+
+그래도 refresh 를 무시하면 안 됩니다. 노드가 CDI 로 GPU 를 낼 수 있는 상태인지를 **device plugin
+없이** 말해 주는 것은 그쪽뿐이고, 검사 스크립트가 보는 것도 그것입니다. 다만 "refresh 가 쓴 스펙을
+containerd 가 읽어서 파드에 꽂힌다" 는 서술은 틀렸습니다. 둘은 같은 디렉토리를 쓰는 별개의 경로이고,
+파드에 실제로 꽂히는 쪽은 플러그인이 만든 것입니다.
+
+(`check-nvidia-cdi.sh` 의 `nvidia-ctk cdi list` 집계는 두 스펙을 다 셉니다 — `nvidia.com/gpu` 가
+`k8s.device-plugin.nvidia.com/gpu` 의 부분 문자열이라서요. 묻는 것이 "CDI GPU 장치가 하나라도
+있는가" 라 판정은 그대로 옳습니다.)
+
 `.path` 유닛이 감시하는 것은 `/lib/modules/<커널>/modules.dep` 와 `/usr/bin/nvidia-ctk` 입니다.
 드라이버를 어떤 방식으로 깔든(deb/rpm/runfile/DKMS) `depmod` 가 `modules.dep` 를 건드리므로 잡힙니다.
 그리고 유닛에 `ConditionPathExists=|.../nvidia-smi` 가 걸려 있어서 드라이버 없는 노드에서는 **실패가
@@ -508,9 +522,9 @@ ExecCondition 은 `modules.dep` 에 `nvidia.ko` 가 적혀 있는지만 보므�
 * `true` + 드라이버가 못 봄 → 시킨 대로입니다. 드롭인이 이미 유닛을 재웠으니 **보고할 것 없음**
 * `false` + 드라이버가 못 봄 → **사고입니다.** 카드를 뭔가가 가져갔고 유닛은 계속 돕니다. 보고
 
-`nvidia_gpu` 를 지우면서 변수를 새로 들이는 게 모순처럼 보이지만 성질이 다릅니다. `nvidia_gpu` 는
-기계에 대한 사실("이 노드에 GPU 가 있다")이라 물어보는 쪽이 참이었습니다. `gpu_passthrough` 는
-**의도**라서 물어볼 데가 없습니다.
+이 브랜치가 `nvidia_gpu` 를 지우면서 변수를 새로 들이는 게 모순처럼 보이지만 성질이 다릅니다.
+`nvidia_gpu` 는 기계에 대한 사실("이 노드에 GPU 가 있다")이라 물어보는 쪽이 싸고 참이었습니다.
+`gpu_passthrough` 는 **의도**라서 물어볼 데가 없습니다.
 
 === 선언은 노드가 검증합니다
 
@@ -599,6 +613,102 @@ NVIDIA 문서가 명시하는 두 구멍이 있습니다 — 드라이버 *제�
 `/dev/nvidia-caps/*`(MIG capability 노드)도 그 서비스가 만들지 않습니다. 만드는 것은
 `nvidia-ctk system create-device-nodes --control-devices` 인데 그 옵션은 `nvidiactl`, `nvidia-uvm`,
 `nvidia-modeset` 만 다룹니다. MIG 를 쓰는 사이트라면 확인이 필요한 지점입니다.
+
+=== nvidia_gpu 와 nvidia 런타임을 없앴습니다
+
+`nvidia_gpu` 는 노드에 벤더 런타임을 붙이는 변수였습니다. containerd 에는
+`99-nvidia.toml` 드롭인이 `default_runtime_name = "nvidia"` 를 박고 nvidia 런타임을 정의했고,
+docker 에는 `daemon.json` 의 `runtimes.nvidia` 가 들어갔습니다. 둘 다 지웠습니다.
+
+CDI 가 같은 일을 런타임 교체 없이 하기 때문입니다. containerd 2.3.5 는 `enable_cdi` 와
+`cdi_spec_dirs` 를 기본으로 들고 옵니다. 그러면 컨테이너는 runc 로 돌면서 장치만 주입받습니다 — 노드의 기본 런타임을 통째로 갈아 끼울 이유가
+없습니다. 남겨 두면 노드마다 기본 런타임이 다른 클러스터가 되고, 그 차이를 아는 것은 인벤토리의
+변수 하나뿐입니다.
+
+**대가가 있고 작지 않습니다.** 이제 파드가 GPU 를 받는 길은 CDI 하나뿐이라, device plugin 을
+`--device-list-strategy=cdi-cri` 로 돌리지 않으면 **GPU 가 파드에 꽂히지 않습니다.** 기존
+클러스터가 다른 전략(`envvar`, `volume-mounts`)을 쓰고 있었다면 이 릴리스에서 같이 바꿔야 합니다.
+
+그리고 대가가 하나 더 있는데, 실제로 깔아 보고서야 나왔습니다. **device plugin 자신이 GPU 를 볼
+길이 있어야 합니다.** 플러그인은 장치를 세려고 NVML 을 불러오는데, 드라이버가 주입되지 않은
+컨테이너에는 그게 없습니다. 아무 준비 없이 띄우면 이렇게 죽습니다:
+
+----
+error starting plugins: unable to validate flags:
+CDI --device-list-strategy options are only supported on NVML-based systems
+----
+
+=== 그래서 nvidia 런타임을 핸들러로는 남깁니다
+
+지운 것이 사실은 **두 가지**였습니다 — 런타임을 핸들러로 등록하는 것과, 그것을 노드의 기본
+런타임으로 삼는 것. 문제였던 쪽은 후자입니다. 노드의 모든 컨테이너가 필요도 없는 shim 을 거치게
+되고, 노드마다 기본 런타임이 다른 클러스터가 되며, 그 차이를 아는 것은 인벤토리의 변수
+하나뿐이었습니다. 앞쪽은 죄가 없고, 없애고 나니 위의 부트스트랩 문제가 생겼습니다.
+
+그래서 `99-nvidia.toml` 을 되살리되 **`default_runtime_name` 없이** 핸들러만 등록합니다. 기본
+런타임은 `runc` 이고 CDI 는 containerd 가 직접 읽습니다. `runtimeClassName: nvidia` 를 적은 파드만
+그 핸들러를 거치고, 그게 device plugin 이 드라이버를 얻는 길입니다.
+
+벤더 도구가 같은 선을 긋습니다. `nvidia-ctk runtime configure --runtime=containerd` 는 핸들러를
+등록할 뿐이고, 기본 런타임을 바꾸려면 `--set-as-default` 를 따로 줘야 합니다. 이전 릴리스가 박아
+두었던 `default_runtime_name = "nvidia"` 가 바로 그 옵트인을 설치본이 대신 눌러 둔 것이었습니다.
+
+드롭인에는 핸들러 블록만 넣습니다. containerd 는 `config.toml` 을 **대체하지 않고 병합**하므로
+`runtimes.runc` 는 자기 옵션을 지키고 `default_runtime_name` 도 `runc` 로 남습니다(실측). 이전
+템플릿이 `runc` 와 `pinned_images` 를 다시 적어 둔 것은 불필요했고, 두 군데를 맞춰야 하는 짐만
+됐습니다.
+
+**전 노드에 조건 없이 씁니다.** `/usr/bin/nvidia-container-runtime` 은
+`nvidia-container-toolkit-base` 가 주고 `install-packages.sh` 가 그 패키지를 전 노드에 깔기
+때문에, 노드에 물어볼 것이 없고 인벤토리 변수도 필요 없습니다. **`gpu_passthrough: true` 인
+노드에도 씁니다** — 거기서도 핸들러는 아무도 고르지 않으면 아무 일도 하지 않습니다. GPU 워크로드를
+그 노드에서 막는 것은 핸들러가 아니라 `nvidia.com/gpu` 리소스이고, 그 노드는 드라이버가 카드를 못
+보므로 광고할 것이 없습니다. device plugin DaemonSet 을 그런 노드에서 빼는 것(nodeSelector)은
+사이트 몫입니다.
+
+=== RuntimeClass 는 사이트가 만듭니다
+
+핸들러는 노드의 것이고 `RuntimeClass` 는 클러스터의 것입니다. 이 설치본은 `kubectl apply` 를 한
+번도 쓰지 않고 클러스터 안의 것은 전부 kubeadm 을 통하므로, 여기서 첫 예외를 만들지 않습니다.
+device plugin 과 같은 자리입니다:
+
+[source,yaml]
+----
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: nvidia
+handler: nvidia
+----
+
+그리고 device plugin DaemonSet 에 `runtimeClassName: nvidia` 를 적습니다. 그러면 플러그인이
+드라이버를 받아 NVML 이 살고, 워크로드 파드는 `--device-list-strategy=cdi-cri` 로 containerd 가
+직접 주입합니다.
+
+`nvidia-ctk runtime configure` 는 **돌릴 필요가 없고 돌리면 안 됩니다.** 그 명령은 자기 드롭인을
+`/etc/containerd/conf.d/` 에 넣고 `config.toml` 의 `imports` 를 고치는데, 설치본은
+`/etc/containerd/config.d/` 를 쓰고 다음 실행에서 `config.toml` 을 다시 렌더하므로 그 수정이
+날아갑니다. 핸들러는 이미 등록돼 있습니다.
+
+드라이버 라이브러리를 플러그인 파드에 hostPath 로 넣는 방법도 되긴 합니다. 런타임을 못 쓰는
+상황의 차선책이고, 이때 `/usr/lib/x86_64-linux-gnu` 를 통째로 마운트하면 컨테이너의 libc 까지
+덮여 `stack smashing` 으로 죽으므로 `libnvidia-ml` 과 `libcuda` 만 따로 모은 디렉토리를 넣어야
+합니다. NVIDIA GPU Operator 는 이 문제를 자기가 해결합니다.
+
+`setup-containerd.sh` 는 `99-nvidia.toml` 을 매 실행마다 지웁니다. `config.toml` 이 디렉토리를
+통째로 import 하므로, 이전 릴리스가 쓴 드롭인이 남아 있으면 그 노드는 계속 nvidia 런타임을
+기본으로 씁니다. "첫 실행" 을 아는 실행이 없으니 조건 없이 지웁니다.
+
+=== 지운 변수는 지웠다고 말합니다
+
+`nvidia_gpu` 를 클래스 목록에서 빼기만 하면, 그 변수를 적어 둔 기존 인벤토리는 **"아무 클래스에도
+없는 변수"** 로 거부당합니다. 틀린 안내입니다 — 분류를 잊은 게 아니라 없어진 변수인데, 어디에
+넣으라고 시키는 꼴입니다.
+
+그래서 `ki_removed_vars` 에 무엇이 대신하는지와 함께 적어 두고, `validate-hostvars.py` 가 그
+경우에 다른 메시지를 냅니다. 무시하지 않고 거부하는 이유는, 조용히 버려진 변수는 인벤토리가
+말하는 것과 다르게 만들어진 노드이고 그걸 알려 주는 것이 아무것도 없기 때문입니다. 거부는 파일에서
+한 줄 지우는 값이면 끝납니다.
 
 === device plugin 은 사이트 몫입니다
 
@@ -1026,7 +1136,7 @@ kubelet 이 돌아와서 다시 인식합니다. `systemReserved` 와 `kubeReser
 
 `k8s_cp` 를 바꾸는 것은 그 노드가 etcd 멤버를 지니는지를 바꾸는 일입니다. 돌고 있는 노드 밑에서
 붙이거나 뗄 것이 아니라서 `node_rebuild` 이고, `remove-node` 와 `add-node` 가 그 경로입니다.
-`nvidia_gpu` 와 `internal_network_ip` 도 노드를 만들 때 정해지는 값이라 같습니다.
+`internal_network_ip` 도 노드를 만들 때 정해지는 값이라 같습니다.
 
 `control_node_ih` 만 `no_action` 입니다. `sync-ansible.yml` 이 모든 ki cp 노드의 ansible
 디렉토리를 이미 맞춰 두므로, 제어 노드를 옮기는 데 필요한 것은 그 선언 한 줄뿐입니다.

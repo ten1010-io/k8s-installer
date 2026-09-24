@@ -80,8 +80,6 @@ ki_opt_venv_path=""
 yq_cmd=""
 jinja2_cmd=""
 
-nvidia_gpu=""
-
 main() {
   require_file_exists "$vars_path"
   import_ki_opt_vars
@@ -89,20 +87,23 @@ main() {
   require_directory_exists "$ki_opt_root_path"
   validate_ki_opt_directory
 
-  nvidia_gpu=$($yq_cmd '.nvidia_gpu' < "$vars_path")
-
   [[ $update = "false" ]] && require_containerd_not_enabled
-
-  [[ $nvidia_gpu = "true" ]] && require_nvidia_gpu_exists
 
   mkdir -p /etc/containerd/config.d
   $jinja2_cmd --format yaml -o "/etc/containerd/config.toml" "$SCRIPT_DIR_PATH"/templates/config.toml.j2 "$vars_path"
-  # Deleted rather than left alone when the node has no gpu, because config.toml
-  # imports the whole directory. A drop in an earlier run wrote would otherwise keep
-  # the nvidia runtime as the default of a node that no longer has a gpu
-  rm -f /etc/containerd/config.d/99-nvidia.toml
-  [[ $nvidia_gpu = "true" ]] &&
-    $jinja2_cmd --format yaml -o "/etc/containerd/config.d/99-nvidia.toml" "$SCRIPT_DIR_PATH"/templates/config.d/99-nvidia.toml.j2 "$vars_path"
+  # The nvidia runtime, registered as a handler and not made the default of the
+  # node. Containers are given gpus over the container device interface, which
+  # containerd reads by itself, so nothing here needs a shim in front of runc -
+  # but a device plugin has to see the gpus before it can offer them, and
+  # runtimeClassName: nvidia is how a site gets a driver in front of that one pod.
+  # Taking the handler away with the default took that away too.
+  #
+  # Written rather than conditioned, because /usr/bin/nvidia-container-runtime is
+  # on every node already and a handler nobody selects costs nothing. Written on
+  # every run rather than once, because the drop in of an earlier release carries
+  # default_runtime_name = "nvidia" under this same name and rendering over it is
+  # what takes that away
+  $jinja2_cmd --format yaml -o "/etc/containerd/config.d/99-nvidia.toml" "$SCRIPT_DIR_PATH"/templates/config.d/99-nvidia.toml.j2 "$vars_path"
 
   # Restarting containerd tears down every container of the node, so an update is
   # meant to run against a node that has been drained first. A node that does not
@@ -113,15 +114,6 @@ main() {
   else
     "$ki_opt_scripts_path"/systemctl.sh enable containerd
   fi
-
-  return 0
-}
-
-require_nvidia_gpu_exists() {
-  local result
-  result=$("$ki_opt_scripts_path"/preflight/nvidia-gpu-exists.sh)
-
-  [[ $result = "false" ]] && die "[ERROR] Nvidia gpu not detected"
 
   return 0
 }
