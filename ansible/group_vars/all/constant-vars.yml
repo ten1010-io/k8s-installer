@@ -212,6 +212,16 @@ nvidia_gpu: false
 # initramfs is touched on a node that names none
 vfio_pci_device_ids: []
 
+# Whether every gpu of a node goes to a guest, leaving the driver of the vendor
+# with none. Set per node in inventory.yml, and only meaningful with
+# vfio_pci_device_ids naming those cards. It is a statement of intent rather than
+# a fact about the machine - a device named in vfio_pci_device_ids is as likely
+# to be a network card as a gpu, and no list of ids says whether the ones left
+# behind were meant to stay - so it is declared. setup-vfio-pci.sh checks the
+# declaration against the display devices the node actually has and refuses one
+# that does not hold
+gpu_passthrough: false
+
 # Whether the installer may reboot a node it has just configured for vfio-pci.
 # Off by default, because rebooting a machine is the site's call and plenty of
 # them only allow it in a window. On, it happens while the node is still empty,
@@ -324,6 +334,7 @@ ki_var_classes:
     - ki_var_root_path
     - nvidia_gpu
     - vfio_pci_device_ids
+    - gpu_passthrough
   # Changing it needs nothing done to any node. sync-ansible.yml already keeps
   # the ansible directory of every ki cp node in step, so moving the control
   # node is this declaration and nothing else.

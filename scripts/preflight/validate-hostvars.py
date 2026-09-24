@@ -64,6 +64,7 @@ def main():
     validate_internal_network_subnets(hostvars_errors, hostvars)
     validate_k8s_subnets(hostvars_errors, hostvars)
     validate_vfio_pci_device_ids(hostvars_errors, hostvars)
+    validate_gpu_passthrough(hostvars_errors, hostvars)
     validate_kubelet_reservations(hostvars_errors, hostvars)
     validate_k8s_apiserver_extra_volumes(hostvars_errors, hostvars)
     validate_k8s_minor_version(hostvars_errors, hostvars)
@@ -462,6 +463,38 @@ def validate_vfio_pci_device_ids(hostvars_errors: List[HostvarsError], hostvars)
         hostvars_errors.append(error)
 
 
+def validate_gpu_passthrough(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects a node told to hand over every gpu and given no device to hand.
+
+    gpu_passthrough says the driver of the vendor is left with no card on this
+    node, which is a thing the machine can not be asked and so is declared. What
+    carries it out is vfio_pci_device_ids, and without one the declaration
+    describes a node that nothing was done to: the gpus stay where they were and
+    anything reading the variable afterwards is reading a wish.
+
+    Whether the ids actually cover every gpu of the node is not checked here.
+    That needs the node, and setup-vfio-pci.sh checks it there against the
+    display devices it finds
+    """
+    for ih in sorted(hostvars):
+        if ih == "localhost":
+            continue
+
+        node_hostvars = hostvars[ih]
+        if not node_hostvars.get("gpu_passthrough"):
+            continue
+        if node_hostvars.get("vfio_pci_device_ids"):
+            continue
+
+        error = HostvarsError(ih,
+                              ("gpu_passthrough",),
+                              str(node_hostvars["gpu_passthrough"]),
+                              "Variable[\"gpu_passthrough\"] is true on a node whose variable"
+                              "[\"vfio_pci_device_ids\"] is empty. Nothing binds the gpus of that node,"
+                              " so name them there or set this false")
+        hostvars_errors.append(error)
+
+
 def validate_kubelet_reservations(hostvars_errors: List[HostvarsError], hostvars):
     """Validates the values calculated by create-kubelet-reservations.py.
 
@@ -666,6 +699,7 @@ class ConstantVarsModel(BaseModel):
     vfio_pci_device_ids: List[
         Annotated[str, StringConstraints(pattern=PCI_DEVICE_ID_PATTERN)]]
     vfio_pci_reboot: bool
+    gpu_passthrough: bool
 
     target_node: str | None
     target_node_op: str | None

@@ -161,15 +161,6 @@ is_bridge() {
   [[ $(class_code "$path") = 06* ]]
 }
 
-class_code() {
-  local path=$1
-  local class
-
-  class=$(< "$path"/class)
-  # 0xCCSSPP, of which the class and the subclass are what names a device
-  echo "${class:2:4}"
-}
-
 class_name() {
   local path=$1
   local code

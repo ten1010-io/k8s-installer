@@ -139,6 +139,7 @@ ubuntu_reset() {
   rm -f "$MODULES_LOAD_PATH"
   rm -f "$MODPROBE_PATH"
   rm -f "$GRUB_DROP_IN_PATH"
+  remove_cdi_refresh_drop_in
   delete_initramfs_modules_block
 
   update-initramfs -u -k all
@@ -151,6 +152,7 @@ rhel8_reset() {
   rm -f "$MODULES_LOAD_PATH"
   rm -f "$MODPROBE_PATH"
   rm -f "$DRACUT_PATH"
+  remove_cdi_refresh_drop_in
   remove_grubby_kernel_args
 
   dracut -f --regenerate-all

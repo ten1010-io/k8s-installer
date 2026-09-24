@@ -4,17 +4,19 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--node name]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--node name] [--gpu-passthrough true|false]
 Available options:
--h, --help      Print this help and exit
--v, --verbose   Print script debug info
---node          Name to report this node under
+-h, --help          Print this help and exit
+-v, --verbose       Print script debug info
+--node              Name to report this node under
+--gpu-passthrough   Whether this node was told to hand every gpu to a guest
 EOF
   exit
 }
 
 parse_params() {
   node=""
+  gpu_passthrough="false"
 
   while :; do
     case "${1-}" in
@@ -24,6 +26,11 @@ parse_params() {
     --node)
       [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
       node="${2-}"
+      shift
+      ;;
+    --gpu-passthrough)
+      [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
+      gpu_passthrough="${2-}"
       shift
       ;;
     -?*) die "[ERROR] Unknown option: $1" ;;
@@ -85,10 +92,11 @@ parse_params "$@"
 # that failed, it is a node without gpus, and this says nothing about it.
 #
 # A node that has the driver and no gpu the driver can see is a third thing, and
-# the one place where this and the vfio-pci work of the same branch meet. There
-# is nothing to fix about its containers - the cards went to a guest on purpose -
-# but the toolkit's refresh unit restarts every second for as long as that node
-# is up, and this is the only thing on the node that will say so.
+# the one place where this and the vfio-pci work of the same branch meet. Whether
+# it is deliberate is declared in the inventory rather than guessed at here, and
+# the two answers want opposite things: a node that meant it has already had the
+# refresh unit quietened by the setup and wants no report at all, while a node
+# that did not has lost its cards to something and is paying for it every second.
 #
 # Reported rather than failed, and to stdout for a playbook to collect, the way
 # check-vfio-pci.sh is. See docs/impl-notes.adoc
@@ -101,11 +109,17 @@ main() {
   # and does not ask for one
   driver_installed || exit 0
 
-  # The driver is here and can not see a gpu, which is not the same node as the
-  # one above and must not be treated as it. It is the shape a node takes when
-  # its cards were bound to vfio-pci - the passthrough of this same installer is
-  # how that happens on purpose - and the toolkit does not sit quietly through it
+  # The driver is here and can not see a gpu. Whether that is the node doing what
+  # it was told or the node having lost something is not a question the machine
+  # can answer, which is why gpu_passthrough is declared rather than derived. A
+  # node that said it would keep no gpu is doing exactly that, and the drop in
+  # the setup wrote has already stopped the refresh unit retrying, so there is
+  # nothing left to say. A node that said no such thing has lost its cards to a
+  # kernel it no longer matches, to hardware, or to a vfio-pci configuration
+  # somebody else wrote, and that is worth saying out loud
   if ! nvidia_smi_works; then
+    [[ $gpu_passthrough = "true" ]] && exit 0
+
     report_driver_without_gpus
     exit 0
   fi
@@ -147,22 +161,27 @@ cdi_gpu_count() {
   nvidia-ctk cdi list 2>/dev/null | grep -c "nvidia\.com/gpu" || true
 }
 
-# Not "this node can not serve its gpus": it has none to serve and that may well
-# be deliberate. What is reported is the unit, because the toolkit's own
-# nvidia-cdi-refresh.service opens with nvidia-smi -L as an ExecStart carrying no
-# - prefix, and carries Restart=on-failure with RestartSec=1s and no working
-# start limit. On a node in this state it fails and restarts for as long as the
-# node is up, and nothing else on the node will ever say so
+# Reached only on a node that did not declare gpu_passthrough, so this is not a
+# node quietly doing its job: the driver is installed, it had cards, and it has
+# none now. Two things are wrong at once and both are said, because the second
+# goes on costing the node something until somebody acts on the first.
+#
+# The restart count is the measure of the second. nvidia-cdi-refresh.service
+# opens with nvidia-smi -L as an ExecStart carrying no - prefix and carries
+# Restart=on-failure with RestartSec=1s, and the start limit the vendor wrote
+# does not bite, so on a node in this state it retries for as long as the node is
+# up. Nothing else on the node will ever mention it
 report_driver_without_gpus() {
   echo "[WARN] node[\"$node\"] carries the nvidia driver and no gpu the driver can see"
   echo "  nvidia-cdi-refresh.service restarts since boot: $(refresh_restarts)"
-  echo "  Containers being given no gpu here is expected if the cards of this node were"
-  echo "  passed through. The restarts are not: that unit retries every second for as long"
-  echo "  as the node is up, and this is the only thing that reports it."
-  echo "  If this node is meant to pass its cards through, take the unit out of the way:"
-  echo "    systemctl disable --now nvidia-cdi-refresh.path nvidia-cdi-refresh.service"
-  echo "  If it is not, the driver has lost its cards and that is the thing to look at:"
+  echo "  This node did not ask to pass its gpus through, so something took them. A kernel"
+  echo "  the driver was not built against, the hardware, or a vfio-pci configuration from"
+  echo "  somewhere other than this installer:"
   echo "    nvidia-smi -L; dmesg | grep -i nvrm"
+  echo "    lspci -nnk | grep -A3 -i nvidia"
+  echo "  Until that is settled the refresh unit retries every second, which is what the"
+  echo "  count above is. If the gpus of this node are meant to go to guests, say so with"
+  echo "  variable[\"gpu_passthrough\"] and the installer will stop it."
   echo "  Then: ansible-playbook -i inventory.yml playbooks/tasks/check-nvidia-cdi.yml"
 
   return 0
