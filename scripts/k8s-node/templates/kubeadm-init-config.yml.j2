@@ -5,6 +5,22 @@ nodeRegistration:
   kubeletExtraArgs:
     - name: node-ip
       value: {{ internal_network_interfaces[0]['ip'] }}
+{%- if k8s_node_taints %}
+  # kubeadm taints a control plane node itself only while this field is unset, so
+  # a node carrying a taint of its own has to carry that one too or it is
+  # schedulable from the moment it comes up. The user does not write it:
+  # validate-hostvars.py refuses the key, so there is one owner of it
+  taints:
+    - key: node-role.kubernetes.io/control-plane
+      effect: NoSchedule
+{%- for node_taint in k8s_node_taints %}
+    - key: {{ node_taint.key }}
+{%- if node_taint.value is defined and node_taint.value %}
+      value: "{{ node_taint.value }}"
+{%- endif %}
+      effect: {{ node_taint.effect }}
+{%- endfor %}
+{%- endif %}
 localAPIEndpoint:
   advertiseAddress: {{ internal_network_interfaces[0]['ip'] }}
   bindPort: {{ k8s_apiserver_port }}

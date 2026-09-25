@@ -14,6 +14,8 @@
 
 - import_playbook: tasks/apply-control-plane-var-changes.yml
 
+- import_playbook: tasks/apply-node-metadata.yml
+
 - import_playbook: tasks/record-applied-state.yml
   vars:
     ki_recorded_classes: all

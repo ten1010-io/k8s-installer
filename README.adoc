@@ -346,6 +346,64 @@ k8s_service_subnet: "10.96.0.0/12"
 
 두 줄 다 있어야 합니다. 지우면 기본값으로 떨어지지 않고 플레이북이 시작 전에 멈춥니다.
 
+=== 노드 라벨과 테인트
+
+노드 오브젝트에 붙일 라벨과 테인트를 `inventory.yml` 에 노드별로 적습니다.
+
+[source,yaml]
+----
+k8s_node:
+  hosts:
+    node4:
+      k8s_node_labels:
+        example.com/role: "gpu"
+      k8s_node_taints:
+        - key: example.com/dedicated
+          value: "gpu"          # 생략 가능
+          effect: NoSchedule
+----
+
+둘 다 **서 있는 노드에도 적용됩니다** — 고친 뒤 <<설정 변경 적용>> 을 돌리면 됩니다. 인벤토리에서
+뺀 항목은 노드에서도 지워집니다.
+
+테인트는 **노드가 등록되는 시점에도** 붙습니다. 조인한 뒤에 붙이면 그 사이에 파드가 들어올 수
+있고, 테인트는 바로 그것을 막으려고 다는 것이기 때문입니다.
+
+[IMPORTANT]
+====
+* *설치본이 붙인 것만 지웁니다.* 사람이 손으로 붙인 라벨, kubelet 이 붙이는 라벨, kubeadm 이
+  컨트롤 플레인 노드에 붙이는 테인트는 건드리지 않습니다. 근거는 각 노드가 마지막 실행에서
+  기록해 둔 값입니다
+* *kubelet 이 소유한 라벨은 거부합니다* — `kubernetes.io/hostname`, `kubernetes.io/os`,
+  `kubernetes.io/arch`, `node.kubernetes.io/instance-type`, `topology.kubernetes.io/*`. 붙여도
+  kubelet 이 다시 등록할 때 덮어써집니다
+* *`node-role.kubernetes.io/control-plane` 도 거부합니다.* 라벨 쪽은 설치본이 컨트롤 플레인
+  노드를 찾는 데 쓰고, 테인트 쪽은 kubeadm 설정이 답니다. 컨트롤 플레인 여부는
+  `k8s_cp` 로 정합니다
+* `node.kubernetes.io/` 로 시작하는 테인트는 쿠버네티스가 스스로 달고 떼는 것이라 거부합니다
+====
+
+==== ki cp 노드 라벨
+
+설치본이 `ki_cp_node` 그룹의 노드에 라벨을 하나 붙입니다.
+
+[source]
+----
+k8s-installer.ten1010.io/ki-cp: ""
+----
+
+dns 서버·레지스트리 둘·apiserver 로드밸런서는 쿠버네티스 밖에서 도는데, 클러스터 안에는 그것이
+어느 노드인지 말해 주는 것이 없었습니다. 모니터링이 로드밸런서를 긁으려 하거나 워크로드를
+레지스트리 옆에 붙이려 할 때 셀렉터가 없습니다.
+
+[source,shell]
+----
+kubectl get nodes -l k8s-installer.ten1010.io/ki-cp
+----
+
+그룹에서 빠진 노드에서는 지워집니다. 사용자가 이 키를 `k8s_node_labels` 에 적으면 거부합니다 —
+주인이 하나여야 합니다.
+
 == 작업
 
 클러스터가 서 있는 뒤로 하는 일들입니다. 순서대로 읽는 것이 아니라 필요한 것을 찾아 봅니다.

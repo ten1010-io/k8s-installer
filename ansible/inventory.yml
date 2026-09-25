@@ -51,6 +51,20 @@ k8s_node:
       # setup-vfio-pci.sh refuses a node where this does not match what it finds
       #gpu_passthrough: true
     node4:
+      # Labels and taints to put on the node object of this node. Both are
+      # applied by talking to the apiserver, so they can be changed on a node
+      # that is already running and update-cluster.yml applies the change.
+      # Removing an entry removes it from the node; labels and taints the
+      # installer never set are left alone
+      #k8s_node_labels:
+      #  example.com/role: "gpu"
+      # A taint is applied while the node registers as well, so nothing is
+      # scheduled onto a node that is meant to be reserved before the taint is
+      # there. value may be left out
+      #k8s_node_taints:
+      #  - key: example.com/dedicated
+      #    value: "gpu"
+      #    effect: NoSchedule
       # The device given here holds everything kubelet accounts as ephemeral
       # storage. It gets formatted, so it has to be a disk with nothing on it
       #ephemeral_storage_device: "/dev/disk/by-id/nvme-eui.0123456789abcdef"

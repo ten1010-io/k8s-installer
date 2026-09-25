@@ -61,6 +61,9 @@
 - import_playbook: tasks/add-k8s-node.yml
   when: target_node in groups['k8s_node']
 
+- import_playbook: tasks/apply-node-metadata.yml
+  when: target_node in groups['k8s_node']
+
 # The node being added was built with everything. The nodes that were already
 # up were given the services again, because the set of cp nodes they name
 # changed, and nothing else

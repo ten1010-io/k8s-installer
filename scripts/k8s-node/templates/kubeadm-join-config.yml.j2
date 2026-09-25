@@ -11,6 +11,23 @@ nodeRegistration:
   kubeletExtraArgs:
     - name: node-ip
       value: {{ internal_network_interfaces[0]['ip'] }}
+{%- if k8s_node_taints %}
+  # See kubeadm-init-config.yml.j2 - the control plane taint is kubeadm's default
+  # only while this field is unset, and it is added here for a control plane node
+  # for the same reason
+  taints:
+{%- if k8s_cp | lower == "true" %}
+    - key: node-role.kubernetes.io/control-plane
+      effect: NoSchedule
+{%- endif %}
+{%- for node_taint in k8s_node_taints %}
+    - key: {{ node_taint.key }}
+{%- if node_taint.value is defined and node_taint.value %}
+      value: "{{ node_taint.value }}"
+{%- endif %}
+      effect: {{ node_taint.effect }}
+{%- endfor %}
+{%- endif %}
 patches:
   directory: {{ ki_etc_kubeadm_path }}/patches
 {%- if k8s_cp | lower == "true" %}
