@@ -22,6 +22,42 @@ PCI_DEVICE_ID_PATTERN = r"^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}$"
 # A volume of a pod is named with a dns 1123 label, which bounds its length at 63
 DNS_1123_LABEL_PATTERN = r"[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?"
 APISERVER_ARG_NAME_PATTERN = r"[a-z0-9][a-z0-9-]*"
+# The name half of a label or a taint key, and the value of either. Both are what
+# kubernetes calls a qualified name: 63 characters of alphanumerics, dashes,
+# underscores and dots, starting and ending with an alphanumeric. A label value
+# may also be empty, which is how a role style label is written
+QUALIFIED_NAME_PATTERN = r"[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?"
+# The optional prefix half, before the slash. A dns subdomain, bounded at 253
+DNS_1123_SUBDOMAIN_PATTERN = r"[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?"
+
+# Labels kubelet sets on its own node and keeps setting. Written here they would
+# be applied once and then overwritten the next time kubelet registers, which
+# reads as a label that will not stick rather than as one that was refused
+KUBELET_OWNED_LABEL_KEYS = frozenset({
+    "kubernetes.io/hostname",
+    "kubernetes.io/os",
+    "kubernetes.io/arch",
+    "beta.kubernetes.io/os",
+    "beta.kubernetes.io/arch",
+    "node.kubernetes.io/instance-type",
+    "beta.kubernetes.io/instance-type",
+})
+KUBELET_OWNED_LABEL_PREFIXES = ("topology.kubernetes.io/", "failure-domain.beta.kubernetes.io/")
+
+# The label the installer itself reads to find the control plane nodes
+# (check-node-state.sh) and the taint kubeadm puts on them. Both have one owner
+# already, and a second one writing them is a cluster whose control plane is
+# schedulable or whose preflight counts the wrong nodes
+KI_DECIDED_NODE_LABEL_KEYS = frozenset({
+    "node-role.kubernetes.io/control-plane",
+})
+KI_DECIDED_NODE_TAINT_KEYS = frozenset({
+    "node-role.kubernetes.io/control-plane",
+})
+# Taints kubelet and the node lifecycle controller set and clear themselves, to
+# say that a node is not ready, unreachable or out of disk. Setting one by hand
+# tells the cluster something about the node that is not true
+KUBERNETES_OWNED_TAINT_PREFIX = "node.kubernetes.io/"
 
 # The volumes kubeadm gives the control plane pods itself. It keys them by name
 # and the last one in wins, so a volume declared under one of these does not add
@@ -64,6 +100,7 @@ def main():
     validate_internal_network_subnets(hostvars_errors, hostvars)
     validate_k8s_subnets(hostvars_errors, hostvars)
     validate_gpu_passthrough(hostvars_errors, hostvars)
+    validate_k8s_node_metadata(hostvars_errors, hostvars)
     validate_kubelet_reservations(hostvars_errors, hostvars)
     validate_k8s_apiserver_extra_volumes(hostvars_errors, hostvars)
     validate_k8s_minor_version(hostvars_errors, hostvars)
@@ -486,6 +523,129 @@ def validate_gpu_passthrough(hostvars_errors: List[HostvarsError], hostvars):
         hostvars_errors.append(error)
 
 
+def validate_k8s_node_metadata(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects labels and taints that can not be put on a node, or not by this.
+
+    The syntax half is what the apiserver would refuse anyway, and it is refused
+    here instead so that it is refused before a node is touched rather than by
+    the kubectl of a play that is already half way through the cluster.
+
+    The ownership half is the one that matters. A label kubelet sets itself is
+    overwritten the next time kubelet registers, so writing it here produces a
+    label that does not stick and nothing says why. The control plane label is
+    read by check-node-state.sh to find the control plane nodes, and the control
+    plane taint is added by the kubeadm configuration this installer renders, so
+    a second writer of either is a cluster that disagrees with itself
+    """
+    for ih in sorted(hostvars):
+        if ih == "localhost":
+            continue
+
+        node_hostvars = hostvars[ih]
+        labels = node_hostvars.get("k8s_node_labels") or {}
+        taints = node_hostvars.get("k8s_node_taints") or []
+
+        if not labels and not taints:
+            continue
+
+        if ih not in (hostvars["localhost"].get("groups", {}).get("k8s_node") or []):
+            error = HostvarsError(ih,
+                                  ("k8s_node_labels",),
+                                  str(labels or taints),
+                                  "Node is not in the k8s_node group, so it has no node object of the"
+                                  " cluster to put a label or a taint on")
+            hostvars_errors.append(error)
+            continue
+
+        for key, value in sorted(labels.items()):
+            validate_node_key(hostvars_errors, ih, "k8s_node_labels", key)
+            if not re.fullmatch(QUALIFIED_NAME_PATTERN, str(value)) and str(value) != "":
+                error = HostvarsError(ih,
+                                      ("k8s_node_labels", key),
+                                      str(value),
+                                      "Value of a label is 63 characters of alphanumerics, dashes,"
+                                      " underscores and dots beginning and ending with an alphanumeric,"
+                                      " or empty")
+                hostvars_errors.append(error)
+
+            if key in KUBELET_OWNED_LABEL_KEYS or key.startswith(KUBELET_OWNED_LABEL_PREFIXES):
+                error = HostvarsError(ih,
+                                      ("k8s_node_labels", key),
+                                      str(value),
+                                      f"Label[{key}] is set by kubelet itself and would be overwritten"
+                                      " the next time this node registers")
+                hostvars_errors.append(error)
+
+            if key in KI_DECIDED_NODE_LABEL_KEYS:
+                error = HostvarsError(ih,
+                                      ("k8s_node_labels", key),
+                                      str(value),
+                                      f"Label[{key}] is what the installer reads to find the control"
+                                      " plane nodes. Whether a node is one is k8s_cp of inventory.yml")
+                hostvars_errors.append(error)
+
+            if key == hostvars["localhost"].get("ki_cp_node_label_key"):
+                error = HostvarsError(ih,
+                                      ("k8s_node_labels", key),
+                                      str(value),
+                                      f"Label[{key}] is put on the nodes of the ki_cp_node group by the"
+                                      " installer. Whether a node is one is inventory.yml")
+                hostvars_errors.append(error)
+
+        seen = set()
+        for taint in taints:
+            if not isinstance(taint, dict) or "key" not in taint:
+                continue
+
+            key = taint["key"]
+            validate_node_key(hostvars_errors, ih, "k8s_node_taints", key)
+
+            if key in KI_DECIDED_NODE_TAINT_KEYS:
+                error = HostvarsError(ih,
+                                      ("k8s_node_taints", key),
+                                      str(taint),
+                                      f"Taint[{key}] is added by the kubeadm configuration of a control"
+                                      " plane node. Whether a node is one is k8s_cp of inventory.yml")
+                hostvars_errors.append(error)
+
+            if key.startswith(KUBERNETES_OWNED_TAINT_PREFIX):
+                error = HostvarsError(ih,
+                                      ("k8s_node_taints", key),
+                                      str(taint),
+                                      f"Taint[{key}] is set and cleared by kubernetes itself to say what"
+                                      " state a node is in")
+                hostvars_errors.append(error)
+
+            identity = (key, taint.get("effect"))
+            if identity in seen:
+                error = HostvarsError(ih,
+                                      ("k8s_node_taints", key),
+                                      str(taint),
+                                      f"Taint[{key}] is given twice with effect[{taint.get('effect')}]."
+                                      " A node holds one taint per key and effect")
+                hostvars_errors.append(error)
+            seen.add(identity)
+
+
+def validate_node_key(hostvars_errors: List[HostvarsError], ih: str, var_name: str, key: str):
+    """Rejects a label or taint key that is not a key.
+
+    An optional dns subdomain prefix, a slash, and a qualified name
+    """
+    prefix, _, name = str(key).rpartition("/")
+    if re.fullmatch(QUALIFIED_NAME_PATTERN, name) and (
+            not prefix or re.fullmatch(DNS_1123_SUBDOMAIN_PATTERN, prefix)):
+        return
+
+    error = HostvarsError(ih,
+                          (var_name, str(key)),
+                          str(key),
+                          "Key is an optional dns subdomain prefix and a slash, followed by 63"
+                          " characters of alphanumerics, dashes, underscores and dots beginning and"
+                          " ending with an alphanumeric")
+    hostvars_errors.append(error)
+
+
 def validate_kubelet_reservations(hostvars_errors: List[HostvarsError], hostvars):
     """Validates the values calculated by create-kubelet-reservations.py.
 
@@ -691,8 +851,23 @@ class ConstantVarsModel(BaseModel):
     vfio_pci_reboot: bool
     gpu_passthrough: bool
 
+    # What goes onto the node object. The keys and values are checked by
+    # validate_k8s_node_metadata, which can say which rule was broken
+    k8s_node_labels: dict[str, str]
+    k8s_node_taints: List[NodeTaintModel]
+
     target_node: str | None
     target_node_op: str | None
+
+
+class NodeTaintModel(BaseModel):
+    model_config = ConfigDict(regex_engine='python-re')
+
+    key: str
+    # A taint without a value is written without one rather than with an empty
+    # string, which is what kubectl prints back and what kubeadm renders
+    value: Optional[str] = None
+    effect: Literal["NoSchedule", "PreferNoSchedule", "NoExecute"]
 
 
 class HostvarsError:

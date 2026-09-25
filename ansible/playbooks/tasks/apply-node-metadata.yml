@@ -1,0 +1,50 @@
+# Puts the labels and the taints of every node onto its node object.
+#
+# Run whole rather than only for what changed. The script reads the node and
+# writes the differences, so a node that already holds what it is asked for is
+# one kubectl get and nothing else, and gating this on the diff would add a
+# condition without taking any work away. It also means a label somebody took off
+# a node by hand comes back the next time anything is applied.
+#
+# What is taken away is a different matter and can not be worked out from the
+# inventory alone: a key that is gone from it looks exactly like a key that was
+# never there. previousLabels and previousTaints come from what each node
+# recorded on its last run, so the only keys ever removed are the ones this
+# installer put there. diff-applied-vars.yml is what reads that record, and the
+# playbooks that do not run it - setup-cluster and add-node - leave it empty,
+# which is right: a node being built has nothing to take away.
+#
+# On a control plane node, since the kubeconfig kubeadm wrote is there and a
+# worker has none. The node being acted on is named rather than acted on
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    knn: "{{ ih_to_hostname_dict[inventory_hostname] | lower | replace('_', '-') }}"
+    # One file per node, because every node of this play writes it on the same
+    # control plane node and they do not wait for each other
+    metadata_path: "{{ ki_tmp_root_path }}/node-metadata-{{ inventory_hostname }}.yml"
+  tasks:
+    - when: target_node is none or inventory_hostname == target_node
+      block:
+        - name: "Write file[\"{{ metadata_path }}\"]"
+          copy:
+            content: |
+              node: {{ knn }}
+              kiCpNode: {{ (inventory_hostname in groups['ki_cp_node']) | lower }}
+              labels: {{ k8s_node_labels | to_json }}
+              taints: {{ k8s_node_taints | to_json }}
+              previousLabels: {{ (ki_applied_vars | default({})).k8s_node_labels | default({}) | to_json }}
+              previousTaints: {{ (ki_applied_vars | default({})).k8s_node_taints | default([]) | to_json }}
+            dest: "{{ metadata_path }}"
+          delegate_to: "{{ k8s_cp_nodes[0] }}"
+          become: yes
+
+        - name: Execute update-k8s-node-metadata.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/update-k8s-node-metadata.sh {{ vars_path_arg }} --metadata-path {{ metadata_path }}"
+          delegate_to: "{{ k8s_cp_nodes[0] }}"
+
+        - name: "Remove file[\"{{ metadata_path }}\"]"
+          shell: "sudo rm -f {{ metadata_path }}"
+          delegate_to: "{{ k8s_cp_nodes[0] }}"

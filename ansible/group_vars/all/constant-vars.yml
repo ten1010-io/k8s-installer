@@ -205,6 +205,21 @@ k8s_apiserver_port: 6443
 k8s_ca_certificate_validity_period: "87600h" # 87600h = 10 year
 k8s_cp: false
 
+# What goes onto the node object of a node, set per node in inventory.yml. Empty
+# leaves the node with what kubeadm and kubelet put on it
+k8s_node_labels: {}
+k8s_node_taints: []
+
+# The label the installer puts on every node of the ki_cp_node group. Those nodes
+# run the dns server, the registries and the apiserver load balancer outside
+# kubernetes, and nothing inside the cluster says which nodes they are, so
+# anything that has to reach them - a monitoring system scraping the load
+# balancer, a workload that has to sit beside a registry - has no selector to ask
+# with. Its own key namespace because it is the installer's own answer rather
+# than one of the labels a site sets in inventory.yml, and keeping them apart is
+# what lets one be removed without touching the other
+ki_cp_node_label_key: "k8s-installer.ten1010.io/ki-cp"
+
 # Variables an earlier release had and this one does not, with what replaced
 # them. An inventory that still names one is not an inventory with a variable
 # nobody classified, and telling its owner to go and put it in a class sends them
@@ -326,6 +341,13 @@ ki_var_classes:
   control_plane:
     - k8s_apiserver_extra_args
     - k8s_apiserver_extra_volumes
+  # Written onto the node object of the cluster rather than onto the node. A
+  # change is applied by talking to the apiserver from a control plane node, so
+  # nothing on the node itself is touched and nothing has to be restarted. A node
+  # that is not in the cluster yet gets them as it joins
+  node_metadata:
+    - k8s_node_labels
+    - k8s_node_taints
   # Decided while a node is being provisioned and not reachable afterwards. The
   # device is formatted, the container and installer state lives under these
   # paths, so moving any of them means the node is built again rather than
