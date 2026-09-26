@@ -131,7 +131,9 @@ create_compose_yml_file() {
   touch "$tmp_file_path"
   $yq_cmd -i ".ntp_servers = \"$ntp_servers\"" "$tmp_file_path"
   $yq_cmd -i ".ki_cp_ntp_server_image = load(\"$vars_path\").ki_cp_ntp_server_image" "$tmp_file_path"
-  $jinja2_cmd --format yaml -o "$etc_svc_root_path""/compose.yml" "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$tmp_file_path"
+  $yq_cmd -i ".ki_cp_service_log_max_size = load(\"$vars_path\").ki_cp_service_log_max_size" "$tmp_file_path"
+  $yq_cmd -i ".ki_cp_service_log_max_file = load(\"$vars_path\").ki_cp_service_log_max_file" "$tmp_file_path"
+  $jinja2_cmd --strict --format yaml -o "$etc_svc_root_path""/compose.yml" "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$tmp_file_path"
   rm "$tmp_file_path"
 }
 

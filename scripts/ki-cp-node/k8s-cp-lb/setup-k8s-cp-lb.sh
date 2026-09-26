@@ -238,7 +238,9 @@ create_compose_yml_file() {
   vip=$($yq_cmd '.ki_cp_ha_mode_vip' < "$vars_path")
   $yq_cmd -i ".lb_bind_ip = (load(\"$vars_path\").internal_network_interfaces | map(select(.ip != \"$vip\")) | .[0].ip)" "$tmp_file_path"
   $yq_cmd -i ".ki_cp_k8s_cp_lb_image = load(\"$vars_path\").ki_cp_k8s_cp_lb_image" "$tmp_file_path"
-  $jinja2_cmd --format yaml -o "$svc_root_path""/compose.yml" "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$tmp_file_path"
+  $yq_cmd -i ".ki_cp_service_log_max_size = load(\"$vars_path\").ki_cp_service_log_max_size" "$tmp_file_path"
+  $yq_cmd -i ".ki_cp_service_log_max_file = load(\"$vars_path\").ki_cp_service_log_max_file" "$tmp_file_path"
+  $jinja2_cmd --strict --format yaml -o "$svc_root_path""/compose.yml" "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$tmp_file_path"
   rm "$tmp_file_path"
 }
 
@@ -256,7 +258,7 @@ create_haproxy_cfg_file() {
   $yq_cmd -i ".ki_cp_k8s_cp_lb_stats_port = load(\"$vars_path\").ki_cp_k8s_cp_lb_stats_port" "$tmp_file_path"
   $yq_cmd -i ".ki_cp_k8s_cp_lb_admin_socket_path = load(\"$vars_path\").ki_cp_k8s_cp_lb_admin_socket_path" "$tmp_file_path"
   $yq_cmd -i ".ki_cp_k8s_cp_lb_server_state_path = load(\"$vars_path\").ki_cp_k8s_cp_lb_server_state_path" "$tmp_file_path"
-  $jinja2_cmd --format yaml -o "$svc_root_path""/haproxy.cfg" "$SCRIPT_DIR_PATH"/templates/haproxy.cfg.j2 "$tmp_file_path"
+  $jinja2_cmd --strict --format yaml -o "$svc_root_path""/haproxy.cfg" "$SCRIPT_DIR_PATH"/templates/haproxy.cfg.j2 "$tmp_file_path"
   rm "$tmp_file_path"
 }
 

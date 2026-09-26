@@ -13,4 +13,9 @@ services:
     environment:
       TZ: Asia/Seoul
     network_mode: bridge
+    logging:
+      driver: json-file
+      options:
+        max-size: "{{ ki_cp_service_log_max_size }}"
+        max-file: "{{ ki_cp_service_log_max_file }}"
     restart: always

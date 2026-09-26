@@ -21,4 +21,9 @@ services:
       REGISTRY_HTTP_TLS_CERTIFICATE: "/etc/registry/tls.crt"
       REGISTRY_HTTP_TLS_KEY: "/etc/registry/tls.key"
     network_mode: bridge
+    logging:
+      driver: json-file
+      options:
+        max-size: "{{ ki_cp_service_log_max_size }}"
+        max-file: "{{ ki_cp_service_log_max_file }}"
     restart: always

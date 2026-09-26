@@ -179,7 +179,7 @@ create_named_conf_options_file() {
   $yq_cmd -o json -i ".upstream_servers = load(\"$vars_path\").ki_cp_dns_server_upstream_servers" "$tmp_file_path"
   $yq_cmd -o json -i ".recursion = \"$recursion\"" "$tmp_file_path"
   $yq_cmd -o json -i ".dnssec_validation = \"$dnssec_validation\"" "$tmp_file_path"
-  $jinja2_cmd --format yaml -o "$svc_root_path""/named.conf.options" "$SCRIPT_DIR_PATH"/templates/named.conf.options.j2 "$tmp_file_path"
+  $jinja2_cmd --strict --format yaml -o "$svc_root_path""/named.conf.options" "$SCRIPT_DIR_PATH"/templates/named.conf.options.j2 "$tmp_file_path"
   rm "$tmp_file_path"
 }
 
@@ -202,7 +202,7 @@ create_internal_network_zone_db_file() {
   $yq_cmd -i ".internal_network_zone = load(\"$vars_path\").internal_network_zone" "$tmp_file_path"
   $yq_cmd -i ".ns1_a_record_ip = \"$ns1_a_record_ip\"" "$tmp_file_path"
   $yq_cmd -i ".ki_cp_a_record_ip = \"$ki_cp_a_record_ip\"" "$tmp_file_path"
-  $jinja2_cmd --format yaml -o "$svc_root_path""/internal-network-zone-db" "$SCRIPT_DIR_PATH"/templates/internal-network-zone-db.j2 "$tmp_file_path"
+  $jinja2_cmd --strict --format yaml -o "$svc_root_path""/internal-network-zone-db" "$SCRIPT_DIR_PATH"/templates/internal-network-zone-db.j2 "$tmp_file_path"
   rm "$tmp_file_path"
 }
 
@@ -221,7 +221,7 @@ create_internal_network_extra_zone_db_file() {
   $yq_cmd -i ".internal_network_extra_zone = load(\"$vars_path\").internal_network_extra_zone" "$tmp_file_path"
   $yq_cmd -i ".ns1_a_record_ip = \"$ns1_a_record_ip\"" "$tmp_file_path"
   $yq_cmd -i ".a_records = load(\"$vars_path\").internal_network_extra_zone_a_records" "$tmp_file_path"
-  $jinja2_cmd --format yaml -o "$svc_root_path""/internal-network-extra-zone-db" "$SCRIPT_DIR_PATH"/templates/internal-network-extra-zone-db.j2 "$tmp_file_path"
+  $jinja2_cmd --strict --format yaml -o "$svc_root_path""/internal-network-extra-zone-db" "$SCRIPT_DIR_PATH"/templates/internal-network-extra-zone-db.j2 "$tmp_file_path"
   rm "$tmp_file_path"
 }
 
