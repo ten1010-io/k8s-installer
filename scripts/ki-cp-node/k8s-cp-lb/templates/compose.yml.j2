@@ -11,4 +11,9 @@ services:
       TZ: Asia/Seoul
       STATS_ADMIN_PW: {{ ki_cp_k8s_cp_lb_stats_admin_pw }}
     network_mode: bridge
+    logging:
+      driver: json-file
+      options:
+        max-size: "{{ ki_cp_service_log_max_size }}"
+        max-file: "{{ ki_cp_service_log_max_file }}"
     restart: always

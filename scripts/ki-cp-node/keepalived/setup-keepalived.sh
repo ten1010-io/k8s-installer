@@ -150,7 +150,7 @@ create_keepalived_conf_file() {
   $yq_cmd -i ".priority = \"$priority\"" "$tmp_file_path"
   $yq_cmd -i ".unicast_peers = $unicast_peers" "$tmp_file_path"
   $yq_cmd -i ".ki_cp_ha_mode_vip = load(\"$vars_path\").ki_cp_ha_mode_vip" "$tmp_file_path"
-  $jinja2_cmd --format yaml -o "$svc_root_path""/keepalived.conf" "$SCRIPT_DIR_PATH"/templates/keepalived.conf.j2 "$tmp_file_path"
+  $jinja2_cmd --strict --format yaml -o "$svc_root_path""/keepalived.conf" "$SCRIPT_DIR_PATH"/templates/keepalived.conf.j2 "$tmp_file_path"
   rm "$tmp_file_path"
 }
 

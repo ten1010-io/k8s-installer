@@ -154,6 +154,29 @@ ki_cp_k8s_registry_image_digest: "sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b
 ki_cp_user_registry_image: "registry:2.8"
 ki_cp_user_registry_image_digest: "sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
 
+# How much of its own output each ki cp service keeps on the node. The docker
+# default for json-file is no limit at all, and these six run for the life of the
+# cluster: the load balancer writes a line for every connection it closes and the
+# registries one for every request, so what they leave behind grows without end on
+# the root filesystem of a ki cp node - the same filesystem this also asks to hold
+# both registries and the etcd snapshots.
+#
+# Declared on each service rather than as a daemon default, for two reasons.
+# This installer does write daemon.json - setup-docker.sh renders the data root
+# and the cgroup driver, setup-dns-server.sh puts the dns of the ki cp services
+# in it - so the reason is not that the file is somebody else's. What goes in it
+# is what the node needs to run the containers of this cluster, and a log policy
+# is not that: as a daemon default it would bound every container a site runs on
+# that node for its own reasons, which is the site's call. And a daemon default
+# would not reach the cluster that already exists at all, while a service whose
+# compose file changed is recreated by "docker compose up -d": the log
+# configuration of a container is fixed when it is created.
+#
+# Five files of ten megabytes is fifty per service and three hundred for a node
+# running all six
+ki_cp_service_log_max_size: "10m"
+ki_cp_service_log_max_file: "5"
+
 ki_cp_k8s_cp_lb_port: 16443
 ki_cp_k8s_cp_lb_stats_port: 18404
 # The runtime api of the load balancer, which lb-admin.sh drains a backend
