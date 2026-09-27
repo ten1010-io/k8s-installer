@@ -10,6 +10,8 @@
 
 - import_playbook: tasks/apply-kubelet-var-changes.yml
 
+- import_playbook: tasks/apply-kubelet-policy-var-changes.yml
+
 - import_playbook: tasks/apply-cluster-config-var-changes.yml
 
 - import_playbook: tasks/apply-k8s-cp-extra-files.yml

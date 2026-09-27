@@ -287,6 +287,67 @@ IOMMU 그룹은 그 노드가 IOMMU 를 켜고 부팅한 뒤에야 보입니다.
 지정해 두었던 노드에서 목록을 비우면 그 노드에 쓴 것을 되돌립니다 — 되돌린 것도 재부팅해야
 적용됩니다.
 
+=== kubelet 이 CPU 를 나눠 주는 방식
+
+기본값에서 컨테이너가 받는 것은 **CPU 시간**이고, 스레드는 커널 스케줄러가 코어 사이로 옮겨
+다닙니다. 코어를 독점해야 하는 워크로드 — vCPU 를 고정한 가상머신, 지연이 중요한 서버 — 는
+그렇게 받을 수 없고, 패스스루한 GPU 가 달린 NUMA 노드에 맞춰 붙일 수도 없습니다.
+
+노드별로 `inventory.yml` 에 적습니다. 핀닝 여부는 그 노드가 무엇을 들고 있느냐에 달린 것이라,
+GPU 가상머신을 돌리는 노드는 켜고 컨트롤 플레인만 도는 노드는 끄는 것이 보통입니다.
+
+[source,yaml]
+----
+k8s_node:
+  hosts:
+    node4:
+      kubelet_cpu_manager_policy: "static"
+      kubelet_topology_manager_policy: "single-numa-node"
+      kubelet_topology_manager_scope: "pod"
+      kubelet_reserved_system_cpus: "0-3,64-67"
+      kubelet_cpu_manager_full_pcpus_only: false
+----
+
+[cols="2,3"]
+|===
+|변수 |뜻
+
+|`kubelet_cpu_manager_policy`
+|`none`(기본) / `static`. `static` 은 Guaranteed 파드가 정수 CPU 를 요구할 때 **코어를 독점**으로
+줍니다. kubevirt 의 `dedicatedCpuPlacement` 가 이것을 요구합니다
+
+|`kubelet_cpu_manager_full_pcpus_only`
+|독점 단위를 **하드웨어 스레드**(기본)로 둘지 **물리 코어 통째**로 할지. 켜면 노드가 내줄 수 있는
+독점 CPU 수가 **절반**이 되고, 홀수 개를 요구하는 파드는 거부됩니다
+
+|`kubelet_topology_manager_policy`
+|CPU·메모리·장치를 한 NUMA 노드에 맞출지, 얼마나 엄격하게 할지. `single-numa-node` 는 **맞출 수
+없으면 파드를 거부**합니다 — 조용히 느려지는 것보다 낫다는 판단입니다
+
+|`kubelet_topology_manager_scope`
+|정렬을 컨테이너마다 볼지 파드 전체로 볼지. 가상머신은 `pod` 입니다
+
+|`kubelet_reserved_system_cpus`
+|시스템과 kubelet 이 쓸 CPU 를 **개수가 아니라 번호로** 지정. kubelet 이 개수 쪽을 이 집합의
+크기로 **덮어쓰므로**, `kubelet_system_reserved_cpu` 를 같이 적으면 둘 중 하나가 아무 일도 하지
+않게 되어 플레이북이 거부합니다
+
+|`kubelet_max_pods`
+|노드가 받는 최대 파드 수. 미지정이면 쿠버네티스 기본(110)
+|===
+
+[IMPORTANT]
+====
+* *정책을 바꾸는 것은 값을 다시 쓰는 일이 아닙니다.* kubelet 은 마지막으로 돌던 정책을
+  체크포인트로 들고 있고 설정과 어긋나면 **기동을 거부**합니다. 그래서 <<설정 변경 적용>> 이 그
+  노드를 **drain** 하고, 체크포인트를 치우고, kubelet 을 다시 올린 뒤 `Ready` 를 기다려
+  `uncordon` 합니다. 한 대씩 돌고, **파드가 쫓겨납니다**
+* *`static` 이라고 모두가 독점 CPU 를 받는 것은 아닙니다.* Guaranteed QoS + 정수 CPU 인 파드만
+  받고, 나머지는 남은 공유 풀을 그대로 씁니다
+* *노드 라벨과 짝지어 쓰세요.* `static` 인데 아무도 그 노드로 보내지 않으면 쓸모가 없고, 라벨만
+  붙고 `static` 이 아니면 거짓말입니다. `k8s_node_labels` 가 같은 파일에 있습니다
+====
+
 === ephemeral-storage 전용 디스크
 
 노드의 컨테이너 데이터는 기본적으로 루트 디스크에 쌓입니다. 이미지 하나가 크거나 파드 로그가

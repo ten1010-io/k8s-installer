@@ -5,16 +5,22 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 print_usage() {
   cat <<EOF
 Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path]
+                                  [--reset-cpu-manager-state]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
 --vars-path     File path
+--reset-cpu-manager-state
+                Take the checkpoint of the cpu manager away while kubelet is
+                stopped. Required when the cpu manager policy changed, and
+                refused by kubelet otherwise
 EOF
   exit
 }
 
 parse_params() {
   vars_path=""
+  reset_cpu_manager_state="false"
 
   while :; do
     case "${1-}" in
@@ -26,6 +32,7 @@ parse_params() {
       vars_path="${2-}"
       shift
       ;;
+    --reset-cpu-manager-state) reset_cpu_manager_state="true" ;;
     -?*) die "[ERROR] Unknown option: $1" ;;
     *) break ;;
     esac
@@ -80,6 +87,10 @@ jinja2_cmd=""
 ki_etc_kubeadm_path=""
 ki_tmp_root_path=""
 
+# Where kubelet records the cpu manager policy it last ran under, along with the
+# assignments it made. Fixed by kubelet
+CPU_MANAGER_STATE_PATH=/var/lib/kubelet/cpu_manager_state
+
 # Writes the kubelet configuration of this node again and restarts kubelet to
 # read it. The reservations are calculated from the capacity of the node, so the
 # cluster wide baseline is patched with the values of this one, which is the
@@ -99,7 +110,34 @@ main() {
 
   create_kubelet_config_patch_file
   apply_kubelet_config
-  restart_kubelet
+
+  if [[ $reset_cpu_manager_state = "true" ]]; then
+    replace_kubelet_with_state_reset
+  else
+    restart_kubelet
+  fi
+
+  return 0
+}
+
+# The checkpoint holds the policy kubelet last ran under, and kubelet refuses to
+# start when the configuration it reads disagrees with it - it says so and names
+# this file. So the file goes while nothing is running to write it again, which
+# is why this is a stop and a start rather than a restart.
+#
+# The assignments in it go with it. That is what the caller drained the node for:
+# a container that held an exclusive cpu is not on the node any more, and the
+# ones that come back are allocated under the policy that is now configured
+replace_kubelet_with_state_reset() {
+  msg "[INFO] Stopping kubelet to take the cpu manager checkpoint away"
+  "$ki_opt_scripts_path"/systemctl.sh stop kubelet ||
+    die "[ERROR] Failed to stop kubelet"
+
+  rm -f "$CPU_MANAGER_STATE_PATH"
+
+  msg "[INFO] Starting kubelet"
+  "$ki_opt_scripts_path"/systemctl.sh start kubelet ||
+    die "[ERROR] Failed to start kubelet. the cpu manager checkpoint was removed, so what it refuses now is the configuration rather than the checkpoint"
 
   return 0
 }

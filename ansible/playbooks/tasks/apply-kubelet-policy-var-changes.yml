@@ -1,0 +1,80 @@
+# Applies the changes of class["kubelet_policy"], one node at a time.
+#
+# The cluster wide baseline goes up first, exactly as class["kubelet"] does it:
+# every node reads its configuration back from that ConfigMap before its own
+# patch is applied on top, so a node whose policy differs from the baseline still
+# gets what its patch says.
+#
+# What separates this from class["kubelet"] is the drain. kubelet keeps a
+# checkpoint of the cpu manager policy it last ran and refuses to start when the
+# configuration disagrees with it, so the checkpoint has to go, and with it go the
+# exclusive cpus it recorded. Whatever was holding one has to be off the node
+# before that happens, which a restart of kubelet would not arrange.
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute upload-k8s-kubelet-config.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/upload-k8s-kubelet-config.sh {{ vars_path_arg }}"
+      when:
+        - inventory_hostname == k8s_cp_nodes[0]
+        - hostvars['localhost']['ki_var_changes']['kubelet_policy'] | length > 0
+
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    scripts: "sudo {{ ki_opt_scripts_path }}"
+    knn: "{{ ih_to_hostname_dict[inventory_hostname] | lower | replace('_', '-') }}"
+    # The nodes a variable of this class actually changed on. class["kubelet"]
+    # writes every node when any of them changed, which costs a kubelet restart
+    # and no pod; here it would cost an eviction on nodes that are already
+    # running what they are configured to run
+    changed_ihs: "{{ hostvars['localhost']['ki_var_changes']['kubelet_policy'] | map(attribute='ih') | list }}"
+  tasks:
+    - when: inventory_hostname in changed_ihs
+      block:
+        - name: Execute drain-node.sh
+          shell: "{{ scripts }}/k8s-node/drain-node.sh {{ vars_path_arg }} {{ knn }}"
+          delegate_to: "{{ k8s_cp_nodes[0] }}"
+
+        - name: Execute update-k8s-node-kubelet.sh --reset-cpu-manager-state
+          shell: "{{ scripts }}/k8s-node/update-k8s-node-kubelet.sh {{ vars_path_arg }} --reset-cpu-manager-state"
+
+        # Before the node is given anything again, and before the next node is
+        # taken. kubelet was stopped rather than restarted, so the command
+        # returning says only that it was started, not that it has registered
+        - name: Execute wait-k8s-node-ready.sh
+          shell: "{{ scripts }}/k8s-node/wait-k8s-node-ready.sh {{ vars_path_arg }} {{ knn }}"
+          delegate_to: "{{ k8s_cp_nodes[0] }}"
+
+      # A drained node that is never put back takes no work for good, which is
+      # worse than the failure that got here. It is uncordoned and the run stops
+      # after that, so the operator is left with a cluster scheduling onto every
+      # node it was scheduling onto before.
+      #
+      # A kubelet that will not start under the new policy is the failure this is
+      # most likely to meet. The node stays cordoned in kubernetes terms only
+      # because it is NotReady, and correcting the variable and running again is
+      # what brings it back
+      rescue:
+        - name: Execute uncordon-node.sh
+          shell: "{{ scripts }}/k8s-node/uncordon-node.sh {{ vars_path_arg }} {{ knn }}"
+          delegate_to: "{{ k8s_cp_nodes[0] }}"
+          ignore_errors: yes
+
+        - name: Report that applying the kubelet policy failed
+          fail:
+            msg: >-
+              Applying the kubelet policy to node["{{ inventory_hostname }}"] failed.
+              The node was uncordoned, so it takes work again once its kubelet is up. The
+              nodes after it in the inventory were not touched
+
+    - when: inventory_hostname in changed_ihs
+      name: Execute uncordon-node.sh
+      shell: "{{ scripts }}/k8s-node/uncordon-node.sh {{ vars_path_arg }} {{ knn }}"
+      delegate_to: "{{ k8s_cp_nodes[0] }}"

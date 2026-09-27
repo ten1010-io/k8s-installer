@@ -20,6 +20,7 @@ CPU_QUANTITY_PATTERN = r"^([0-9]+m|[0-9]+(\.[0-9]+)?)$"
 EVICTION_THRESHOLD_PATTERN = r"^([0-9]+(\.[0-9]+)?%|[0-9]+[EPTGMK]i)$"
 FILE_MODE_PATTERN = r"^0[0-7]{3}$"
 PCI_DEVICE_ID_PATTERN = r"^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}$"
+CPU_SET_PATTERN = r"^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$"
 # A volume of a pod is named with a dns 1123 label, which bounds its length at 63
 DNS_1123_LABEL_PATTERN = r"[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?"
 APISERVER_ARG_NAME_PATTERN = r"[a-z0-9][a-z0-9-]*"
@@ -102,6 +103,7 @@ def main():
     validate_k8s_subnets(hostvars_errors, hostvars)
     validate_gpu_passthrough(hostvars_errors, hostvars)
     validate_k8s_node_metadata(hostvars_errors, hostvars)
+    validate_kubelet_policy(hostvars_errors, hostvars)
     validate_kubelet_reservations(hostvars_errors, hostvars)
     validate_k8s_apiserver_extra_volumes(hostvars_errors, hostvars)
     validate_k8s_cp_extra_files(hostvars_errors, hostvars)
@@ -739,6 +741,56 @@ def validate_node_key(hostvars_errors: List[HostvarsError], ih: str, var_name: s
     hostvars_errors.append(error)
 
 
+def validate_kubelet_policy(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects kubelet policy settings where one instruction cancels another.
+
+    reservedSystemCPUs names the cpus kept for the system and
+    kubelet_system_reserved_cpu counts them. kubelet does not refuse the pair, it
+    overwrites: measured on 1.36, it logs "Option --reserved-cpus is specified,
+    it will overwrite the cpu setting in KubeReserved and SystemReserved" and
+    takes the count from the named set. Nothing breaks, and the value somebody
+    wrote is silently not the one in force, which is worth refusing rather than
+    leaving to whoever reads the file next.
+
+    The calculated cpu reservation is left alone, and is not this check's
+    business: it is there on every node, kubelet overwrites it the same way, and
+    taking it out would not reach a node anyway - a node merges its patch onto
+    the cluster baseline, and a merge does not remove a key.
+
+    full-pcpus-only is an option of the static policy, so with the policy at none
+    there is no allocation for it to be an option of
+    """
+    for ih in sorted(hostvars):
+        if ih == "localhost":
+            continue
+
+        node_hostvars = hostvars[ih]
+        reserved_system_cpus = node_hostvars.get("kubelet_reserved_system_cpus")
+
+        if reserved_system_cpus:
+            for var_name in ("kubelet_system_reserved_cpu", "kubelet_kube_reserved_cpu"):
+                if node_hostvars.get(var_name) is None:
+                    continue
+
+                error = HostvarsError(ih,
+                                      ("kubelet_reserved_system_cpus",),
+                                      str(reserved_system_cpus),
+                                      f"Variable[\"kubelet_reserved_system_cpus\"] is set on a node that also"
+                                      f" sets variable[\"{var_name}\"]. kubelet overwrites the cpu it keeps for"
+                                      " the system with the count of the named set, so one of the two does nothing")
+                hostvars_errors.append(error)
+
+        if (node_hostvars.get("kubelet_cpu_manager_full_pcpus_only")
+                and node_hostvars.get("kubelet_cpu_manager_policy") != "static"):
+            error = HostvarsError(ih,
+                                  ("kubelet_cpu_manager_full_pcpus_only",),
+                                  "True",
+                                  "Variable[\"kubelet_cpu_manager_full_pcpus_only\"] is an option of the static"
+                                  " cpu manager policy, and variable[\"kubelet_cpu_manager_policy\"] of this node"
+                                  " is not static, so there is no exclusive allocation for it to be an option of")
+            hostvars_errors.append(error)
+
+
 def validate_kubelet_reservations(hostvars_errors: List[HostvarsError], hostvars):
     """Validates the values calculated by create-kubelet-reservations.py.
 
@@ -880,6 +932,17 @@ class VarsModel(BaseModel):
 
     kubelet_ki_cp_extra_cpu: Annotated[str, StringConstraints(pattern=CPU_QUANTITY_PATTERN)]
     kubelet_ki_cp_extra_memory: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
+
+    # How kubelet hands out the cpus of a node, and what it lines them up with
+    kubelet_cpu_manager_policy: Literal["none", "static"]
+    kubelet_cpu_manager_full_pcpus_only: bool
+    kubelet_topology_manager_policy: Literal[
+        "none", "best-effort", "restricted", "single-numa-node"]
+    kubelet_topology_manager_scope: Literal["container", "pod"]
+    # A cpuset as the kernel writes one: 0-3,8,12-15
+    kubelet_reserved_system_cpus: Optional[
+        Annotated[str, StringConstraints(pattern=CPU_SET_PATTERN)]] = None
+    kubelet_max_pods: Optional[PositiveInt] = None
 
 
 class ConstantVarsModel(BaseModel):

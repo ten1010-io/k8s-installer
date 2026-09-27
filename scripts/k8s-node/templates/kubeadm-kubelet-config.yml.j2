@@ -9,6 +9,11 @@ kind: KubeletConfiguration
 # systemReservedCgroup to point at cgroups that already exist, and kubelet fails
 # to start when they do not. The reservations below are used for scheduler
 # accounting only, which is what keeps the node from being over committed
+#
+# The cpu lines stay even on a node that also names its reserved cpus. kubelet
+# says it is overwriting them with the count of the named set and carries on, and
+# taking them out here would not reach the node anyway: a node reads the cluster
+# baseline and merges its own patch onto it, and a merge does not remove a key
 systemReserved:
   cpu: "{{ kubelet_reservations['system_reserved']['cpu'] }}"
   memory: "{{ kubelet_reservations['system_reserved']['memory'] }}"
@@ -24,3 +29,20 @@ evictionHard:
   nodefs.available: "{{ kubelet_reservations['eviction_hard']['nodefs.available'] }}"
   imagefs.available: "{{ kubelet_reservations['eviction_hard']['imagefs.available'] }}"
   nodefs.inodesFree: "{{ kubelet_reservations['eviction_hard']['nodefs.inodesFree'] }}"
+{%- if kubelet_reserved_system_cpus %}
+reservedSystemCPUs: "{{ kubelet_reserved_system_cpus }}"
+{%- endif %}
+{%- if kubelet_max_pods %}
+maxPods: {{ kubelet_max_pods }}
+{%- endif %}
+{%- if kubelet_cpu_manager_policy != "none" %}
+cpuManagerPolicy: {{ kubelet_cpu_manager_policy }}
+{%- if kubelet_cpu_manager_full_pcpus_only %}
+cpuManagerPolicyOptions:
+  full-pcpus-only: "true"
+{%- endif %}
+{%- endif %}
+{%- if kubelet_topology_manager_policy != "none" %}
+topologyManagerPolicy: {{ kubelet_topology_manager_policy }}
+topologyManagerScope: {{ kubelet_topology_manager_scope }}
+{%- endif %}

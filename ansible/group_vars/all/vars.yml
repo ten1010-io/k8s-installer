@@ -167,6 +167,73 @@ kubelet_auto_nodefs_available_max: "50Gi"
 kubelet_auto_ephemeral_storage_min: "5Gi"
 kubelet_auto_ephemeral_storage_max: "30Gi"
 
+# How kubelet hands out the cpus of a node. Set per node in inventory.yml:
+# whether a node is pinned follows from what it holds, and a node running gpu
+# virtual machines wants it while the one running the control plane does not.
+#
+# none, the default, means what it has always meant - a container is given cpu
+# time and the kernel moves its threads between cores. A workload that needs a
+# core to itself, a virtual machine with pinned vcpus or a latency sensitive
+# server, can not be given one that way, and neither can it be lined up with the
+# numa node its gpu sits on.
+#
+# static gives whole cpus to containers that ask for whole cpus in a Guaranteed
+# pod, and is what kubevirt requires for dedicatedCpuPlacement. It costs density:
+# a cpu given out is a cpu nothing else runs on, idle or not.
+#
+# Changing it is not a value being rewritten. kubelet checkpoints the policy it
+# last ran and refuses to start when the new configuration disagrees, saying to
+# drain the node and delete the file, so update-cluster.yml drains the node,
+# takes the checkpoint away and brings kubelet back, one node at a time
+kubelet_cpu_manager_policy: "none"
+
+# Whether an exclusive allocation is a whole physical core rather than one
+# hardware thread. Read only while the policy above is static.
+#
+# Left false, a node hands out logical cpus, so the two threads of one core can
+# go to two different containers - the model a public cloud sells as a vcpu.
+# Turned on, the threads of a core go together, which halves how many exclusive
+# cpus a node has and takes the neighbour off the other thread of every core.
+#
+# A pod asking for an odd number of cpus is then refused rather than given a
+# thread too many, so turning this on can leave Pending what used to run
+kubelet_cpu_manager_full_pcpus_only: false
+
+# Whether kubelet lines the cpus, the memory and the devices of a workload up on
+# one numa node, and how strictly.
+#
+# What this is for is a device that sits on a numa node - a gpu that was passed
+# through, a fabric nic. A container given cpus on the other side of the machine
+# reaches its own device across the interconnect, and nothing reports that as
+# anything but a workload that runs slower than it should.
+#
+# single-numa-node refuses to admit what it can not line up, which is the point:
+# the alternative is a pod that runs and quietly performs worse. The cpu part of
+# it needs the policy above to be static to have anything to line up
+kubelet_topology_manager_policy: "none"
+
+# Whether the alignment above is decided per container or for the pod as a whole.
+# pod is what a virtual machine wants, since its vcpus and its device are one
+# workload rather than several
+kubelet_topology_manager_scope: "container"
+
+# The cpus kept for the system and for kubelet, named rather than counted.
+#
+# Left null, kubelet reserves as much cpu as the reservations below ask for and
+# picks which cpus itself. Naming them pins the system to a known set - typically
+# the cpus of one numa node - and leaves the rest whole for exclusive allocation.
+#
+# kubelet overwrites the cpu it keeps for the system with the count of the set
+# named here, so setting this and kubelet_system_reserved_cpu on one node means
+# one of the two does nothing and the playbooks refuse it. The reservation this
+# installer calculates is overwritten the same way and is left where it is
+kubelet_reserved_system_cpus: null
+
+# The most pods kubelet accepts on a node. Left null, kubernetes decides (110).
+# A node running many small pods reaches it; a node whose pods are virtual
+# machines with large cpu and memory never gets near it
+kubelet_max_pods: null
+
 # Added to systemReserved on nodes of the ki_cp_node group.
 # Those nodes run keepalived, dns server, ntp server, k8s cp lb and k8s registry
 # with docker, outside of kubernetes, so kubelet does not account for them
