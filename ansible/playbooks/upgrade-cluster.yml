@@ -19,6 +19,8 @@
 
 - import_playbook: tasks/upgrade-k8s-registry.yml
 
+- import_playbook: tasks/apply-k8s-cp-extra-files.yml
+
 - import_playbook: tasks/upgrade-k8s-nodes.yml
 
 # Here as well as in update-cluster.yml, because what the release before this one

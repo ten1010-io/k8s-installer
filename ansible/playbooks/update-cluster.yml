@@ -12,7 +12,9 @@
 
 - import_playbook: tasks/apply-cluster-config-var-changes.yml
 
-- import_playbook: tasks/apply-control-plane-var-changes.yml
+- import_playbook: tasks/apply-k8s-cp-extra-files.yml
+
+- import_playbook: tasks/apply-control-plane-changes.yml
 
 - import_playbook: tasks/apply-node-metadata.yml
 

@@ -56,6 +56,8 @@
   vars:
     script: all-node/ntp-client/setup-ntp-client.sh
 
+- import_playbook: tasks/apply-k8s-cp-extra-files.yml
+
 - import_playbook: tasks/init-k8s-cluster.yml
 
 - import_playbook: tasks/apply-node-metadata.yml

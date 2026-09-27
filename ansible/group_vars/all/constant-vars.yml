@@ -25,6 +25,11 @@ ki_opt_release_meta_path: "{{ ki_opt_root_path }}/release.yml"
 # the control node after the one in use is lost. The control node is required to
 # be a member of that group for exactly this reason
 ki_opt_ansible_path: "{{ ki_opt_root_path }}/ansible"
+# The files of k8s_cp_extra_files, beside the inventory and the variables
+# that name them. Held by every ki cp node for the same reason the rest of
+# that directory is, and kept by upgrade.sh across a release for the same
+# reason vars.yml is: it belongs to the operator
+ki_opt_ansible_files_path: "{{ ki_opt_ansible_path }}/files"
 
 # The node of the inventory that the control node is, declared in inventory.yml
 # and read here so that every host can compare itself against it. What the
@@ -364,6 +369,14 @@ ki_var_classes:
   control_plane:
     - k8s_apiserver_extra_args
     - k8s_apiserver_extra_volumes
+  # Placed on every control plane node and read by the apiserver when it starts,
+  # so applying a change is the file being written and then that apiserver being
+  # restarted, one node at a time. The play that places them runs whole rather
+  # than off this diff, the way the one for labels and taints does, and what the
+  # class is for is the record: what a node applied last time is the only thing
+  # that says which paths this installer may take away when an entry is dropped
+  cp_extra_files:
+    - k8s_cp_extra_files
   # Written onto the node object of the cluster rather than onto the node. A
   # change is applied by talking to the apiserver from a control plane node, so
   # nothing on the node itself is touched and nothing has to be restarted. A node
