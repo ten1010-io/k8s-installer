@@ -21,6 +21,13 @@
 
 - import_playbook: tasks/upgrade-k8s-nodes.yml
 
+# Here as well as in update-cluster.yml, because what the release before this one
+# left on the node objects is nothing: a cluster reaches this release by being
+# upgraded, and the labels of its inventory and the ki cp label would otherwise
+# wait for whenever somebody next happened to run update-cluster.yml. It reads
+# each node's record itself, so it removes what the inventory dropped here too
+- import_playbook: tasks/apply-node-metadata.yml
+
 # Only the classes this playbook applies. kubeadm reads its configuration out
 # of the cluster rather than out of vars.yml, so kubelet, cluster_config and
 # control_plane are not applied here, and node_rebuild and immutable are not
@@ -29,7 +36,7 @@
 # stops update-cluster.yml from ever refusing the change again
 - import_playbook: tasks/record-applied-state.yml
   vars:
-    ki_recorded_classes: ["cluster_upgrade", "service", "no_action"]
+    ki_recorded_classes: ["cluster_upgrade", "service", "no_action", "node_metadata"]
 
 - import_playbook: tasks/reset-vars-file.yml
 
