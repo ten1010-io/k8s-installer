@@ -16,6 +16,8 @@
 
 - import_playbook: tasks/reset-k8s-cluster.yml
 
+- import_playbook: tasks/reset-k8s-cp-extra-files.yml
+
 - import_playbook: tasks/run-all-node-script.yml
   vars:
     script: all-node/cert-expiry-metrics/reset-cert-expiry-metrics.sh

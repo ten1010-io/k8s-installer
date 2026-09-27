@@ -1,0 +1,35 @@
+# Takes the files this installer placed off the control plane nodes.
+#
+# Bounded by the record for the same reason the removal in
+# apply-k8s-cp-extra-files.yml is: a path is removed because this installer wrote
+# it on the last run, never because it happens to be named in a file the operator
+# is editing. What the operator put on a node by other means is left where it is.
+#
+# The directories are left. One of them may have been there before any of this
+# ran, and an empty directory is not what a reset is for
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - when:
+        - inventory_hostname in k8s_cp_nodes
+        - target_node is none or inventory_hostname == target_node
+      block:
+        - name: "Read file[\"{{ ki_etc_applied_vars_path }}\"]"
+          shell: "sudo cat {{ ki_etc_applied_vars_path }} 2>/dev/null || true"
+          register: shell_result
+
+        - name: "Set_fact variable[\"ki_node_applied_vars\"]"
+          set_fact:
+            ki_node_applied_vars: "{{ shell_result.stdout | from_yaml | default({}, true) }}"
+
+        - name: "Remove temporary variable[\"shell_result\"]"
+          set_fact:
+            shell_result: null
+
+        - name: Remove the files this installer placed
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop: "{{ ki_node_applied_vars.k8s_cp_extra_files | default([]) | map(attribute='dest') | list }}"
+          become: yes

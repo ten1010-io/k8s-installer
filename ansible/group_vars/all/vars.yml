@@ -99,6 +99,41 @@ k8s_minor_version: "1.36"
 k8s_apiserver_extra_args: []
 k8s_apiserver_extra_volumes: []
 
+# Files this installer puts on every control plane node, for the volumes above to
+# carry into the apiserver. Empty puts nothing anywhere.
+#
+# A volume declares a path of the node and an argument names a file inside it,
+# and until now nothing put the file there. That leaves the two halves of one
+# decision in different places: the argument is cluster wide, so a control plane
+# node joining later is told to read a file nobody has given it, and an apiserver
+# that can not read what it was pointed at does not start.
+#
+#   k8s_cp_extra_files:
+#     - src: audit/policy.yaml
+#       dest: /etc/kubernetes/audit/policy.yaml
+#       mode: "0644"
+#
+# src is a path under ansible/files of this installer, and that is where the file
+# itself goes. Relative on purpose: what sits in that directory is carried to
+# every ki cp node with the rest of the ansible directory and kept across a
+# release upgrade, while a file somewhere else on the control node is known to
+# nothing and survives neither.
+#
+# dest is an absolute path on the node. Owned by root, with the mode given here
+# or 0644. The directory it sits in is created, and is left behind when the file
+# is removed.
+#
+# Taking an entry out removes the file it placed the next time a playbook runs.
+# Only paths this installer placed are ever removed - what was put on a node by
+# other means is left alone.
+#
+# *** not for secrets ***
+#
+# What goes in ansible/files is copied to every ki cp node in the clear, so that
+# any of them can take over as the control node. That is the right home for an
+# audit policy and the wrong one for a key
+k8s_cp_extra_files: []
+
 k8s_certificate_validity_period: "26280h" # 26280h = 3 year
 
 # How many etcd snapshots each k8s cp node keeps. The oldest over this are

@@ -5,7 +5,7 @@ import ipaddress
 import re
 import sys
 from ipaddress import IPv4Network, IPv4Address
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import List, Any, Literal, Optional, Annotated, Union
 
 import yaml
@@ -18,6 +18,7 @@ VALIDITY_PERIOD_PATTERN = r"^[0-9]+h$"
 STORAGE_SIZE_PATTERN = r"^[0-9]+[EPTGMK]i$"
 CPU_QUANTITY_PATTERN = r"^([0-9]+m|[0-9]+(\.[0-9]+)?)$"
 EVICTION_THRESHOLD_PATTERN = r"^([0-9]+(\.[0-9]+)?%|[0-9]+[EPTGMK]i)$"
+FILE_MODE_PATTERN = r"^0[0-7]{3}$"
 PCI_DEVICE_ID_PATTERN = r"^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}$"
 # A volume of a pod is named with a dns 1123 label, which bounds its length at 63
 DNS_1123_LABEL_PATTERN = r"[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?"
@@ -103,6 +104,7 @@ def main():
     validate_k8s_node_metadata(hostvars_errors, hostvars)
     validate_kubelet_reservations(hostvars_errors, hostvars)
     validate_k8s_apiserver_extra_volumes(hostvars_errors, hostvars)
+    validate_k8s_cp_extra_files(hostvars_errors, hostvars)
     validate_k8s_minor_version(hostvars_errors, hostvars)
 
     if len(hostvars_errors) > 0:
@@ -415,6 +417,87 @@ def validate_k8s_subnets(hostvars_errors: List[HostvarsError], hostvars):
                                   " addresses of that subnet, and a pod can not reach an address the"
                                   " cluster routes to itself")
             hostvars_errors.append(error)
+
+
+def validate_k8s_cp_extra_files(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects a file that can not be placed, or a place it must not be put.
+
+    The source is read on the control node while the playbooks run, so a name
+    that is not there is a run that stops on the first control plane node it
+    reaches, after that node has been taken out of its load balancers. Saying so
+    here costs one stat call and happens before anything is touched.
+
+    The destination is refused when it falls inside a tree kubeadm or this
+    installer owns. A file written there is not configuration, it is two things
+    writing to one path: kubeadm rewrites its own pki and manifests whenever it
+    is asked to, and what this installer keeps under its own roots it also
+    removes. The one that loses is whichever ran last, and nothing reports it
+    """
+    lo_hostvars = hostvars["localhost"]
+
+    extra_files = lo_hostvars.get("k8s_cp_extra_files") or []
+    files_path = lo_hostvars.get("ki_opt_ansible_files_path")
+
+    # Trees that belong to kubeadm or to this installer, read from where they are
+    # declared rather than written out again here
+    owned_paths = [lo_hostvars[name] for name in ("k8s_pki_path",
+                                                  "k8s_manifests_path",
+                                                  "k8s_etcd_data_path",
+                                                  "ki_etc_root_path",
+                                                  "ki_opt_root_path",
+                                                  "ki_var_root_path")
+                   if lo_hostvars.get(name)]
+
+    dests = [extra_file["dest"] for extra_file in extra_files
+             if isinstance(extra_file, dict) and "dest" in extra_file]
+
+    for dest in sorted({dest for dest in dests if dests.count(dest) > 1}):
+        error = HostvarsError("localhost",
+                              ("k8s_cp_extra_files",),
+                              dest,
+                              f"Variable[\"k8s_cp_extra_files\"] carries dest[{dest}] more than once."
+                              " Two files can not be placed at one path")
+        hostvars_errors.append(error)
+
+    for extra_file in extra_files:
+        if not isinstance(extra_file, dict):
+            continue
+
+        src = extra_file.get("src")
+        if src and files_path:
+            src_path = Path(files_path) / str(src)
+            if not src_path.is_file():
+                error = HostvarsError("localhost",
+                                      ("k8s_cp_extra_files",),
+                                      str(src),
+                                      f"File[\"{src_path}\"] of the control node is not there."
+                                      " src is a path under the files directory of this installer,"
+                                      " and the file itself goes in that directory")
+                hostvars_errors.append(error)
+
+        dest = extra_file.get("dest")
+        if not dest:
+            continue
+
+        for owned_path in owned_paths:
+            if not is_within(str(dest), str(owned_path)):
+                continue
+
+            error = HostvarsError("localhost",
+                                  ("k8s_cp_extra_files",),
+                                  str(dest),
+                                  f"Value dest[{dest}] is inside path[{owned_path}], which kubeadm or"
+                                  " this installer writes and removes on its own. Put the file"
+                                  " somewhere neither of them owns")
+            hostvars_errors.append(error)
+
+
+def is_within(path: str, parent: str) -> bool:
+    """Whether a path is the given directory or sits under it."""
+    path_parts = PurePosixPath(path).parts
+    parent_parts = PurePosixPath(parent).parts
+
+    return path_parts[: len(parent_parts)] == parent_parts
 
 
 def validate_k8s_apiserver_extra_volumes(hostvars_errors: List[HostvarsError], hostvars):
@@ -760,6 +843,9 @@ class VarsModel(BaseModel):
     k8s_apiserver_extra_args: List[ApiServerExtraArgModel]
     k8s_apiserver_extra_volumes: List[ApiServerExtraVolumeModel]
 
+    # The files placed on every control plane node for those volumes to carry
+    k8s_cp_extra_files: List[CpExtraFileModel]
+
     # Explicit overrides. None means the value is calculated from the resources
     # of the node by create-kubelet-reservations.py
     kubelet_system_reserved_cpu: Optional[
@@ -891,6 +977,30 @@ class HostvarsError:
 class ARecordModel(BaseModel):
     name: str
     ip: IPv4Address
+
+
+class CpExtraFileModel(BaseModel):
+    @field_validator("src")
+    @classmethod
+    def must_be_relative_and_contained(cls, path: Path) -> Path:
+        if path.is_absolute():
+            raise ValueError("src is a path under the files directory of this installer, not an absolute path")
+        if ".." in path.parts:
+            raise ValueError("src can not leave the files directory of this installer")
+        return path
+
+    @field_validator("dest")
+    @classmethod
+    def must_be_absolute(cls, path: Path) -> Path:
+        if not path.is_absolute():
+            raise ValueError("path must be absolute")
+        return path
+
+    model_config = ConfigDict(regex_engine='python-re')
+
+    src: Path
+    dest: Path
+    mode: Annotated[str, StringConstraints(pattern=FILE_MODE_PATTERN)] = "0644"
 
 
 class ApiServerExtraArgModel(BaseModel):

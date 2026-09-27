@@ -1,0 +1,114 @@
+# Places the files of k8s_cp_extra_files on every control plane node, and takes
+# away the ones that were placed and are not asked for any more.
+#
+# An argument of the apiserver and the volume that carries it are declared in
+# vars.yml and go into the kubeadm configuration of the cluster, which is a
+# cluster wide thing: a control plane node that joins later is told to read a
+# file nobody has put on it, and an apiserver given a path it can not read does
+# not start. So the file belongs beside the declaration rather than in whatever
+# the operator did by hand on the nodes that happened to exist that day.
+#
+# Run whole rather than only for what changed, the way apply-node-metadata.yml
+# is. The copy writes nothing when a node already holds the file, so gating this
+# on the diff would add a condition without taking work away, and it means a file
+# somebody removed from a node by hand comes back the next time anything runs.
+#
+# What is taken away is a different matter and can not be worked out from
+# vars.yml alone: a destination that is gone from it looks exactly like one that
+# was never there. The previous declaration comes from what each node recorded on
+# its last run, so the only paths ever removed are the ones this installer put
+# there. A node with nothing recorded, which is every node of a cluster being
+# built, has nothing to take away.
+#
+# Imported before kubeadm is asked to write a manifest naming any of this - at
+# install, at join, and before an upgrade walks the nodes. update-cluster.yml is
+# the one caller where a file can change under a running apiserver, and
+# apply-control-plane-changes.yml is what restarts it there, from the fact this
+# sets
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    current_dests: "{{ k8s_cp_extra_files | map(attribute='dest') | list }}"
+  tasks:
+    - when:
+        - inventory_hostname in k8s_cp_nodes
+        - target_node is none or inventory_hostname == target_node
+      block:
+        - name: "Read file[\"{{ ki_etc_applied_vars_path }}\"]"
+          shell: "sudo cat {{ ki_etc_applied_vars_path }} 2>/dev/null || true"
+          register: shell_result
+
+        - name: "Set_fact variable[\"ki_node_applied_vars\"]"
+          set_fact:
+            ki_node_applied_vars: "{{ shell_result.stdout | from_yaml | default({}, true) }}"
+
+        - name: "Remove temporary variable[\"shell_result\"]"
+          set_fact:
+            shell_result: null
+
+        # The directory of a destination is created because the operator named a
+        # file rather than a directory and the copy below would stop at a parent
+        # that is not there. It is not removed again when the file goes: an empty
+        # directory costs nothing and the one that was there before this ran may
+        # be somebody else's
+        - name: Create the directory of every file
+          file:
+            path: "{{ item }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "0755"
+          loop: "{{ current_dests | map('dirname') | unique | list }}"
+          become: yes
+
+        # Owned by root because the apiserver is a static pod that runs as root
+        # and because nothing else on the node has a reason to write these. The
+        # mode is the declaration's, defaulting to a file everyone on the node can
+        # read, which is what an audit policy is
+        - name: Place the files
+          copy:
+            src: "{{ ki_opt_ansible_files_path }}/{{ item.src }}"
+            dest: "{{ item.dest }}"
+            owner: root
+            group: root
+            mode: "{{ item.mode | default('0644') }}"
+          loop: "{{ k8s_cp_extra_files }}"
+          become: yes
+          register: copy_result
+
+        - name: Remove the files that are no longer asked for
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop: >-
+            {{ (ki_node_applied_vars.k8s_cp_extra_files | default([]) | map(attribute='dest') | list)
+               | difference(current_dests) }}
+          become: yes
+          register: remove_result
+
+        # Read by apply-control-plane-changes.yml, which restarts the apiserver
+        # of a node whose files moved. A node where nothing changed is not
+        # restarted, so an update-cluster run that touched none of this leaves the
+        # control plane alone
+        - name: "Set_fact variable[\"ki_cp_extra_files_changed\"]"
+          set_fact:
+            ki_cp_extra_files_changed: "{{ copy_result.changed or remove_result.changed }}"
+
+        # The files are on the node now, so an argument naming one that is not
+        # there is this run having failed rather than a warning about the future.
+        # Said before anything restarts an apiserver, which is the difference
+        # between a report and a control plane node that does not come back
+        - name: Execute check-k8s-cp-extra-files.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/extra-files/check-k8s-cp-extra-files.sh {{ vars_path_arg }}"
+          register: shell_result
+
+        - name: Refuse an apiserver argument that names a file this node does not have
+          fail:
+            msg: "{{ shell_result.stdout_lines }}"
+          when: shell_result.stdout | trim | length > 0
+
+        - name: "Remove temporary variable[\"shell_result\"]"
+          set_fact:
+            shell_result: null

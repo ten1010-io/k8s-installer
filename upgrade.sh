@@ -221,13 +221,20 @@ copy_installer() {
 # new release dropped does not survive on the control node. inventory.yml and
 # group_vars/all/vars.yml belong to the operator and are put back untouched, with
 # the files of the new release left beside them, so that variables the release
-# added can be diffed in and merged by hand
+# added can be diffed in and merged by hand.
+#
+# The files directory belongs to the operator too, and whole: what is in it is
+# named by k8s_cp_extra_files and placed on the control plane nodes, so losing it
+# to an upgrade would be losing an audit policy the cluster is configured to read.
+# It is put back as it was rather than merged, and the release ships it empty. A
+# deployment made before it existed has none, which is why the copy is guarded
 copy_ansible() {
   local tmp_path
   tmp_path=$(mktemp -d)
 
   cp -f "$KI_OPT_ANSIBLE_PATH"/inventory.yml "$tmp_path"/inventory.yml
   cp -f "$KI_OPT_ANSIBLE_PATH"/group_vars/all/vars.yml "$tmp_path"/vars.yml
+  [[ -d "$KI_OPT_ANSIBLE_PATH"/files ]] && cp -r "$KI_OPT_ANSIBLE_PATH"/files "$tmp_path"/files
 
   rm -rf "$KI_OPT_ANSIBLE_PATH"
   cp -r "$SRC_ANSIBLE_PATH" "$KI_OPT_ANSIBLE_PATH"
@@ -239,6 +246,10 @@ copy_ansible() {
 
   cp -f "$tmp_path"/inventory.yml "$KI_OPT_ANSIBLE_PATH"/inventory.yml
   cp -f "$tmp_path"/vars.yml "$KI_OPT_ANSIBLE_PATH"/group_vars/all/vars.yml
+  if [[ -d "$tmp_path"/files ]]; then
+    rm -rf "$KI_OPT_ANSIBLE_PATH"/files
+    cp -r "$tmp_path"/files "$KI_OPT_ANSIBLE_PATH"/files
+  fi
 
   rm -rf "$tmp_path"
 

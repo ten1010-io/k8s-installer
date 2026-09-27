@@ -58,6 +58,9 @@
   vars:
     script: all-node/ntp-client/setup-ntp-client.sh
 
+- import_playbook: tasks/apply-k8s-cp-extra-files.yml
+  when: target_node in groups['k8s_node']
+
 - import_playbook: tasks/add-k8s-node.yml
   when: target_node in groups['k8s_node']
 

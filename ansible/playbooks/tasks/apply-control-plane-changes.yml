@@ -1,13 +1,18 @@
-# Applies the changes of class["control_plane"] to the control plane nodes, one
-# at a time, taking each node out of every load balancer while its apiserver is
-# replaced and putting it back once it is serving again.
+# Applies to the control plane nodes what only a control plane node can be told,
+# one at a time, taking each node out of every load balancer while its apiserver
+# is replaced and putting it back once it is serving again.
 #
-# apply-cluster-config-var-changes.yml has already uploaded the kubeadm
-# configuration these variables are part of. That is what a node reads here, and
-# it is why the upload runs whether or not a variable of its own class changed.
+# Two things arrive here and they are applied in one visit. A change of
+# class["control_plane"] is written into the kubeadm configuration of the cluster
+# and reaches a node by its manifests being written again - the upload has
+# already happened in apply-cluster-config-var-changes.yml, which is why that one
+# runs whether or not a variable of its own class changed. A file placed by
+# apply-k8s-cp-extra-files.yml reaches the apiserver only when the process starts
+# again, because that is when it reads what its arguments name. Doing both in one
+# visit is what keeps a node that had both change from being drained twice.
 #
-# Only the control plane nodes: the apiserver is what these variables describe,
-# and a worker runs none.
+# Only the control plane nodes: the apiserver is what all of this describes, and
+# a worker runs none.
 #
 # renew-k8s-certs.yml is the same play around a different script. Two copies is
 # one fewer than it takes to be worth a shared play taking the script as a
@@ -21,10 +26,12 @@
     lb_admin_cmd: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-cp-lb/lb-admin.sh {{ vars_path_arg }}"
     ki_cp_ihs: "{{ groups['ki_cp_node'] | difference(ki_broken_nodes) }}"
     control_plane_changed: "{{ hostvars['localhost']['ki_var_changes']['control_plane'] | length > 0 }}"
+    cp_extra_files_changed: "{{ ki_cp_extra_files_changed | default(false) }}"
+    anything_changed: "{{ (control_plane_changed | bool) or (cp_extra_files_changed | bool) }}"
   tasks:
     - when:
         - inventory_hostname in k8s_cp_nodes
-        - control_plane_changed | bool
+        - anything_changed | bool
       block:
         # Every ki cp node runs a load balancer of its own and the vip can move
         # between them at any moment, so a node is only really out of rotation
@@ -36,6 +43,17 @@
 
         - name: Execute update-k8s-cp-config.sh
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/update-k8s-cp-config.sh {{ vars_path_arg }}"
+          when: control_plane_changed | bool
+
+        # Not conditioned on the manifests having been left alone. Writing them
+        # again restarts the apiserver only when what was written differs, and
+        # "the arguments changed enough to change the file" is not something this
+        # can know from here. Restarting a second time inside a window the node is
+        # already out of costs seconds; not restarting at all costs a file that
+        # was placed and never read
+        - name: Execute restart-k8s-apiserver.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/restart-k8s-apiserver.sh {{ vars_path_arg }}"
+          when: cp_extra_files_changed | bool
 
       # A drained node that is never put back takes no work for good, which is
       # worse than the failure that got here. It goes back into rotation and the
@@ -52,17 +70,17 @@
           delegate_to: "{{ item }}"
           loop: "{{ ki_cp_ihs }}"
 
-        - name: Report that writing the control plane manifests failed
+        - name: Report that applying the control plane changes failed
           fail:
             msg: >-
-              Writing the control plane manifests of node["{{ inventory_hostname }}"] failed.
+              Applying the control plane changes of node["{{ inventory_hostname }}"] failed.
               The node was put back into the load balancer of every ki cp node, so it is
               serving again if its apiserver is up. The nodes after it in the inventory
               were not touched
 
     - when:
         - inventory_hostname in k8s_cp_nodes
-        - control_plane_changed | bool
+        - anything_changed | bool
       block:
         - name: Put this node back into the load balancer of every ki cp node
           shell: "{{ lb_admin_cmd }} ready {{ inventory_hostname }}"
