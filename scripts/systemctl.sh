@@ -94,6 +94,16 @@ main() {
       restart "${args[1]}"
       exit 0
     ;;
+    stop)
+      require_args_length 2
+      stop "${args[1]}"
+      exit 0
+    ;;
+    start)
+      require_args_length 2
+      start "${args[1]}"
+      exit 0
+    ;;
     reload)
       require_args_length 1
       reload
@@ -102,6 +112,27 @@ main() {
   esac
 
   die "[ERROR] Command[\"$command\"] not found"
+}
+
+# Stopping and starting are apart from restart because something happens between
+# them. A policy change takes the state kubelet checkpointed with it, and a file
+# removed under a running kubelet is a file kubelet may write again
+stop() {
+  local svc_name
+  svc_name=$1
+
+  systemctl stop "$svc_name"
+
+  return 0
+}
+
+start() {
+  local svc_name
+  svc_name=$1
+
+  systemctl start "$svc_name"
+
+  return 0
 }
 
 exists() {

@@ -230,6 +230,17 @@ k8s_pki_path: "/etc/kubernetes/pki"
 k8s_manifests_path: "/etc/kubernetes/manifests"
 k8s_etcd_data_path: "/var/lib/etcd"
 k8s_apiserver_port: 6443
+# The fallbacks for the kubelet policy variables vars.yml carries. An upgrade
+# keeps the vars.yml of the user, so a cluster taking the release that added them
+# has a file with no line for any of them, and the template that renders the
+# kubelet configuration would be reading names that do not exist
+kubelet_cpu_manager_policy: "none"
+kubelet_cpu_manager_full_pcpus_only: false
+kubelet_topology_manager_policy: "none"
+kubelet_topology_manager_scope: "container"
+kubelet_reserved_system_cpus: null
+kubelet_max_pods: null
+
 k8s_ca_certificate_validity_period: "87600h" # 87600h = 10 year
 k8s_cp: false
 
@@ -346,6 +357,7 @@ ki_var_classes:
     - kubelet_kube_reserved_ephemeral_storage
     - kubelet_kube_reserved_memory
     - kubelet_kube_reserved_pid
+    - kubelet_max_pods
     - kubelet_system_reserved_cpu
     - kubelet_system_reserved_ephemeral_storage
     - kubelet_system_reserved_memory
@@ -354,6 +366,17 @@ ki_var_classes:
   # and update-cluster.yml does not. Raising the kubernetes minor is a cluster
   # upgrade whether or not the release changed with it, so update-cluster.yml
   # refuses it and says which playbook to run instead
+  # Goes into the same kubelet configuration and can not be applied by writing it
+  # again. kubelet checkpoints the cpu manager policy it last ran and refuses to
+  # start when the configuration disagrees with it, so applying one of these is a
+  # node drained, a checkpoint taken away and kubelet brought back. That is an
+  # eviction rather than a restart, which is why it is not in the class above
+  kubelet_policy:
+    - kubelet_cpu_manager_full_pcpus_only
+    - kubelet_cpu_manager_policy
+    - kubelet_reserved_system_cpus
+    - kubelet_topology_manager_policy
+    - kubelet_topology_manager_scope
   cluster_upgrade:
     - k8s_minor_version
   # Written into the kubeadm configuration of the cluster and read the next time
