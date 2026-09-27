@@ -758,7 +758,10 @@ def validate_kubelet_policy(hostvars_errors: List[HostvarsError], hostvars):
     the cluster baseline, and a merge does not remove a key.
 
     full-pcpus-only is an option of the static policy, so with the policy at none
-    there is no allocation for it to be an option of
+    there is no allocation for it to be an option of, and the topology scope is
+    the scope of an alignment, so with the topology policy at none there is no
+    alignment for it to be the scope of. Both are values the template drops on
+    the floor, which is the same silence reservedSystemCPUs is refused for
     """
     for ih in sorted(hostvars):
         if ih == "localhost":
@@ -779,6 +782,16 @@ def validate_kubelet_policy(hostvars_errors: List[HostvarsError], hostvars):
                                       f" sets variable[\"{var_name}\"]. kubelet overwrites the cpu it keeps for"
                                       " the system with the count of the named set, so one of the two does nothing")
                 hostvars_errors.append(error)
+
+        scope = node_hostvars.get("kubelet_topology_manager_scope")
+        if scope is not None and scope != "container"                 and node_hostvars.get("kubelet_topology_manager_policy") == "none":
+            error = HostvarsError(ih,
+                                  ("kubelet_topology_manager_scope",),
+                                  str(scope),
+                                  "Variable[\"kubelet_topology_manager_scope\"] is set on a node whose variable"
+                                  "[\"kubelet_topology_manager_policy\"] is none. There is no alignment for it to"
+                                  " be the scope of, so the value does nothing")
+            hostvars_errors.append(error)
 
         if (node_hostvars.get("kubelet_cpu_manager_full_pcpus_only")
                 and node_hostvars.get("kubelet_cpu_manager_policy") != "static"):
