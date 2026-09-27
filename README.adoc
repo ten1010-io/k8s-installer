@@ -272,7 +272,7 @@ IOMMU 그룹은 그 노드가 IOMMU 를 켜고 부팅한 뒤에야 보입니다.
   플레이북이 돌 때마다 끝에서 보고되므로 잊히지 않고, 재부팅한 뒤 바로 확인하려면
   `ansible-playbook -i inventory.yml playbooks/tasks/check-vfio-pci.yml` 을 돌립니다.
   클러스터에 이미 들어가 있는 노드라면 재부팅 전에 cordon/drain 하세요
-* *`provision_reboot: true` 면 설치본이 재부팅합니다.* 노드에 아무것도 올라가기 전, 그 노드를
+* *`vfio_pci_reboot: true` 면 설치본이 재부팅합니다.* 노드에 아무것도 올라가기 전, 그 노드를
   재부팅하는 비용이 제일 쌀 때 한 번 합니다. 재부팅하고도 장치가 안 묶이면 플레이북이 거기서
   멈춥니다. 제어 노드는 예외입니다 — 플레이북이 그 노드에서 도니까요
 * *GPU 를 전부 넘기는 노드라면 `gpu_passthrough: true` 를 같이 적으세요.* 그 노드의 드라이버가
@@ -346,6 +346,39 @@ k8s_node:
   받고, 나머지는 남은 공유 풀을 그대로 씁니다
 * *노드 라벨과 짝지어 쓰세요.* `static` 인데 아무도 그 노드로 보내지 않으면 쓸모가 없고, 라벨만
   붙고 `static` 이 아니면 거짓말입니다. `k8s_node_labels` 가 같은 파일에 있습니다
+====
+
+=== 커널 명령줄에 인자 더하기
+
+노드가 부팅할 때 들고 있어야 하는 것 — 부팅 시점에 잡아 두는 hugepage, 스케줄러에서 떼어낼 CPU,
+드라이버 파라미터 — 을 `inventory.yml` 에 노드별로 적습니다.
+
+[source,yaml]
+----
+k8s_node:
+  hosts:
+    node4:
+      kernel_cmdline_extra_args:
+        - "default_hugepagesz=1G"
+        - "hugepagesz=1G"
+        - "hugepages=64"
+        - "isolcpus=8-63"
+----
+
+우분투는 `/etc/default/grub.d` 의 드롭인으로, RHEL8 은 `grubby` 로 들어갑니다. 무엇을 넣었는지는
+`/etc/k8s-installer/kernel-args` 에 남고, 목록에서 뺀 인자는 그 기록을 보고 다시 빼냅니다.
+
+[IMPORTANT]
+====
+* *재부팅해야 적용됩니다.* <<장치를 게스트에게 통과시키기 (vfio-pci)>> 와 **같은 재부팅**을 씁니다 —
+  `provision_reboot: true` 면 노드를 만드는 동안 설치본이 한 번 재부팅하고, 아니면 적용되지 않은
+  노드가 플레이북이 돌 때마다 끝에서 보고됩니다
+* *IOMMU 인자는 여기 적지 않습니다.* `intel_iommu`·`amd_iommu`·`iommu`·`vfio-pci.ids` 는 vfio-pci
+  쪽이 장치 목록에서 도출해 자기 파일에 쓰는 것이라, 여기 적으면 거부합니다
+* *빈 목록은 "할 일 없음" 이 아닙니다.* 적어 두었던 목록을 비우면 그 노드에 넣었던 인자를
+  **빼냅니다.** 그것도 재부팅해야 적용됩니다
+* *노드를 만들 때 정해집니다.* 이미 돌고 있는 노드에서 바꾸려면 `remove-node` 후 `add-node` 이고,
+  `update-cluster` 는 어느 노드의 어떤 값인지 알려 주고 멈춥니다
 ====
 
 === ephemeral-storage 전용 디스크

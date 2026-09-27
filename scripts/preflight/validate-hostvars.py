@@ -21,6 +21,8 @@ EVICTION_THRESHOLD_PATTERN = r"^([0-9]+(\.[0-9]+)?%|[0-9]+[EPTGMK]i)$"
 FILE_MODE_PATTERN = r"^0[0-7]{3}$"
 PCI_DEVICE_ID_PATTERN = r"^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}$"
 CPU_SET_PATTERN = r"^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$"
+# key or key=value, and nothing that would have to be quoted on a command line
+KERNEL_CMDLINE_ARG_PATTERN = r"^[A-Za-z0-9_.-]+(=[^\s\"']+)?$"
 # A volume of a pod is named with a dns 1123 label, which bounds its length at 63
 DNS_1123_LABEL_PATTERN = r"[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?"
 APISERVER_ARG_NAME_PATTERN = r"[a-z0-9][a-z0-9-]*"
@@ -90,6 +92,18 @@ KI_DECIDED_APISERVER_ARGS = frozenset({
 })
 
 
+# The kernel command line arguments the vfio-pci component derives from the
+# devices a node is given and writes itself. Named in kernel_cmdline_extra_args
+# as well, they would have two writers
+VFIO_PCI_OWNED_KERNEL_ARGS = frozenset({"intel_iommu", "amd_iommu", "iommu", "vfio-pci.ids"})
+
+
+# The kernel reads a hugepages= as belonging to the hugepagesz= before it, so a
+# node asking for two page sizes repeats both names on purpose and the order of
+# the list is what carries the meaning. Every other argument is taken once
+POSITIONAL_KERNEL_ARGS = frozenset({"hugepagesz", "hugepages"})
+
+
 def main():
     hostvars = yaml.safe_load(sys.stdin)
     hostvars_errors: List[HostvarsError] = []
@@ -101,6 +115,7 @@ def main():
     validate_ki_cp_ha_mode_vip(hostvars_errors, hostvars)
     validate_internal_network_subnets(hostvars_errors, hostvars)
     validate_k8s_subnets(hostvars_errors, hostvars)
+    validate_kernel_cmdline_extra_args(hostvars_errors, hostvars)
     validate_gpu_passthrough(hostvars_errors, hostvars)
     validate_k8s_node_metadata(hostvars_errors, hostvars)
     validate_kubelet_policy(hostvars_errors, hostvars)
@@ -576,6 +591,55 @@ def validate_k8s_minor_version(hostvars_errors: List[HostvarsError], hostvars):
         f" kubernetes[\"{k8s_minor_version}\"]. It carries {carried}")
     hostvars_errors.append(error)
 
+
+def validate_kernel_cmdline_extra_args(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects kernel command line arguments that have an owner already.
+
+    The iommu arguments and the ids vfio-pci is told to claim are derived from
+    the devices named in the inventory, and the vfio-pci component writes them
+    into a file of its own. Given here as well they would be written twice, by
+    two components that each take away what they put there, and which of the two
+    a node ends up booting with would follow from the order they ran in.
+
+    The same name twice is refused for the reason the kernel gives it: the last
+    one wins silently, so one of the two lines does nothing. The hugepages pair
+    is the exception the kernel itself makes - a hugepages= belongs to the
+    hugepagesz= before it, so repeating both is how a node is given two page
+    sizes, and setup-kernel-args.sh hands the whole list to grubby in one call
+    so that rhel8 keeps the repetition too
+    """
+    for ih in sorted(hostvars):
+        if ih == "localhost":
+            continue
+
+        extra_args = [arg for arg in (hostvars[ih].get("kernel_cmdline_extra_args") or [])
+                      if isinstance(arg, str)]
+        names = [arg.split("=")[0] for arg in extra_args]
+
+        for arg, name in zip(extra_args, names):
+            if name not in VFIO_PCI_OWNED_KERNEL_ARGS:
+                continue
+
+            error = HostvarsError(ih,
+                                  ("kernel_cmdline_extra_args",),
+                                  str(arg),
+                                  f"Variable[\"kernel_cmdline_extra_args\"] carries argument[{name}], which"
+                                  " the vfio-pci configuration of a node derives from the devices it is"
+                                  " given and writes itself. Name the devices in variable"
+                                  "[\"vfio_pci_device_ids\"] instead")
+            hostvars_errors.append(error)
+
+        for name in sorted({name for name in names
+                            if names.count(name) > 1
+                            and name not in POSITIONAL_KERNEL_ARGS}):
+            error = HostvarsError(ih,
+                                  ("kernel_cmdline_extra_args",),
+                                  name,
+                                  f"Variable[\"kernel_cmdline_extra_args\"] carries argument[{name}] more"
+                                  " than once. The kernel takes the last one and the others do nothing")
+            hostvars_errors.append(error)
+
+
 def validate_gpu_passthrough(hostvars_errors: List[HostvarsError], hostvars):
     """Rejects a node told to hand over every gpu and given no device to hand.
 
@@ -1017,6 +1081,9 @@ class ConstantVarsModel(BaseModel):
     k8s_ca_certificate_validity_period: Annotated[str, StringConstraints(pattern=VALIDITY_PERIOD_PATTERN)]
     k8s_cp: bool
 
+    # Whatever a node has to boot with, less the iommu, which vfio-pci owns
+    kernel_cmdline_extra_args: List[
+        Annotated[str, StringConstraints(pattern=KERNEL_CMDLINE_ARG_PATTERN)]]
     # vendor:device, as lspci -nn prints it
     vfio_pci_device_ids: List[
         Annotated[str, StringConstraints(pattern=PCI_DEVICE_ID_PATTERN)]]

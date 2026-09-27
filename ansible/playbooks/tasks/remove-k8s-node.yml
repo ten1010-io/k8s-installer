@@ -43,6 +43,9 @@
         - name: Execute reset-vfio-pci.sh
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/vfio-pci/reset-vfio-pci.sh {{ vars_path_arg }}"
 
+        - name: Execute reset-kernel-args.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/kernel-args/reset-kernel-args.sh {{ vars_path_arg }}"
+
 - hosts: ki_cp_node:!broken_node
   gather_facts: false
   any_errors_fatal: true

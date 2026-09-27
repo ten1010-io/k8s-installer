@@ -14,8 +14,8 @@
     every_node: true
 
 # Before anything is built on the node, because this is the last point at which
-# rebooting it is free. See tasks/setup-vfio-pci.yml
-- import_playbook: tasks/setup-vfio-pci.yml
+# rebooting it is free. See tasks/setup-boot-config.yml
+- import_playbook: tasks/setup-boot-config.yml
 
 - import_playbook: tasks/sync-pki.yml
   when: target_node in groups['ki_cp_node']
@@ -82,6 +82,8 @@
 - import_playbook: tasks/check-cert-expiry.yml
 
 - import_playbook: tasks/check-vfio-pci.yml
+
+- import_playbook: tasks/check-kernel-args.yml
 
 - import_playbook: tasks/check-nvidia-cdi.yml
 

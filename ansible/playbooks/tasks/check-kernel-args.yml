@@ -1,0 +1,48 @@
+# Reports the nodes that are configured with kernel command line arguments they
+# are not booted with, which is what a node that was never rebooted looks like.
+#
+# The sibling of check-vfio-pci.yml and for the same reason: the configuration is
+# written when the playbook runs and comes into force at a boot, so the gap
+# between the two is reported at the end of every run rather than left to be
+# noticed.
+#
+# Runnable on its own, which is what an operator who has just rebooted a node
+# wants:
+#
+#   ansible-playbook -i inventory.yml playbooks/tasks/check-kernel-args.yml
+#
+# That is why the node is named as an argument rather than read from the vars
+# file: every playbook imports this after reset-vars-file.yml has taken that file
+# away, so a script that asked for it would fail at the end of every run.
+# check-vfio-pci.yml is the same shape for the same reason
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Execute check-kernel-args.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/kernel-args/check-kernel-args.sh --node {{ inventory_hostname }}"
+      register: shell_result
+
+    # Kept as a fact because the line below has to know whether any node in the
+    # play said anything, and shell_result is about to be cleared
+    - name: "Record what node[\"{{ inventory_hostname }}\"] reported"
+      set_fact:
+        kernel_args_report: "{{ shell_result.stdout | trim }}"
+
+    - name: Report nodes that are not booted with their kernel command line arguments
+      debug:
+        msg: "{{ shell_result.stdout_lines }}"
+      when: kernel_args_report | length > 0
+
+    # Silence is the answer when every node is where it should be, and silence is
+    # also what a check that did not run looks like. Someone who has just
+    # rebooted a node and come back to confirm it is owed the difference
+    - name: Report that every node has taken its kernel command line arguments
+      debug:
+        msg: "[INFO] Every node that names kernel_cmdline_extra_args is booted with them"
+      run_once: true
+      when: ansible_play_hosts | map('extract', hostvars, 'kernel_args_report') | select('ne', '') | list | length == 0
+
+    - name: "Remove temporary variable[\"shell_result\"]"
+      set_fact:
+        shell_result: null
