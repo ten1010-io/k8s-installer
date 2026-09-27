@@ -264,6 +264,12 @@ ki_cp_node_label_key: "k8s-installer.ten1010.io/ki-cp"
 # nobody classified, and telling its owner to go and put it in a class sends them
 # looking for somewhere to file a variable that no longer exists anywhere
 ki_removed_vars:
+  vfio_pci_reboot: >-
+    Renamed to provision_reboot. What it decides is whether the installer may
+    reboot a node while it is being built, which is a question about when that
+    node can be touched rather than a property of the vfio-pci configuration
+    that asked for the first reboot - the kernel command line has other callers.
+    Rename the line in vars.yml
   nvidia_gpu: >-
     Containers are given gpus through the container device interface now.
     containerd reads the specification without being configured for it and
@@ -295,7 +301,7 @@ gpu_passthrough: false
 #
 # The control node is never rebooted either way. It is the machine ansible runs
 # from, so the run would not survive it
-vfio_pci_reboot: false
+provision_reboot: false
 
 # Where the certificate expiry of a node is written, for a monitoring system to
 # read. Under the variable data of the installer like the etcd snapshots, so that
@@ -446,7 +452,7 @@ ki_var_classes:
     # Read while a node is being provisioned and never again. Changing it does
     # not reach a node that already exists, and does not need to: whether the
     # installer rebooted that node once is not a property the node carries
-    - vfio_pci_reboot
+    - provision_reboot
   # Not changeable on a cluster that exists. The internal subnets decide the
   # address of every node, which the etcd peers and the apiserver of each one are
   # published under; the pod and service subnets decide the addresses kubernetes

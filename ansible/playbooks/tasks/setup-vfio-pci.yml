@@ -48,7 +48,7 @@
               and can not reboot. Its vfio-pci configuration is written and takes effect when
               you reboot it yourself
           when:
-            - vfio_pci_reboot | bool
+            - provision_reboot | bool
             - inventory_hostname == ki_control_node_ih
 
         # Unconditional on purpose, and that is safe because of where this file is
@@ -73,7 +73,7 @@
             reboot_timeout: 1800
           become: yes
           when:
-            - vfio_pci_reboot | bool
+            - provision_reboot | bool
             - inventory_hostname != ki_control_node_ih
 
         # Having rebooted on purpose, a node that comes back without its devices
@@ -84,7 +84,7 @@
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/vfio-pci/check-vfio-pci.sh --node {{ inventory_hostname }} {{ vfio_pci_device_ids | join(' ') }}"
           register: shell_result
           when:
-            - vfio_pci_reboot | bool
+            - provision_reboot | bool
             - inventory_hostname != ki_control_node_ih
 
         - name: Refuse a node that was rebooted and did not take its vfio-pci configuration

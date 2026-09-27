@@ -1020,7 +1020,7 @@ class ConstantVarsModel(BaseModel):
     # vendor:device, as lspci -nn prints it
     vfio_pci_device_ids: List[
         Annotated[str, StringConstraints(pattern=PCI_DEVICE_ID_PATTERN)]]
-    vfio_pci_reboot: bool
+    provision_reboot: bool
     gpu_passthrough: bool
 
     # What goes onto the node object. The keys and values are checked by
