@@ -8,9 +8,15 @@
 
 - import_playbook: tasks/apply-service-var-changes.yml
 
-- import_playbook: tasks/apply-kubelet-var-changes.yml
-
+# Before class["kubelet"], not after. Both write the same file on a node, and
+# this one is the one that can not be applied by a restart: a node whose policy
+# changed has to be drained and have its checkpoint taken away first, and a
+# class["kubelet"] restart reaching it before that happens is a kubelet that
+# reads the new policy, refuses to start and says nothing, because systemctl
+# returns as soon as a unit carrying Restart=always has been started
 - import_playbook: tasks/apply-kubelet-policy-var-changes.yml
+
+- import_playbook: tasks/apply-kubelet-var-changes.yml
 
 - import_playbook: tasks/apply-cluster-config-var-changes.yml
 

@@ -104,11 +104,26 @@ main() {
   return 0
 }
 
+# The baseline is rendered from the variables of whichever node happens to run
+# this, so anything in it that is set per node would be handed to every other
+# node: a node writes its own patch over this and a merge can not remove a key,
+# only overwrite one. The kubelet policy variables are exactly that kind - a gpu
+# node is static while the node beside it is none - so they are rendered at
+# their defaults here and every policy key the template writes is left out. What
+# a node runs under comes from the patch that node renders for itself
 create_kubelet_config_file() {
+  local tmp_vars_path
+  tmp_vars_path="$ki_tmp_root_path"/kubeadm-kubelet-baseline-vars.yml
+
+  cp "$vars_path" "$tmp_vars_path"
+  $yq_cmd -i '.kubelet_cpu_manager_policy = "none" | .kubelet_cpu_manager_full_pcpus_only = false | .kubelet_topology_manager_policy = "none" | .kubelet_topology_manager_scope = "container" | .kubelet_reserved_system_cpus = null | .kubelet_max_pods = null' "$tmp_vars_path"
+
   $jinja2_cmd --format yaml \
               -o "$ki_etc_kubeadm_path""/kubeadm-kubelet-config.yml" \
               "$SCRIPT_DIR_PATH"/templates/kubeadm-kubelet-config.yml.j2 \
-              "$vars_path"
+              "$tmp_vars_path"
+
+  rm -f "$tmp_vars_path"
 
   return 0
 }

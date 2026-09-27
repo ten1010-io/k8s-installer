@@ -91,6 +91,15 @@ ki_tmp_root_path=""
 # assignments it made. Fixed by kubelet
 CPU_MANAGER_STATE_PATH=/var/lib/kubelet/cpu_manager_state
 
+# How long the unit is watched after it has been asked to run. systemctl returns
+# as soon as a unit has been started, and kubelet carries Restart=always, so a
+# kubelet that reads a configuration it refuses exits and is restarted for as
+# long as the node is up while the command that started it reported success.
+# Measured on 1.36, kubelet gives up about a quarter of a second in and the unit
+# spends the next ten seconds waiting to be started again, so a node that is
+# looping is not running when it is asked
+KUBELET_SETTLE_SECONDS=15
+
 # Writes the kubelet configuration of this node again and restarts kubelet to
 # read it. The reservations are calculated from the capacity of the node, so the
 # cluster wide baseline is patched with the values of this one, which is the
@@ -139,6 +148,8 @@ replace_kubelet_with_state_reset() {
   "$ki_opt_scripts_path"/systemctl.sh start kubelet ||
     die "[ERROR] Failed to start kubelet. the cpu manager checkpoint was removed, so what it refuses now is the configuration rather than the checkpoint"
 
+  require_kubelet_running
+
   return 0
 }
 
@@ -167,6 +178,25 @@ restart_kubelet() {
   msg "[INFO] Restarting kubelet"
   systemctl restart kubelet ||
     die "[ERROR] Failed to restart kubelet"
+
+  require_kubelet_running
+
+  return 0
+}
+
+# Asked twice rather than once, because a looping unit is briefly running each
+# time it is started and a single question can land there
+require_kubelet_running() {
+  local waited=0
+  local step=$((KUBELET_SETTLE_SECONDS / 3))
+
+  while [[ $waited -lt $KUBELET_SETTLE_SECONDS ]]; do
+    sleep "$step"s
+    waited=$((waited + step))
+
+    [[ $("$ki_opt_scripts_path"/systemctl.sh is-running kubelet) = "true" ]] ||
+      die "[ERROR] kubelet is not running ${waited}s after it was given the configuration of this node. run \"journalctl -u kubelet\" there: a configuration kubelet refuses leaves the unit restarting, which starting it reports as success"
+  done
 
   return 0
 }
