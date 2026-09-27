@@ -79,6 +79,8 @@ jinja2_cmd=""
 
 ki_etc_kubeadm_path=""
 ki_tmp_root_path=""
+node_internal_ip=""
+k8s_apiserver_port=""
 
 # Writes the cluster wide kubelet baseline again and uploads it. Every node
 # reads its own configuration back from that ConfigMap and patches it with what
@@ -93,6 +95,8 @@ main() {
 
   ki_etc_kubeadm_path=$($yq_cmd '.ki_etc_kubeadm_path' < "$vars_path")
   ki_tmp_root_path=$($yq_cmd '.ki_tmp_root_path' < "$vars_path")
+  node_internal_ip=$($yq_cmd '.internal_network_interfaces[0].ip' < "$vars_path")
+  k8s_apiserver_port=$($yq_cmd '.k8s_apiserver_port' < "$vars_path")
 
   create_kubelet_config_file
   upload_kubelet_config
@@ -113,12 +117,15 @@ create_kubelet_config_file() {
 # being asked to read, and wants a ClusterConfiguration beside it, which is the
 # shape of the file kubeadm init was handed. The two are kept apart on disk
 # because different templates render them and different variables change them,
-# so they are put together here
+# so they are put together here, with the InitConfiguration write_init_config
+# explains as the third
 upload_kubelet_config() {
   local tmp_config_path
   tmp_config_path="$ki_tmp_root_path"/kubeadm-upload-kubelet-config.yml
 
   cat "$ki_etc_kubeadm_path""/kubeadm-cluster-config.yml" > "$tmp_config_path"
+  echo "---" >> "$tmp_config_path"
+  write_init_config >> "$tmp_config_path"
   echo "---" >> "$tmp_config_path"
   cat "$ki_etc_kubeadm_path""/kubeadm-kubelet-config.yml" >> "$tmp_config_path"
 
@@ -131,6 +138,37 @@ upload_kubelet_config() {
   return 0
 }
 
+
+# kubeadm builds the client it reaches the cluster with from the address it is
+# told the apiserver serves on, and without an InitConfiguration it takes that
+# from the default route of the node. That is the address the node answers the
+# outside on rather than the one the apiserver certificate carries, so the client
+# is refused by the very apiserver it is for and the phase spends its whole
+# deadline retrying:
+#
+#   could not bootstrap the admin user in file admin.conf: unable to create
+#   ClusterRoleBinding: client rate limiter Wait returned an error: rate:
+#   Wait(n=1) would exceed context deadline
+#
+# which names a rate limiter and means a deadline that ran out. Handed the
+# address of the node the phase takes a tenth of a second.
+#
+# The same thing upload-k8s-cluster-config.sh carries, for the same reason and
+# with the same shape. Only the node that ran kubeadm init holds a
+# kubeadm-init-config.yml, so a file is not something every control plane node
+# can be asked for, and localAPIEndpoint is the whole of what is missing:
+# kubeadm reads the rest of the configuration out of the cluster
+write_init_config() {
+  cat <<EOF
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: $node_internal_ip
+  bindPort: $k8s_apiserver_port
+EOF
+
+  return 0
+}
 
 setup_cmd_vars() {
   yq_cmd="$ki_opt_bundle_path/bin/yq"
