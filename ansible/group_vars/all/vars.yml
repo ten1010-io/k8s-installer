@@ -15,6 +15,27 @@ docker_root_path: "/var/lib/docker"
 # again after a restart. See docs/impl-notes.adoc
 ephemeral_storage_device: null
 
+# Kernel command line arguments this node boots with, on top of what the
+# distribution puts there. Set per node in inventory.yml, since what a node has
+# to boot with follows from what it holds.
+#
+#   kernel_cmdline_extra_args:
+#     - "default_hugepagesz=1G"
+#     - "hugepagesz=1G"
+#     - "hugepages=64"
+#     - "isolcpus=8-63"
+#
+# Hugepages reserved at boot, cpus isolated from the scheduler, a driver
+# parameter: everything a node has to be told before userspace starts. The iommu
+# arguments are not here - the vfio-pci component derives those from the devices
+# named for it and owns them, and naming one here is refused.
+#
+# Empty leaves the node alone, and emptying a list that had something in it takes
+# what it had away. Either way the command line changes at the next boot:
+# setup-boot-config.yml is what reboots a node while it is being built, and a
+# node that was not rebooted is reported at the end of every run until it is
+kernel_cmdline_extra_args: []
+
 internal_network_subnets:
   - "192.168.0.0/24"
 

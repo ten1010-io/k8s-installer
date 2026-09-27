@@ -277,6 +277,11 @@ ki_removed_vars:
     A pod is still given one only where a device plugin is running with
     --device-list-strategy=cdi-cri. Take the variable out of inventory.yml
 
+# The fallback for the kernel command line arguments vars.yml carries. An upgrade
+# keeps the vars.yml of the user, so a cluster taking the release that added it
+# has no line for it and the scripts would be reading a name that does not exist
+kernel_cmdline_extra_args: []
+
 # The pci devices of a node to bind to vfio-pci, as vendor:device, set per node
 # in inventory.yml. Empty leaves the node alone: neither the bootloader nor the
 # initramfs is touched on a node that names none
@@ -292,12 +297,15 @@ vfio_pci_device_ids: []
 # that does not hold
 gpu_passthrough: false
 
-# Whether the installer may reboot a node it has just configured for vfio-pci.
+# Whether the installer may reboot a node while it is building it. What asks for
+# the reboot is anything that only comes into force at a boot - the vfio-pci
+# configuration of a node and its kernel command line arguments both do - which
+# is why this is not named after either of them.
 # Off by default, because rebooting a machine is the site's call and plenty of
 # them only allow it in a window. On, it happens while the node is still empty,
 # which is the cheapest that reboot will ever be, and the run then refuses a node
-# that came back without its devices bound. Off, the node is configured and
-# reported at the end of every run until somebody reboots it.
+# that came back without what it was configured to boot with. Off, the node is
+# configured and reported at the end of every run until somebody reboots it.
 #
 # The control node is never rebooted either way. It is the machine ansible runs
 # from, so the run would not survive it
@@ -428,6 +436,7 @@ ki_var_classes:
     - ephemeral_storage_device
     - internal_network_ip
     - k8s_cp
+    - kernel_cmdline_extra_args
     - ki_var_root_path
     - vfio_pci_device_ids
     - gpu_passthrough

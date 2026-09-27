@@ -1,6 +1,11 @@
-# Writes the vfio-pci configuration of a node and, where the site allows it,
-# reboots the node so that the configuration is in force before anything else is
-# put on the machine.
+# Writes what a node has to boot with - its vfio-pci configuration and its kernel
+# command line arguments - and, where the site allows it, reboots the node so that
+# all of it is in force before anything else is put on the machine.
+#
+# The two components write different files and neither reads the other, but they
+# share this reboot. A node that needed one for its devices and another for its
+# hugepages would be rebooted twice while being built, and the second one would
+# be for a node that is no longer empty.
 #
 # This used to sit inside add-k8s-node.yml and init-k8s-cluster.yml, which is
 # too late to reboot from. By the time those run, a ki cp node is already serving
@@ -26,6 +31,9 @@
         - name: Execute setup-vfio-pci.sh
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/vfio-pci/setup-vfio-pci.sh {{ vars_path_arg }}"
 
+        - name: Execute setup-kernel-args.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/kernel-args/setup-kernel-args.sh {{ vars_path_arg }}"
+
 # The control node is the machine ansible is running from, so rebooting it takes
 # the run with it. Unlike the docker scripts, which only need the control node
 # left until last, there is no ordering that makes this possible - the playbook
@@ -36,16 +44,18 @@
 - hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
     - when:
         - target_node is none or inventory_hostname == target_node
-        - vfio_pci_device_ids | length > 0
+        - (vfio_pci_device_ids | length > 0) or (kernel_cmdline_extra_args | length > 0)
       block:
         - name: Report that the control node has to be rebooted by hand
           debug:
             msg: >-
               Node["{{ inventory_hostname }}"] is the control node, which this playbook runs on
-              and can not reboot. Its vfio-pci configuration is written and takes effect when
+              and can not reboot. What it has to boot with is written and takes effect when
               you reboot it yourself
           when:
             - provision_reboot | bool
@@ -68,7 +78,7 @@
         # The timeout is generous on purpose. The machines this is for are the ones
         # that take longest to come back: a node with several cards and a lot of
         # memory spends minutes in firmware before the kernel is reached at all
-        - name: Reboot the node so that it comes up with its devices bound to vfio-pci
+        - name: Reboot the node so that it comes up with what it was configured to boot with
           reboot:
             reboot_timeout: 1800
           become: yes
@@ -88,6 +98,20 @@
             - inventory_hostname != ki_control_node_ih
 
         - name: Refuse a node that was rebooted and did not take its vfio-pci configuration
+          fail:
+            msg: "{{ shell_result.stdout_lines }}"
+          when:
+            - shell_result.stdout is defined
+            - shell_result.stdout | trim | length > 0
+
+        - name: Execute check-kernel-args.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/kernel-args/check-kernel-args.sh --node {{ inventory_hostname }}"
+          register: shell_result
+          when:
+            - provision_reboot | bool
+            - inventory_hostname != ki_control_node_ih
+
+        - name: Refuse a node that was rebooted and did not take its kernel command line
           fail:
             msg: "{{ shell_result.stdout_lines }}"
           when:
