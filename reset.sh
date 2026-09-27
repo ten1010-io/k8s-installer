@@ -60,6 +60,7 @@ parse_params "$@"
 # --- End of CLI template ---
 
 KI_OPT_ROOT_PATH="/opt/k8s-installer"
+KI_ETC_ROOT_PATH="/etc/k8s-installer"
 
 main() {
   require_root
@@ -77,8 +78,27 @@ main() {
   msg ""
   msg "[INFO] $KI_OPT_ROOT_PATH/ansible/inventory.yml"
   msg "[INFO] $KI_OPT_ROOT_PATH/ansible/group_vars/all/vars.yml"
+  msg ""
+  msg "[INFO] The record of what each node was built with is removed with the"
+  msg "[INFO] installer as well - this node here, the managed nodes in"
+  msg "[INFO] reset-k8s-installer.yml - so once both have run there is nothing"
+  msg "[INFO] left to read those values back from"
 
+  # Before the exec below, which replaces this process and never returns
+  remove_etc_directory
   remove_root_directory
+}
+
+# What is left of ki_etc_root_path once reset-cluster.yml or remove-node.yml has
+# taken away what described the cluster: the record of what this node was built
+# with, which is kept for as long as the installer that wrote it
+remove_etc_directory() {
+  [[ ! -e $KI_ETC_ROOT_PATH ]] && return 0
+
+  msg "[INFO] Removing directory[\"$KI_ETC_ROOT_PATH\"]"
+  rm -rf "$KI_ETC_ROOT_PATH"
+
+  return 0
 }
 
 require_root() {

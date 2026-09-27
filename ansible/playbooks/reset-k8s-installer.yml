@@ -4,6 +4,13 @@
 # since the directory it deletes holds the very python interpreter the managed
 # nodes run modules from
 #
+# ki_etc_root_path goes with it. What it still holds by then is applied-vars.yml,
+# the record of what this node was built with, which is kept for as long as the
+# installer that wrote it is there - see tasks/reset-cluster-record.yml for how
+# that directory is divided. Taken whole rather than file by file, because what
+# this play promises is that nothing of the installer is left on the node, and a
+# reset that was skipped is not a reason to leave its files behind
+#
 # The control node is left out, because deleting the directory ansible is running
 # out of would take the run down with it. reset.sh removes that one, and hands the
 # process over to rm for the same reason
@@ -18,3 +25,6 @@
 
         - name: "Remove directory[\"{{ ki_tmp_root_path }}\"]"
           raw: "sudo rm -rf {{ ki_tmp_root_path }}"
+
+        - name: "Remove directory[\"{{ ki_etc_root_path }}\"]"
+          raw: "sudo rm -rf {{ ki_etc_root_path }}"

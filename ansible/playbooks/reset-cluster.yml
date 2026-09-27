@@ -62,4 +62,6 @@
 
 - import_playbook: tasks/reset-pki.yml
 
+- import_playbook: tasks/reset-cluster-record.yml
+
 - import_playbook: tasks/reset-vars-file.yml

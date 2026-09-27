@@ -68,6 +68,8 @@
 - import_playbook: tasks/reset-pki.yml
   when: target_node in groups['ki_cp_node']
 
+- import_playbook: tasks/reset-cluster-record.yml
+
 - import_playbook: tasks/reset-vars-file.yml
 
 - import_playbook: tasks/check-cert-expiry.yml

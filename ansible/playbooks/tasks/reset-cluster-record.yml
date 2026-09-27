@@ -1,0 +1,38 @@
+# Takes away what ki_etc_root_path holds about a cluster this node is no longer
+# part of.
+#
+# That directory is shared between what describes the cluster and what describes
+# the node, and until now nothing took the first half away. Every part of it with
+# an owner is removed by the reset of whatever wrote it - pki by reset-pki.yml,
+# kubeadm by reset-k8s-node-kubelet.sh, each ki cp service directory by that
+# service's own reset script - and the three left over are the ones written by a
+# play rather than by a setup script, which had no reset to be paired with. So a
+# node came out of reset-cluster.yml still carrying the release the cluster was
+# built with, the inventory as gather-facts last saw it, and the empty directory
+# its services had been configured under.
+#
+# applied-vars.yml is deliberately not here. It says what this node was built
+# with rather than what cluster it was in, and it is the one place a site can
+# read its variables back from when the ansible directory of the control node is
+# lost - which is exactly what reset.sh warns about as it removes that directory.
+# It goes with the installer instead, in reset-k8s-installer.yml and reset.sh, so
+# that it outlives a cluster but not the installer that wrote it.
+#
+# Only the node being removed when there is one, the way reset-pki.yml reads the
+# same variable
+- hosts: all:!localhost:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - when: target_node is none or inventory_hostname == target_node
+      block:
+        - name: "Remove file[\"{{ ki_etc_applied_release_path }}\"]"
+          shell: "sudo rm -f {{ ki_etc_applied_release_path }}"
+
+        - name: "Remove file[\"{{ ki_etc_nodes_path }}\"]"
+          shell: "sudo rm -f {{ ki_etc_nodes_path }}"
+
+        # Empty by the time this runs: every ki cp service removed its own
+        # directory under it and nothing owned the one they shared
+        - name: "Remove directory[\"{{ ki_etc_services_path }}\"]"
+          shell: "sudo rm -rf {{ ki_etc_services_path }}"
