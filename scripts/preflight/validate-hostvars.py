@@ -29,6 +29,10 @@ SYSCTL_KEY_PATTERN = r"^[A-Za-z0-9_][A-Za-z0-9_./-]*$"
 # because it reads the file back rather than the inventory. Everything a sysctl
 # holds is one line: a number, several of them, or a word
 SYSCTL_VALUE_PATTERN = r"^\S([^\n\r]*\S)?$"
+# An iana zone name: Area/Location, sometimes with a third part, and the few
+# single word ones like UTC. The zone has to exist on the node as well, which
+# only the node can say, so this is the shape and not the answer
+TIMEZONE_PATTERN = r"^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+){0,2}$"
 CPU_SET_PATTERN = r"^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$"
 # key or key=value, and nothing that would have to be quoted on a command line
 KERNEL_CMDLINE_ARG_PATTERN = r"^[A-Za-z0-9_.-]+(=[^\s\"']+)?$"
@@ -1039,6 +1043,9 @@ class VarsModel(BaseModel):
 
     ki_cp_ha_mode: bool
     ki_cp_ha_mode_vip: Optional[IPv4Address] = None
+    # None takes the zone of the node the service runs on
+    ki_cp_service_timezone: Optional[
+        Annotated[str, StringConstraints(pattern=TIMEZONE_PATTERN)]] = None
     ki_cp_dns_dnssec_validation: bool
     ki_cp_dns_server_upstream_servers: List[IPv4Address]
     ki_cp_ntp_server_upstream_servers: List[

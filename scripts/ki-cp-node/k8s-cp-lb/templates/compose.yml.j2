@@ -8,7 +8,7 @@ services:
     volumes:
       - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg
     environment:
-      TZ: Asia/Seoul
+      TZ: "{{ ki_cp_service_timezone | default(node_timezone, true) }}"
       STATS_ADMIN_PW: {{ ki_cp_k8s_cp_lb_stats_admin_pw }}
     network_mode: bridge
     logging:

@@ -182,6 +182,11 @@ ki_cp_user_registry_image_digest: "sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895
 ki_cp_service_log_max_size: "10m"
 ki_cp_service_log_max_file: "5"
 
+# The fallback for the time zone vars.yml carries. An upgrade keeps the vars.yml
+# of the user, so a cluster taking the release that added it has no line for it,
+# and null is what that line would have said: take the zone of the node
+ki_cp_service_timezone: null
+
 ki_cp_k8s_cp_lb_port: 16443
 ki_cp_k8s_cp_lb_stats_port: 18404
 # The runtime api of the load balancer, which lb-admin.sh drains a backend
@@ -362,6 +367,7 @@ ki_var_classes:
     - ki_cp_dns_dnssec_validation
     - ki_cp_dns_server_upstream_servers
     - ki_cp_ntp_server_upstream_servers
+    - ki_cp_service_timezone
     # The address moves, the name does not. controlPlaneEndpoint is
     # ki-cp.<zone>:<port>, so what a new vip needs is the dns server and
     # keepalived rendered again, not a cluster that knows a different endpoint

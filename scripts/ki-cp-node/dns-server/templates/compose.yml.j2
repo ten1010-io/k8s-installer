@@ -11,7 +11,7 @@ services:
       - ./internal-network-extra-zone-db:/etc/bind/internal-network-extra-zone-db
 {%- endif %}
     environment:
-      TZ: Asia/Seoul
+      TZ: "{{ ki_cp_service_timezone | default(node_timezone, true) }}"
     network_mode: bridge
     logging:
       driver: json-file

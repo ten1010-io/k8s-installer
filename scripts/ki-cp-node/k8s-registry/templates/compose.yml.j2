@@ -8,7 +8,7 @@ services:
       - "{{ ki_etc_pki_path }}/ki-cp-tls.crt:/etc/registry/tls.crt"
       - "{{ ki_etc_pki_path }}/ki-cp-tls.key:/etc/registry/tls.key"
     environment:
-      TZ: "Asia/Seoul"
+      TZ: "{{ ki_cp_service_timezone | default(node_timezone, true) }}"
       REGISTRY_STORAGE_MAINTENANCE: |-
         uploadpurging:
           enabled: false

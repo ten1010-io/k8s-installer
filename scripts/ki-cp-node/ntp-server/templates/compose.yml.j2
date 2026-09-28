@@ -4,7 +4,7 @@ services:
     ports:
       - 123:123/udp
     environment:
-      TZ: Asia/Seoul
+      TZ: "{{ ki_cp_service_timezone | default(node_timezone, true) }}"
       NTP_SERVERS: {{ ntp_servers }}
     network_mode: bridge
     logging:

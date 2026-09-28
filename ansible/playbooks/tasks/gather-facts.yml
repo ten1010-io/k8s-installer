@@ -79,6 +79,20 @@
           set_fact:
             shell_result: null
 
+    - name: Setup variable[\"node_timezone\"]
+      block:
+        - name: Execute get-node-timezone.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/preflight/get-node-timezone.sh"
+          register: shell_result
+
+        - name: Set_fact variable[\"node_timezone\"]
+          set_fact:
+            node_timezone: "{{ shell_result.stdout | trim }}"
+
+        - name: Remove temporary variable[\"shell_result\"]
+          set_fact:
+            shell_result: null
+
     - name: Setup variable[\"kubelet_reservations\"]
       block:
         - name: Write temporary file for cli input

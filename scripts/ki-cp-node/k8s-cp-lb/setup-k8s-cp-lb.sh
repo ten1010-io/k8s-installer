@@ -240,6 +240,8 @@ create_compose_yml_file() {
   $yq_cmd -i ".ki_cp_k8s_cp_lb_image = load(\"$vars_path\").ki_cp_k8s_cp_lb_image" "$tmp_file_path"
   $yq_cmd -i ".ki_cp_service_log_max_size = load(\"$vars_path\").ki_cp_service_log_max_size" "$tmp_file_path"
   $yq_cmd -i ".ki_cp_service_log_max_file = load(\"$vars_path\").ki_cp_service_log_max_file" "$tmp_file_path"
+  $yq_cmd -i ".ki_cp_service_timezone = load(\"$vars_path\").ki_cp_service_timezone" "$tmp_file_path"
+  $yq_cmd -i ".node_timezone = load(\"$vars_path\").node_timezone" "$tmp_file_path"
   $jinja2_cmd --strict --format yaml -o "$svc_root_path""/compose.yml" "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$tmp_file_path"
   rm "$tmp_file_path"
 }

@@ -80,6 +80,18 @@ internal_network_subnets:
 
 ki_cp_ha_mode: true
 ki_cp_ha_mode_vip: null
+# The time zone the ki cp services render their timestamps in. Null takes the
+# zone of the node each one runs on, which is what makes the log of a container
+# read like the journal of the machine it is on.
+#
+# Set it to an iana name to override that for every ki cp node at once, which is
+# what a site wants when its machines are on local time and its operators read
+# everything in UTC.
+#
+# Only the dns server and the load balancer render in it. The registries and
+# keepalived carry no tzdata, and chrony writes its own log in utc whatever it
+# is told, so those four are in utc either way. See README.adoc
+ki_cp_service_timezone: null
 ki_cp_dns_dnssec_validation: true
 ki_cp_dns_server_upstream_servers:
   - "8.8.8.8"
