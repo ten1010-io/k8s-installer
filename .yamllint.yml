@@ -1,0 +1,45 @@
+# What yamllint is told about this repository.
+#
+# The default configuration reported 698 things about the 81 files and 661 of
+# them were two rules. Neither was about the yaml.
+---
+extends: default
+
+ignore:
+  # Where the files of k8s_cp_extra_files are put. They belong to whoever runs
+  # the cluster - an audit policy, an admission configuration - and their
+  # formatting is not this repository's to have an opinion about
+  - ansible/files/
+
+rules:
+  # 80 is a line of prose and the comments here are prose, which is why 502 of
+  # the findings were this one rule. 160 is what catches a line that ran away
+  # without arguing with every explanation in the repository
+  line-length:
+    max: 160
+
+  # 82 findings, and ansible does not ask for the marker. A file that starts
+  # with --- and one that does not are the same file to it
+  document-start: disable
+
+  # become: yes is how ansible has been written since before true existed, and
+  # both forms mean the same thing to it.
+  #
+  # Keys are left out of it because of one: the "on" a github workflow is
+  # triggered by is read as a boolean by yaml itself, and it is the name the
+  # format requires
+  truthy:
+    allowed-values: ["true", "false", "yes", "no"]
+    check-keys: false
+
+  # inventory.yml carries its examples commented out, so that turning one on is
+  # deleting one character:
+  #
+  #     #k8s_node_labels:
+  #     #  example.com/role: "gpu"
+  #
+  # Both of these rules want that written differently - a space after the hash,
+  # and the block indented like the content that follows it - and following them
+  # would make every example two edits to use instead of one
+  comments: disable
+  comments-indentation: disable

@@ -30,7 +30,10 @@
           become: yes
 
         - name: Execute create-internal-network-interfaces.py
-          shell: "sudo {{ ansible_python_interpreter }} {{ ki_opt_scripts_path }}/preflight/create-internal-network-interfaces.py {{ inventory_hostname }} < {{ tmp_input_path }}"
+          shell: >-
+            sudo {{ ansible_python_interpreter }}
+            {{ ki_opt_scripts_path }}/preflight/create-internal-network-interfaces.py
+            {{ inventory_hostname }} < {{ tmp_input_path }}
           register: shell_result
 
         - name: Set_fact variable[\"internal_network_interfaces\"]
@@ -85,7 +88,10 @@
           become: yes
 
         - name: Execute create-kubelet-reservations.py
-          shell: "sudo {{ ansible_python_interpreter }} {{ ki_opt_scripts_path }}/preflight/create-kubelet-reservations.py {{ inventory_hostname }} < {{ tmp_input_path }}"
+          shell: >-
+            sudo {{ ansible_python_interpreter }}
+            {{ ki_opt_scripts_path }}/preflight/create-kubelet-reservations.py
+            {{ inventory_hostname }} < {{ tmp_input_path }}
           register: shell_result
 
         - name: Set_fact variable[\"kubelet_reservations\"]
@@ -170,7 +176,9 @@
 
         - name: Set_fact variable[\"ih_to_hostname_dict\"]
           set_fact:
-            ih_to_hostname_dict: "{{ recorded_ih_to_hostname_dict | combine(ih_to_hostname_dict) | dict2items | selectattr('key', 'in', groups['all']) | items2dict }}"
+            ih_to_hostname_dict: >-
+              {{ recorded_ih_to_hostname_dict | combine(ih_to_hostname_dict)
+              | dict2items | selectattr('key', 'in', groups['all']) | items2dict }}
 
         - name: Set_fact variable[\"hostname_to_ih_dict\"]
           set_fact:

@@ -1,0 +1,11 @@
+# What the yaml check installs, pinned for the reason everything else this
+# repository installs is pinned: a floating version turns a pull request red for
+# a change it does not contain, and the red one after that is read as noise.
+#
+# It is kept apart from ci-requirements.txt because the two jobs share nothing.
+# yamllint reads the yaml of this repository and the python job reads none of it,
+# so a job that installed both would be pulling pytest and pydantic into a
+# container that never imports them.
+#
+# .yamllint.yml says which of its rules this repository asks for
+yamllint==1.38.0

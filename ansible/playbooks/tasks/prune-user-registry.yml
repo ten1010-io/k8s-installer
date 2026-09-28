@@ -44,7 +44,9 @@
       become: yes
 
     - name: Execute prune-user-registry.sh
-      shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/user-registry/prune-user-registry.sh {{ vars_path_arg }} --keep-path {{ node_keep_path }} {{ delete_arg }}"
+      shell: >-
+        sudo {{ ki_opt_scripts_path }}/ki-cp-node/user-registry/prune-user-registry.sh
+        {{ vars_path_arg }} --keep-path {{ node_keep_path }} {{ delete_arg }}
       register: shell_result
 
     - name: Report what it found

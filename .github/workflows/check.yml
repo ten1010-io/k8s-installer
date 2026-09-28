@@ -142,3 +142,27 @@ jobs:
 
       - name: pytest
         run: python -m pytest tests --quiet
+
+  # The yaml of this repository is what ansible reads, and a file it can not
+  # read is a playbook that stops on the node it was already halfway through.
+  # .yamllint.yml says which rules are asked for and why the rest are not.
+  yaml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
+        with:
+          python-version: "3.12"
+
+      # Its own file rather than the one the python job reads, which carries
+      # pytest and pydantic that nothing here imports
+      - name: Install yamllint
+        run: pip install --disable-pip-version-check -r tools/ci-requirements-yamllint.txt
+
+      # --strict, so that a warning fails too. yamllint calls a rule a warning
+      # or an error by its own reckoning of severity, and both are things this
+      # repository asked to be told about: what it does not want to hear about
+      # is turned off in the configuration rather than left to be ignored here
+      - name: yamllint
+        run: yamllint --strict .

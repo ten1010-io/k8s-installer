@@ -27,7 +27,10 @@
   any_errors_fatal: true
   tasks:
     - name: Execute check-nvidia-cdi.sh
-      shell: "sudo {{ ki_opt_scripts_path }}/all-node/nvidia-cdi/check-nvidia-cdi.sh --node {{ inventory_hostname }} --gpu-passthrough {{ gpu_passthrough | lower }}"
+      shell: >-
+        sudo {{ ki_opt_scripts_path }}/all-node/nvidia-cdi/check-nvidia-cdi.sh
+        --node {{ inventory_hostname }}
+        --gpu-passthrough {{ gpu_passthrough | lower }}
       register: shell_result
 
     - name: "Record what node[\"{{ inventory_hostname }}\"] reported"
