@@ -1,0 +1,15 @@
+# What the ansible-lint check installs, which is a different question from the
+# tools/ci-requirements-ansible.txt beside it.
+#
+# That file pins the parser a node runs, because what it asks is whether a node
+# can read the playbook, and the answer differs by operating system. This one
+# asks how the playbooks are written, which is one answer for the whole
+# repository, so it runs once and names one version.
+#
+# ansible-core is pinned here too, and to the one the python 3.12 nodes carry.
+# Left to the resolver ansible-lint brings a core of its own choosing - on
+# python 3.10 it quietly settles on 2.16 - and every rule it applies is read
+# through that core, so not pinning it means linting against a parser no node
+# has
+ansible-core==2.19.3
+ansible-lint==26.9.0

@@ -166,3 +166,77 @@ jobs:
       # is turned off in the configuration rather than left to be ignored here
       - name: yamllint
         run: yamllint --strict .
+
+  # A playbook that does not parse is found on the node it was halfway through,
+  # and nineteen of them import a tree of task files that five open branches are
+  # inserting into at once.
+  #
+  # Read by the ansible a node runs, which is not one version: the bundle carries
+  # a core per python and the operating system of the node decides which.
+  # tools/ci-requirements-ansible.txt says which core each python gets and where
+  # the numbers were read from
+  ansible:
+    runs-on: ubuntu-latest
+    strategy:
+      # Both versions are asked even when one has already failed, since what is
+      # being looked for is exactly whether they differ
+      fail-fast: false
+      matrix:
+        # What the nodes run: ubuntu 22.04 carries python 3.10 and ubuntu 24.04
+        # and rhel 8 carry 3.12, and the ansible of a node is the one built for
+        # its python. A playbook only the newer core accepts installs on some of
+        # the operating systems this release supports and stops halfway on the
+        # rest
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # The version is printed rather than assumed. The requirements file picks
+      # its line by the python it is installed under, so a python nobody wrote a
+      # line for installs nothing, and the step after this one has to fail on
+      # that rather than find no playbooks to be unable to check
+      - name: Install ansible-core
+        run: |
+          pip install --disable-pip-version-check -r tools/ci-requirements-ansible.txt
+          ansible-playbook --version | head -1
+
+      # Run from the ansible directory, which is where ansible.cfg is and what
+      # every documented invocation does. Nothing is connected to: a syntax
+      # check reads the playbook and the files it imports and stops there
+      - name: Every playbook parses
+        working-directory: ansible
+        run: |
+          shopt -s nullglob
+          playbooks=(playbooks/*.yml)
+          if [[ ${#playbooks[@]} -eq 0 ]]; then
+            echo "[ERROR] No playbook was found to check"
+            exit 1
+          fi
+          for playbook in "${playbooks[@]}"; do
+            echo "[INFO] $playbook"
+            ansible-playbook -i inventory.yml --syntax-check "$playbook"
+          done
+
+  # How the playbooks are written, which is one answer for the whole repository
+  # rather than one per node, so this is a job of its own and not a third leg of
+  # the matrix above: linting the same files twice would say the same thing
+  # twice. .ansible-lint says what profile is asked for and why the rules that
+  # are not asked for are named there rather than left out
+  ansible-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install ansible-lint
+        run: pip install --disable-pip-version-check -r tools/ci-requirements-ansible-lint.txt
+
+      - name: ansible-lint
+        run: ansible-lint

@@ -1,0 +1,37 @@
+# What the playbook parse check installs, kept apart from tools/ci-requirements.txt
+# because of the python it needs.
+#
+# There is no single ansible a node runs. The bundle carries one built for each
+# python and the operating system of the node decides which python that is, so a
+# cluster is parsed by two of them at once:
+#
+#   ubuntu 22.04   python 3.10   ansible-core 2.17.13   (ansible 10.7.0)
+#   ubuntu 24.04   python 3.12   ansible-core 2.19.3    (ansible 12.1.0)
+#   rhel 8.10      python 3.12   ansible-core 2.19.3    (ansible 12.1.0)
+#
+# Both are installed, because the drift that reaches a customer is a playbook the
+# newer core accepts and the older one refuses, and a check that runs only the
+# newer one is blind to exactly that. The markers are what let one file describe
+# both: pip takes the line whose python it is being run under, so the workflow
+# only has to name the two pythons and never repeats a version.
+#
+# These numbers are read off a node - /opt/k8s-installer/venv/bin/ansible
+# --version, on one of each operating system - and they move when the bundle
+# moves. Nothing in this repository builds the bundle, so nothing here can
+# derive them.
+#
+# ansible-core rather than the ansible distribution: a syntax check needs the
+# parser and nothing else. The one collection these playbooks reach for,
+# community.general, appears only as filters (json_query, lists_difference),
+# and a filter is resolved when a play runs rather than when it is read, so the
+# collections the distribution carries to hold it buy this check nothing and
+# cost it a hundred megabytes.
+#
+# Where that stops: --syntax-check resolves the action of a task, so the day a
+# playbook's action is a collection module rather than a filter, the collection
+# has to be installed here too - pinned the same way, community.general 9.5.2
+# for 3.10 and 11.4.0 for 3.12, which is what the two distributions carry.
+# Nothing does that today, and the check says so in as many words when it starts
+# to: "couldn't resolve module/action"
+ansible-core==2.17.13; python_version == "3.10"
+ansible-core==2.19.3; python_version == "3.12"

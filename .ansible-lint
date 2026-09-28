@@ -1,0 +1,36 @@
+# What ansible-lint is told about this repository.
+#
+# The profile is min, which is syntax and the errors that stop a run rather than
+# an opinion about how a playbook should be written. At its default profile
+# ansible-lint has over a thousand things to say here, and they are not defects:
+# this installer drives shell scripts, so every task is a shell task, and what
+# would be reported is that fact repeated for each of them.
+#
+# The three below are why. They are listed rather than left out, so that raising
+# the profile later is a decision somebody makes on purpose instead of a wall of
+# findings that arrives with it.
+---
+profile: min
+
+exclude_paths:
+  # Whoever runs the cluster puts files here for k8s_cp_extra_files to place on
+  # the control plane nodes. They are not this repository's yaml
+  - ansible/files/
+
+skip_list:
+  # 238 shell tasks and two changed_when. Every one of them calls a script that
+  # decides for itself whether there is anything to do, and this installer has
+  # never claimed to work in check mode. Adding changed_when to each would be
+  # 238 assertions about scripts the assertion can not see inside
+  - no-changed-when
+
+  # The task names here are ansible module names without their collection, which
+  # is how the whole repository is written. Making them fully qualified is a
+  # change to every task in it and buys nothing while the collections installed
+  # are the ones the bundle carries
+  - fqcn[action-core]
+
+  # shell rather than command is deliberate. The scripts are invoked with
+  # redirections and pipelines, and the ones that are not today are the same
+  # calls written the same way, which is what makes them readable as a set
+  - command-instead-of-shell
