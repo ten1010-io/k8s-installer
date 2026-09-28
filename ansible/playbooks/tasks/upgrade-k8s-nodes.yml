@@ -96,6 +96,10 @@
           shell: "{{ scripts }}/ki-cp-node/user-registry/setup-user-registry.sh {{ vars_path_arg }} --update"
           when: inventory_hostname in groups['ki_cp_node']
 
+        - name: Execute setup-ki-cp-metrics.sh
+          shell: "{{ scripts }}/ki-cp-node/metrics/setup-ki-cp-metrics.sh {{ vars_path_arg }}"
+          when: inventory_hostname in groups['ki_cp_node']
+
         - name: Execute setup-nfs-client.sh
           shell: "{{ scripts }}/all-node/nfs-client/setup-nfs-client.sh {{ vars_path_arg }}"
 

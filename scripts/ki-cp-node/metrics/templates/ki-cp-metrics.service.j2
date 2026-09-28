@@ -1,0 +1,41 @@
+[Unit]
+Description=Write what the ki cp services of this node are doing
+# The state of a docker container is what most of this asks about, and a probe
+# made while the daemon is coming up answers 0 for services that are about to be
+# running. Ordering only, since a node where docker failed still has a name
+# server and a vip to report on
+After=docker.service
+# The one unit this installer writes of its own, and it is the only thing it
+# leaves outside the directories a reset removes, because systemd reads units
+# from its own. So it is told what it needs: a timer that outlived the installer
+# skips instead of failing every minute for a script that is not there. Every
+# path that takes the installer away without taking the timer with it -
+# reset-k8s-installer.yml on a node whose cluster reset was skipped, reset.sh on
+# a control node that is also a ki cp node - ends here
+ConditionPathExists={{ ki_opt_scripts_path }}/ki-cp-node/metrics/write-ki-cp-metrics.sh
+
+[Service]
+Type=oneshot
+# Said here rather than left to the default, which is ninety seconds on most
+# distributions and so longer than the interval the timer fires on. Every piece
+# of the work is bounded - six docker calls at DOCKER_TIMEOUT_SECONDS each, a
+# dns query and two registry walks at their own deadlines - and this is the
+# backstop for the piece that is not: a firing held by something none of those
+# reach is abandoned before the next one is due. The file then keeps what it
+# had, which ki_cp_metrics_written_seconds is what says
+TimeoutStartSec=55
+# --vip is given when there is a vip, which is ki_cp_ha_mode_vip and not
+# ki_cp_ha_mode. Every other reader of the mode is a shell script comparing it
+# to the string "true", which is right for a value yq prints either way; jinja
+# goes by truthiness instead, and a mode that arrived as the string "false"
+# would take this branch and render the address as "None" - a series saying
+# nobody holds a vip, for ever, on a cluster that has none to hold
+ExecStart={{ ki_opt_scripts_path }}/ki-cp-node/metrics/write-ki-cp-metrics.sh \
+    --metrics-path {{ ki_metrics_path }}/ki-cp.prom \
+    --services-path {{ ki_etc_services_path }} \
+    --pki-path {{ ki_etc_pki_path }} \
+    --dns-name {{ internal_network_ki_cp_dns_name }} \
+    --registry-port {{ ki_cp_k8s_registry_port }} \
+    --user-registry-port {{ ki_cp_user_registry_port }} \
+    --python {{ ki_opt_venv_path }}/bin/python3{% if ki_cp_ha_mode_vip %} \
+    --vip {{ ki_cp_ha_mode_vip }}{% endif %}

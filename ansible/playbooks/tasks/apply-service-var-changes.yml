@@ -29,6 +29,11 @@
         - name: Execute setup-user-registry.sh --update
           shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/user-registry/setup-user-registry.sh {{ vars_path_arg }} --update"
 
+        # The address the timer reports on is rendered into its unit, so a vip
+        # that moved reaches the metrics the same way it reaches keepalived
+        - name: Execute setup-ki-cp-metrics.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/metrics/setup-ki-cp-metrics.sh {{ vars_path_arg }}"
+
 # The ntp and dns clients of every node read the same variables the servers are
 # rendered from, so they are written again alongside them
 - hosts: all:!localhost:!broken_node

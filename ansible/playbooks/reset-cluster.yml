@@ -21,10 +21,6 @@
 
 - import_playbook: tasks/run-all-node-script.yml
   vars:
-    script: all-node/cert-expiry-metrics/reset-cert-expiry-metrics.sh
-
-- import_playbook: tasks/run-all-node-script.yml
-  vars:
     script: all-node/ntp-client/reset-ntp-client.sh
 
 - import_playbook: tasks/run-all-node-script.yml
@@ -32,6 +28,14 @@
     script: all-node/resolv-conf/reset-resolv-conf.sh
 
 - import_playbook: tasks/reset-ki-cp.yml
+
+# After reset-ki-cp.yml, which is what stops the timer that writes the other
+# file of that directory. This one takes the directory itself, so run first it
+# would be undone within the minute: the timer fires, makes the directory again
+# and writes ki-cp.prom back into it
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/cert-expiry-metrics/reset-cert-expiry-metrics.sh
 
 - import_playbook: tasks/run-all-node-script-control-node-last.yml
   vars:

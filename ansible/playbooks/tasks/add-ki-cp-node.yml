@@ -101,3 +101,14 @@
     - name: Execute setup-keepalived.sh --update
       shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/keepalived/setup-keepalived.sh {{ vars_path_arg }} --update"
       when: inventory_hostname != target_node
+
+    # Here rather than with the other services of the node, because the first
+    # file it writes is a measurement of them and keepalived is not one of them
+    # until the task above has run. Written before, the file of a new node is
+    # missing the keepalived series entirely for as long as the registry sync
+    # takes - and a series that is missing is the one thing this channel is not
+    # allowed to answer with. init-ki-cp.yml has it after the services for the
+    # same reason
+    - name: Execute setup-ki-cp-metrics.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/metrics/setup-ki-cp-metrics.sh {{ vars_path_arg }}"
+      when: inventory_hostname == target_node

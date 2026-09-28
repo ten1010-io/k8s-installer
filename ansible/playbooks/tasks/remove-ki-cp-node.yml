@@ -28,6 +28,15 @@
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
+    # Before anything of this node is taken away, for the reason reset-ki-cp.yml
+    # has it before the services: what is left otherwise is a timer measuring a
+    # node whose services are being removed on purpose and reporting them down
+    # for it. The unit lives in /etc/systemd/system, which no later play of a
+    # node removal reaches, so it is this or it stays
+    - name: Execute reset-ki-cp-metrics.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/metrics/reset-ki-cp-metrics.sh {{ vars_path_arg }}"
+      when: inventory_hostname == target_node
+
     - name: Execute setup-keepalived.sh --update
       shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/keepalived/setup-keepalived.sh {{ vars_path_arg }} --update"
       when: inventory_hostname != target_node

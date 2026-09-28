@@ -1,0 +1,21 @@
+[Unit]
+Description=Write what the ki cp services of this node are doing, every minute
+
+[Timer]
+# A minute. What is measured here moves on its own - a vip handover is seconds
+# and a crash loop is faster than that - so the interval is what decides how long
+# a cluster is wrong about itself. The work is two docker calls per service and
+# three probe runs, which is cheap enough to ask for that often
+OnBootSec=1min
+OnUnitActiveSec=1min
+# The default of a minute would let systemd smear the firing across the whole
+# interval to save wakeups, which on a one minute timer is most of it
+AccuracySec=5s
+# The first firing after a boot comes a minute in, like every other one, so a
+# node that was off answers with what it wrote before it went down until then -
+# read ki_cp_metrics_written_seconds and not the values alone. Persistent is
+# deliberately not set: it is for a firing that has to happen even though it was
+# missed, and there is nothing here to catch up on, because every one of these
+# firings writes the same thing - whatever is true when it runs
+[Install]
+WantedBy=timers.target

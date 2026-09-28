@@ -1363,9 +1363,12 @@ ansible-playbook -i inventory.yml playbooks/check-node-state.yml
 이미 돌리고 있는 것을 쓰시면 됩니다.
 
 ki cp 서비스는 노드에서 도커 컨테이너로 돕니다. 쿠버네티스 오브젝트가 아니라서 클러스터 안의
-수집기가 서비스 디스커버리로 찾지 못하므로, 긁으려면 주소를 직접 적어 줘야 합니다. 노드의
-인증서 만료처럼 긁을 표면이 아예 없는 것은 파일로 남깁니다. 무엇을 적고 어디를 봐야 하는지가
-여기에 있습니다.
+수집기가 파드나 서비스로는 찾지 못하지만, 그 노드들에는
+`k8s-installer.ten1010.io/ki-cp` 라벨이 붙어 있으므로 **노드를 고르는 일은 라벨이 합니다** —
+주소는 노드의 InternalIP 입니다.
+
+긁을 표면이 아예 없는 것 — 노드의 인증서 만료, VIP 를 누가 들고 있는지, 컨테이너가 살아 있는지 —
+은 파일로 남깁니다. 무엇을 긁고 무엇을 읽어야 하는지가 여기에 있습니다.
 
 === apiserver 로드밸런서
 
@@ -1388,6 +1391,63 @@ http://<노드 내부망 주소>:18404/metrics
 
 NOTE: 이미 서 있는 클러스터에는 <<클러스터 업그레이드>> 가 반영합니다. <<설정 변경 적용>> 은
 바뀐 변수가 있을 때만 서비스를 다시 쓰므로 이 변경만으로는 반영되지 않습니다.
+
+=== ki cp 서비스
+
+각 ki cp 노드가 자기 위에서 도는 것들의 상태를 1분마다 파일로 씁니다. 인증서 만료와 같은
+디렉토리이고, 읽는 방법도 같습니다.
+
+[source]
+----
+/var/lib/k8s-installer/metrics/ki-cp.prom
+----
+
+[source]
+----
+# 서비스마다 (디렉토리에서 열거하므로 서비스가 늘면 따라옵니다)
+ki_cp_service_up{service="ki-cp-keepalived"} 1
+ki_cp_service_restarts_total{service="ki-cp-dns-server"} 3
+# VIP - HA 모드일 때만 나옵니다
+ki_cp_vip_held{vip="192.168.0.10"} 0
+# 이름이 풀리는가 (포트 연결이 아니라 실제 질의)
+ki_cp_dns_answers{name="ki-cp.ki.local"} 1
+# 레지스트리 - 루프백으로 물으므로 이 노드의 것입니다
+ki_cp_registry_up{registry="k8s"} 1
+ki_cp_registry_repositories{registry="user"} 42
+# 이 파일이 쓰인 시각
+ki_cp_metrics_written_seconds 1790000000
+----
+
+알림은 이 셋으로 시작하면 됩니다.
+
+[source]
+----
+# 아무도 VIP 를 안 들고 있거나(0), 둘이 들고 있거나(2 이상). 둘 다 장애입니다
+sum(ki_cp_vip_held) != 1
+
+# 무엇이 죽었는지까지 나옵니다. restart 가 오르는 중이면 크래시루프입니다
+ki_cp_service_up == 0
+
+# 노드마다 사용자 레지스트리 내용이 어긋났다는 뜻입니다 (sync-user-registry 로 맞춥니다)
+max(ki_cp_registry_repositories{registry="user"} and ki_cp_registry_up{registry="user"} == 1)
+  - min(ki_cp_registry_repositories{registry="user"} and ki_cp_registry_up{registry="user"} == 1) > 0
+----
+
+`ki_cp_vip_held` 는 **노드마다** 0 이나 1 이므로, 답은 더한 값에 있습니다. 한 노드만 보면
+"내가 안 들고 있다" 까지만 알 수 있고 그것은 정상적인 상태이기도 합니다.
+
+세 번째 것의 `ki_cp_registry_up == 1` 이 빠지면 안 됩니다. 레지스트리가 답하지 않을 때 개수도
+0 으로 나오므로, 그냥 빼면 **레지스트리가 죽은 노드 하나가 "내용이 어긋났다" 로 읽힙니다** —
+그러면 안내하는 처방(`sync-user-registry`)이 정작 필요한 것과 다릅니다. 죽은 것은
+`ki_cp_registry_up == 0` 이 따로 말해 줍니다.
+
+`ki_cp_metrics_written_seconds` 가 오래된 노드는 타이머가 멈춘 것입니다. 여기 있는 값들은
+놓여 있다고 계속 참인 것이 아니므로 — 인증서 만료와 다른 점입니다 — 같이 보세요.
+
+레지스트리는 자체 프로메테우스 엔드포인트도 가지고 있지만 켜지 않았습니다. distribution 은
+그것을 pprof 와 같은 리스너에 올리고 경로를 가릴 수단이 없어서, 긁으려면 그 포트를 관리망에
+열어야 합니다. 위의 두 계열이 "서비스하는가 / 노드끼리 같은가" 에 답하므로 그 대가를 치르지
+않았습니다.
 
 === 인증서 만료 메트릭
 
