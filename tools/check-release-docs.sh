@@ -124,13 +124,13 @@ check_block() {
   while read -r name version; do
     found=$(lookup "$name" "$tabled")
     if [[ -z $found ]]; then
-      msg "[ERROR] $block[\"$name\"] is declared as version[\"$version\"] and the table of README.adoc does not list it"
+      msg "[ERROR] ${block}[\"$name\"] is declared as version[\"$version\"] and the table of README.adoc does not list it"
       ok="false"
       continue
     fi
 
     if [[ $found != "$version" ]]; then
-      msg "[ERROR] $block[\"$name\"] is version[\"$version\"] in release.yml and version[\"$found\"] in README.adoc"
+      msg "[ERROR] ${block}[\"$name\"] is version[\"$version\"] in release.yml and version[\"$found\"] in README.adoc"
       ok="false"
     fi
   done <<< "$declared"
@@ -138,7 +138,7 @@ check_block() {
   while read -r name version; do
     found=$(lookup "$name" "$declared")
     if [[ -z $found ]]; then
-      msg "[ERROR] $block[\"$name\"] is listed as version[\"$version\"] in the table of README.adoc and release.yml declares no such component"
+      msg "[ERROR] ${block}[\"$name\"] is listed as version[\"$version\"] in the table of README.adoc and release.yml declares no such component"
       ok="false"
     fi
   done <<< "$tabled"

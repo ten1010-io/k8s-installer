@@ -1,0 +1,114 @@
+# What is checked about this repository before it is merged.
+#
+# Everything here already existed as something a person could run and nobody
+# did: tools/check-script-modes.sh and tools/check-release-docs.sh were written
+# because each of them had already gone wrong once, and shellcheck had been run
+# often enough to leave two disable directives behind, but a branch could still
+# be merged without any of it. Every check is still a script of tools/ that this
+# only calls, so what fails here is what a person can run before pushing, which
+# is the only place a failure is still cheap.
+#
+# The versions are pinned, the same way everything this repository installs is
+# pinned. A floating linter turns a pull request red for a change it does not
+# contain, which is the one failure a check can not afford: the next red one is
+# read as noise.
+#
+# More jobs follow - yaml, ansible and python - and they are added one at a time
+# so that each arrives green rather than as a wall to be argued with.
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A branch that is pushed again has already answered whatever the run in flight
+# was going to say, and the answer it gave was about a commit nobody will look
+# at now.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# The shell a step gets when it names none is "bash -e", which has no pipefail:
+# a pipeline reports the exit status of its last command, so a git that fails
+# upstream of an awk leaves the step green and the check silently checked
+# nothing. Naming bash is what asks for "--noprofile --norc -eo pipefail", which
+# is what every script of this repository sets for itself.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # The checks that are about the repository as an object rather than about the
+  # code in it.
+  repo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      # A script that lost its executable bit is a playbook that stops with
+      # "permission denied" on a customer's node, and the mode is the kind of
+      # thing a contributor on windows changes without meaning to.
+      - name: Every script carries the mode its shebang says it should
+        run: tools/check-script-modes.sh
+
+      # release.yml is what a node reads and README.adoc is what a person reads.
+      # When they disagree the person is the one who is wrong, and nothing said
+      # so until someone compared them by hand.
+      - name: release.yml and README.adoc agree on what the release carries
+        run: tools/check-release-docs.sh
+
+      # A shell script that reaches a node with CRLF has a carriage return in
+      # its shebang and does not run. .gitattributes keeps the working tree
+      # right; this looks at what is actually stored, which is what a node ends
+      # up with.
+      - name: Every file is stored with LF
+        run: tools/check-line-endings.sh
+
+  shell:
+    runs-on: ubuntu-latest
+    env:
+      # The runner image ships a shellcheck of its own and that version moves
+      # with the image, so it is replaced with one this repository names. The
+      # digest is what makes that a pin: a release asset can be replaced under
+      # a tag that does not move, and this one is installed as root.
+      SHELLCHECK_VERSION: v0.11.0
+      SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      # Unpacked outside the checkout, which is a working tree the jobs that
+      # follow will want to have found as it was checked out.
+      - name: Install shellcheck
+        run: |
+          url="https://github.com/koalaman/shellcheck/releases/download"
+          url="$url/$SHELLCHECK_VERSION/shellcheck-$SHELLCHECK_VERSION.linux.x86_64.tar.xz"
+          curl -fsSL "$url" -o "$RUNNER_TEMP/shellcheck.tar.xz"
+          echo "$SHELLCHECK_SHA256  $RUNNER_TEMP/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$RUNNER_TEMP"
+          sudo install "$RUNNER_TEMP/shellcheck-$SHELLCHECK_VERSION/shellcheck" /usr/local/bin/shellcheck
+          shellcheck --version
+
+      # Errors and warnings fail; the notes do not. What shellcheck calls a note
+      # is a style preference - a sed that could be a parameter expansion, a
+      # source it can not follow - and what it calls a warning is a quoting or a
+      # scoping mistake that changes what the script does. .shellcheckrc says
+      # which checks this repository turns off and why.
+      #
+      # Every script goes to one invocation, and the list reaches it through a
+      # NUL separated file rather than through word splitting, so that a path is
+      # a path whatever it holds and an empty list is caught here rather than
+      # read as nothing to do.
+      - name: shellcheck
+        run: |
+          git ls-files -z '*.sh' > "$RUNNER_TEMP/scripts"
+          mapfile -t -d '' scripts < "$RUNNER_TEMP/scripts"
+          if [[ ${#scripts[@]} -eq 0 ]]; then
+            echo "[ERROR] No shell script was found to check"
+            exit 1
+          fi
+          shellcheck --severity=warning --format=gcc "${scripts[@]}"

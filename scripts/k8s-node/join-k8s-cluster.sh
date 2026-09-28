@@ -118,9 +118,9 @@ main() {
   kubeadm join --config "$ki_etc_kubeadm_path""/kubeadm-join-config.yml"
 
   if [[ $k8s_cp == "true" ]]; then
-    mkdir -p $HOME/.kube
-    cp -f /etc/kubernetes/admin.conf $HOME/.kube/config
-    chown $(id -u):$(id -g) $HOME/.kube/config
+    mkdir -p "$HOME/.kube"
+    cp -f /etc/kubernetes/admin.conf "$HOME/.kube/config"
+    chown "$(id -u):$(id -g)" "$HOME/.kube/config"
   fi
 
   return 0

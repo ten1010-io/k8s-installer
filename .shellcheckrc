@@ -1,0 +1,29 @@
+# What shellcheck is told about this repository.
+#
+# SC2034 is the shadow of one file. Every script of this repository opens with
+# the same cli template - the colour variables, the SCRIPT_DIR_PATH, the args
+# array - and shellcheck sees 94 copies of it, so it reported 925 unused
+# variables out of the 981 things it had to say about the repository. SC2034 is
+# a warning, so it is the one of these that decides whether the job is red, and
+# left on, the thirty three findings that are about the scripts themselves can
+# not be found in the noise. A check nobody reads is not a check.
+#
+# SC2329 - print_usage and cleanup are never invoked - is 23 of the remaining
+# 56 and is an info, so the job never saw it: --severity=warning had already
+# dropped it. It is turned off for the person who runs "shellcheck a-script.sh"
+# by hand, where no severity is passed and the same noise comes back.
+#
+# They are disabled here rather than with a directive in each file, because what
+# is being described is the template rather than any one script that carries it.
+#
+# The vfio-pci scripts source a file that sits beside them, by a path that
+# carries a variable. source-path is where to look for it and external-sources
+# is permission to read it at all: without the second, shellcheck follows a
+# sourced file only when that file happens to be one of the files it was asked
+# to check. That is true of the job, which passes every script at once, and not
+# of a run against one script, and the two would otherwise disagree about what
+# the common file declares.
+disable=SC2034
+disable=SC2329
+source-path=SCRIPTDIR
+external-sources=true

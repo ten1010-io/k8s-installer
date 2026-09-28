@@ -69,6 +69,12 @@ parse_params "$@"
 # A file with no shebang is sourced rather than executed and is expected to stay
 # 644. That is what tells the two apart, so there is no list of exceptions to
 # keep here
+#
+# Every tracked script is looked at rather than the ones under scripts/. The ones
+# outside it are executed by path just the same - setup.sh, reset.sh, upgrade.sh
+# and download-bundle.sh are what a person runs first, and the checks of tools/
+# are what the workflow itself runs - so there was no reason for the line this
+# draws to be the one it was
 KI_ROOT_PATH=$(cd "$SCRIPT_DIR_PATH/.." &>/dev/null && pwd -P)
 
 main() {
@@ -96,11 +102,11 @@ main() {
     msg "[ERROR] File[\"$path\"] has no shebang and is mode[\"$mode\"]. A file without one is sourced"
     msg "        rather than executed, so it is expected to be 100644"
     failed="true"
-  done < <(git ls-files -s scripts)
+  done < <(git ls-files -s)
 
   [[ $failed = "true" ]] && die "[ERROR] Some scripts carry a mode that does not match what they are"
 
-  msg "[INFO] Every script of scripts/ carries the mode its shebang says it should"
+  msg "[INFO] Every script of this repository carries the mode its shebang says it should"
 
   return 0
 }

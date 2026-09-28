@@ -1,5 +1,9 @@
+# shellcheck shell=bash
+#
 # Sourced by the scripts of this directory, after the cli template of each of
-# them, since what is here calls msg.
+# them, since what is here calls msg. The directive above names the shell this
+# is read as, which a file with no shebang otherwise leaves unknown: a file
+# that is sourced is not run, so it carries none.
 #
 # What lives here is what more than one script needs and, more to the point, what
 # has to agree between them. The paths are the first of those: the reset decides

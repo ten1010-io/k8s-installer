@@ -234,7 +234,8 @@ restore_etcd_data() {
     die "[ERROR] Etcd of this node is still running. run the stop command on every k8s cp node first"
 
   if [[ -d $k8s_etcd_data_path ]]; then
-    local kept_path="$k8s_etcd_data_path".replaced-$(date -u +%Y%m%dT%H%M%SZ)
+    local kept_path
+    kept_path="$k8s_etcd_data_path".replaced-$(date -u +%Y%m%dT%H%M%SZ)
     msg "[INFO] Keeping the etcd data this node had in directory[\"$kept_path\"]"
     mv "$k8s_etcd_data_path" "$kept_path"
   fi
