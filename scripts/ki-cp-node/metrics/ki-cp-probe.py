@@ -27,9 +27,11 @@ import socket
 import ssl
 import struct
 import sys
+import time
 
 # Long enough for a service that is busy, short enough that the whole of a
-# collection stays well inside the interval the timer fires on
+# collection stays well inside the interval the timer fires on. Per operation,
+# not per run: see CATALOG_WALK_SECONDS for what bounds a run
 TIMEOUT_SECONDS = 3.0
 # What a query asks for. The name being resolved is one this installer wrote
 # into the zone itself, so an A record is what the answer holds
@@ -44,10 +46,23 @@ DNS_RCODE_MASK = 0x000F
 # at a resolver while it is being worked on, where a query without it comes back
 # empty and looks exactly like a failure
 DNS_FLAGS_RD = 0x0100
-# One request rather than a walk of the pagination. What this number is for is
-# the comparison between the nodes, and a registry holding more repositories
-# than this has a difference that shows in the first page just as well
-CATALOG_PAGE_SIZE = 10000
+# The largest page a registry accepts. Measured against the registry 2.8 the
+# bundle carries: 1000 is answered and 1001 comes back as
+# PAGINATION_NUMBER_INVALID, which is a 400 and would read here as a registry
+# holding nothing at all
+CATALOG_PAGE_SIZE = 1000
+# How many pages are followed before this gives up. A hundred of them is a
+# hundred thousand repositories, which is far past anything a ki cp registry
+# holds, and the bound is what keeps a registry answering with a link to itself
+# from being followed for ever
+CATALOG_PAGE_LIMIT = 100
+# How long the whole walk may take, however few pages that turns out to be. The
+# page limit bounds the number of requests and not the time they take: a hundred
+# pages of a registry that answers each one just inside TIMEOUT_SECONDS is
+# minutes, and the timer fires every sixty seconds. A walk still going when the
+# next firing is due has stopped being a measurement of now, so it is abandoned
+# and counts as a registry that did not answer
+CATALOG_WALK_SECONDS = 20.0
 
 
 def main() -> int:
@@ -155,14 +170,52 @@ def ask_registry(args: argparse.Namespace) -> tuple[int, int]:
 
 
 def registry_repositories(connection: http.client.HTTPSConnection) -> int:
-    response = registry_get(connection, f"/v2/_catalog?n={CATALOG_PAGE_SIZE}")
-    if not response or response[0] != 200:
-        return 0
+    """How many repositories the registry holds, following its pagination.
+
+    A count that stopped at the first page would be the same number for every
+    node once a registry passes it, which is exactly when the comparison between
+    the nodes stops working and nothing says so
+    """
+    total = 0
+    path = f"/v2/_catalog?n={CATALOG_PAGE_SIZE}"
+    deadline = time.monotonic() + CATALOG_WALK_SECONDS
+
+    for _ in range(CATALOG_PAGE_LIMIT):
+        if time.monotonic() >= deadline:
+            return 0
+
+        response = registry_get(connection, path)
+        if not response or response[0] != 200:
+            return 0
+
+        try:
+            total += len(json.loads(response[1]).get("repositories") or [])
+        except (ValueError, AttributeError):
+            return 0
+
+        next_path = next_page_path(response[2])
+        if not next_path:
+            return total
+
+        path = next_path
+
+    return total
+
+
+def next_page_path(headers) -> str | None:
+    """The path of the next page, out of the Link header the registry sends.
+
+    It arrives as </v2/_catalog?last=<name>&n=<size>>; rel="next" and is absent
+    on the last page, which is how the walk above ends
+    """
+    link = headers.get("Link")
+    if not link or 'rel="next"' not in link:
+        return None
 
     try:
-        return len(json.loads(response[1]).get("repositories") or [])
-    except (ValueError, AttributeError):
-        return 0
+        return link[link.index("<") + 1:link.index(">")]
+    except ValueError:
+        return None
 
 
 def registry_connection(args: argparse.Namespace):
