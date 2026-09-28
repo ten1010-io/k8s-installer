@@ -75,6 +75,69 @@
             target_node_op: remove
           when: playbook == "remove-node"
 
+    # node is optional here. Named, it is the one node this reboots and nothing is
+    # asked about it; left out, the playbook decides which nodes need a reboot from
+    # what they are configured to boot with. all_nodes takes every node whether or
+    # not the installer can see a reason, which is what a kernel or a package
+    # replaced under a running node needs
+    - when: playbook == "reboot-nodes"
+      block:
+        - name: "Validate variable[\"node\"] and variable[\"all_nodes\"]"
+          fail:
+            msg: >-
+              Variable["node"] and variable["all_nodes"] are both given and they ask for
+              different things. Name one node, or pass all_nodes to take every one of them
+          when:
+            - node is defined
+            - all_nodes is defined
+
+        - name: "Set_fact variable[\"reboot_all_nodes\"]"
+          set_fact:
+            reboot_all_nodes: ""
+          when: all_nodes is defined
+
+        - when: node is defined
+          block:
+            - name: "Validate variable[\"node\"]"
+              fail:
+                msg: "Node[\"{{ node }}\"] not belong to all group"
+              when: node not in groups['all']
+
+            # The k8s nodes are the ones this playbook walks. A node that is only a
+            # ki cp node carries no workload and no kubelet, so there is nothing here
+            # to drain or to wait for - its services come back with docker when the
+            # machine does, and rebooting it is a machine that somebody reboots
+            - name: "Validate variable[\"node\"]"
+              fail:
+                msg: >-
+                  Node["{{ node }}"] must belong to the k8s_node group. A node that is only a
+                  ki cp node is not taken through this playbook
+              when: node not in groups['k8s_node']
+
+            - name: "Validate variable[\"node\"]"
+              fail:
+                msg: >-
+                  Node["{{ node }}"] is in the broken_node group, so this playbook can not
+                  reach it. Rebuild it and take it out of that group first
+              when: node in ki_broken_nodes
+
+            # Refused here rather than reported by the play. The no-argument mode
+            # reports the control node and carries on with the others, which is
+            # the whole of what it can do; a run asked for this one node and
+            # nothing else would otherwise end successfully having rebooted nothing
+            - name: "Validate variable[\"node\"]"
+              fail:
+                msg: >-
+                  Node["{{ node }}"] is the control node, which this playbook runs on and can
+                  not reboot. Hand the control node over to another ki cp node by changing
+                  control_node_ih of inventory.yml, then run this playbook from there with
+                  -e node={{ node }}
+              when: node == ki_control_node_ih
+
+            - name: "Set_fact variable[\"target_node\"]"
+              set_fact:
+                target_node: "{{ node }}"
+
     # The node is named by the inventory rather than by a variable on the command
     # line. It has to be in the broken_node group for the plays to leave it out,
     # and naming it a second place would be a second place to get it wrong

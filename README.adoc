@@ -532,6 +532,9 @@ kubectl get nodes -l k8s-installer.ten1010.io/ki-cp
 |`vars.yml` 이나 `inventory.yml` 을 고쳤다
 |<<설정 변경 적용>>
 
+|노드를 재부팅해야 한다고 나온다
+|<<노드 재부팅>>
+
 |워크로드가 쓸 이미지를 클러스터에 넣는다
 |<<사용자 레지스트리>>
 
@@ -578,6 +581,66 @@ ansible-playbook -i inventory.yml playbooks/update-cluster.yml
 NOTE: 기록에 없는 것은 변경이 아닙니다. 기록이 아예 없는 노드도, 릴리스가 새로 더해서 기록에만
 없는 변수도, 첫 실행은 지금 값을 기준점으로 삼고 그렇게 알려 줍니다. 변경 감지는 그 다음
 실행부터입니다.
+
+=== 노드 재부팅
+
+노드를 한 대씩 비우고 재부팅하고 되돌립니다.
+
+[source,shell]
+----
+source /opt/k8s-installer/venv/bin/activate
+cd /opt/k8s-installer/ansible
+
+# 재부팅이 필요한 노드만
+ansible-playbook -i inventory.yml playbooks/reboot-nodes.yml
+
+# 이 노드 하나만, 이유를 묻지 않고
+ansible-playbook -i inventory.yml playbooks/reboot-nodes.yml -e node=node3
+
+# 전부
+ansible-playbook -i inventory.yml playbooks/reboot-nodes.yml -e all_nodes=
+----
+
+`vfio_pci_device_ids` 와 `kernel_cmdline_extra_args` 는 **부팅할 때 적용되는 값**이고, 노드를
+만들 때 쓰입니다. `provision_reboot` 이 켜져 있으면 그 자리에서 재부팅해 적용까지 끝나지만,
+꺼져 있으면(기본값) **쓰이기만 하고 적용되지 않습니다.** 제어 노드는 `provision_reboot` 과 무관하게
+언제나 그 상태입니다 — 플레이북이 도는 기계라 스스로를 재부팅할 수 없기 때문입니다.
+
+그 노드는 이후 모든 런의 끝에서 "그것으로 부팅하지 않았다" 고 보고됩니다. 그 보고를 닫는 것이 이
+플레이북입니다.
+
+아무 인자 없이 돌리면 **그 보고에 걸리는 노드만** 가져갑니다. 커널이나 패키지가 돌고 있는 노드
+밑에서 바뀐 경우는 설치본이 알 수 없으므로 `-e all_nodes=` 로 명시합니다. `-e node=` 로 지목하면
+이유를 묻지 않고 그 노드를 재부팅합니다.
+
+한 대마다 이렇게 합니다.
+
+. 클러스터가 한 대를 잃어도 되는 상태인지 확인 — apiserver 응답 · 모든 노드 Ready · etcd 쿼럼
+. (컨트롤 플레인이면) 모든 ki cp 노드의 로드밸런서에서 뺍니다
+. `drain` — eviction API 라 PodDisruptionBudget 이 지켜집니다
+. 재부팅하고 돌아올 때까지 기다립니다 (최대 30분)
+. (컨트롤 플레인이면) 그 노드의 apiserver 가 다시 서빙할 때까지 기다립니다
+. 그 노드가 `Ready` 가 될 때까지 기다립니다 (최대 5분)
+. 1번을 다시 확인합니다 — 돌아오다 만 노드를 두고 다음 노드로 넘어가지 않기 위해서입니다
+. `uncordon` 하고 로드밸런서에 되돌립니다
+. 부팅 구성이 실제로 먹었는지 확인합니다. 안 먹었으면 **거기서 멈춥니다**
+
+[IMPORTANT]
+====
+* *노드 순서는 인벤토리 순서입니다.* 컨트롤 플레인을 마지막에 두고 싶으면 `inventory.yml` 에서
+  그렇게 배치하세요
+* *제어 노드는 재부팅하지 않습니다.* 플레이북이 도는 기계입니다. <<제어 노드 인계>> 로 넘긴 뒤
+  다른 노드에서 `-e node=` 로 돌리세요
+* *옮길 수 없는 파드가 있으면 그 노드에서 멈춥니다.* PodDisruptionBudget 을 못 맞추거나 컨트롤러가
+  없는 파드가 그렇습니다. 노드는 cordon 된 채로 남고 뒤 노드는 손대지 않습니다
+* *k8s 노드만 대상입니다.* ki cp 전용 노드(kubelet 이 없는 노드)는 비울 것도 기다릴 것도 없어서
+  이 플레이북이 다루지 않습니다 — 서비스는 재부팅하면 docker 가 다시 띄웁니다
+* 실패하면 그 노드를 **로드밸런서에 되돌리고 uncordon 한 뒤** 멈춥니다. 작업 전과 같은 노드들이
+  서비스하는 상태로 남습니다
+====
+
+NOTE: 시작 전에 각 k8s cp 노드가 etcd 스냅샷을 한 번 받습니다. <<etcd 백업>> 과 같은 것이고
+같은 이유입니다.
 
 === apiserver 에 인자와 볼륨 더하기
 

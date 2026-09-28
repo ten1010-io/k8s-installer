@@ -1,0 +1,52 @@
+# Reboots the nodes of a cluster that is already running, one at a time.
+#
+# What a node has to boot with is written while the node is built, and
+# provision_reboot decides whether the installer may reboot it there, which is
+# when a reboot is cheapest. Off - which is the default - the configuration is
+# written and never comes into force, and the control node is in that state
+# whether provision_reboot is on or off, because a playbook can not reboot the
+# machine it runs from. check-kernel-args.yml and check-vfio-pci.yml then report
+# it at the end of every run and nothing applies it. This is what applies it.
+#
+# A kernel or a package that was replaced under a running node is the same
+# question and this is the same answer, with the difference that the installer
+# can not see that reason. See <<노드 재부팅>> of README.adoc for which nodes are
+# taken when.
+#
+#   ansible-playbook -i inventory.yml playbooks/reboot-nodes.yml
+#   ansible-playbook -i inventory.yml playbooks/reboot-nodes.yml -e node=node3
+#   ansible-playbook -i inventory.yml playbooks/reboot-nodes.yml -e all_nodes=
+- import_playbook: tasks/begin-playbook.yml
+  vars:
+    playbook: "reboot-nodes"
+
+- import_playbook: tasks/prepare-vars.yml
+
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/check-node-state.sh
+    every_node: true
+
+# Before a node is touched rather than after something has gone wrong. A reboot
+# is not a change to the keyspace, but it stops an etcd member for minutes, and
+# the snapshot costs one file per control plane node.
+#
+# Taken whether or not any node turns out to need a reboot, because which nodes
+# those are is decided per node inside the play below and is not known here. So a
+# run of the default mode that finds nothing to do still pays for it, which is
+# the common case and is meant to be: the price is one file per control plane
+# node and the alternative is working the decision out twice
+- import_playbook: tasks/backup-etcd.yml
+
+- import_playbook: tasks/reboot-k8s-nodes.yml
+
+- import_playbook: tasks/reset-vars-file.yml
+
+- import_playbook: tasks/check-vfio-pci.yml
+
+- import_playbook: tasks/check-kernel-args.yml
+
+# The cdi specs are written by nvidia-cdi-refresh at every boot, and binding a
+# card to vfio-pci is taking it away from the driver that generates them, so a
+# run of this playbook is the event most likely to change what this reports
+- import_playbook: tasks/check-nvidia-cdi.yml

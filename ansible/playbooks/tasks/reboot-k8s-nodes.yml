@@ -1,0 +1,235 @@
+# Takes one node at a time out of the cluster, reboots it and puts it back.
+#
+# The order is the inventory order, the same as every other play that walks the
+# nodes. Whoever wants the control plane touched last says so by where the nodes
+# sit in inventory.yml, which is also where upgrade-k8s-nodes.yml takes its order
+# from.
+#
+# Which nodes are taken is decided per node rather than by the caller alone:
+# named with -e node= it is that node and nothing is asked, with -e all_nodes= it
+# is every node, and with neither it is the nodes that are configured to boot
+# with something they are not booted with. The last one is the common case - the
+# operator is here because check-kernel-args.yml or check-vfio-pci.yml has been
+# saying so at the end of every run - and it is also the one that can not see a
+# kernel that was replaced under a running node, which is what -e all_nodes= is
+# for.
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    scripts: "sudo {{ ki_opt_scripts_path }}"
+    lb_admin_cmd: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-cp-lb/lb-admin.sh {{ vars_path_arg }}"
+    ki_cp_ihs: "{{ groups['ki_cp_node'] | difference(ki_broken_nodes) }}"
+    knn: "{{ ih_to_hostname_dict[inventory_hostname] | lower | replace('_', '-') }}"
+    # Where the kubectl and etcdctl work is done. Another control plane node
+    # wherever there is one, because the node being rebooted can not be asked
+    # whether it is back, and its copy of the vars file may have gone with /tmp.
+    # The fallback is this node itself rather than k8s_cp_nodes[0]: it is reached
+    # by a cluster with one control plane node, which is up again by the time
+    # anything here is asked of it, and by one whose every other control plane
+    # node is in the broken_node group, where naming k8s_cp_nodes[0] would delegate
+    # to a node the rest of this play exists to leave alone
+    cp_helper: >-
+      {{ (k8s_cp_nodes | difference([inventory_hostname]) | difference(ki_broken_nodes)
+          + [inventory_hostname]) | first }}
+  tasks:
+    - when: target_node is none or inventory_hostname == target_node
+      block:
+        # Asked even when the answer will not decide anything, because what they
+        # report is worth having in the output of a run that is about to reboot
+        # the node anyway
+        - name: Execute check-vfio-pci.sh
+          shell: "{{ scripts }}/k8s-node/vfio-pci/check-vfio-pci.sh --node {{ inventory_hostname }} {{ vfio_pci_device_ids | join(' ') }}"
+          register: vfio_pci_result
+
+        - name: Execute check-kernel-args.sh
+          shell: "{{ scripts }}/k8s-node/kernel-args/check-kernel-args.sh --node {{ inventory_hostname }}"
+          register: kernel_args_result
+
+        - name: "Decide whether node[\"{{ inventory_hostname }}\"] is rebooted"
+          set_fact:
+            reboot_this_node: >-
+              {{ (target_node is not none)
+                 or (reboot_all_nodes is defined)
+                 or ((vfio_pci_result.stdout | trim | length) > 0)
+                 or ((kernel_args_result.stdout | trim | length) > 0) }}
+
+        # Said out loud, because a run that decides on its own which nodes to
+        # take has to account for the ones it left. A node that was replaced
+        # under the running kernel looks exactly like this one
+        - name: "Report that node[\"{{ inventory_hostname }}\"] is left alone"
+          debug:
+            msg: >-
+              Node["{{ inventory_hostname }}"] is booted with what it is configured to boot
+              with, so it is left alone. Pass -e all_nodes= to reboot it anyway, which is what
+              a kernel or a package replaced under a running node needs
+          when: not (reboot_this_node | bool)
+
+        # The control node is the machine ansible is running from, so rebooting
+        # it takes the run with it. setup-boot-config.yml says the same thing at
+        # the other end of a node's life
+        - name: Report that the control node has to be rebooted by hand
+          debug:
+            msg: >-
+              Node["{{ inventory_hostname }}"] is the control node, which this playbook runs
+              on and can not reboot. Hand the control node over to another ki cp node by
+              changing control_node_ih of inventory.yml, then run this playbook from there
+              with -e node={{ inventory_hostname }}
+          when:
+            - reboot_this_node | bool
+            - inventory_hostname == ki_control_node_ih
+
+    - when:
+        - reboot_this_node | default(false) | bool
+        - inventory_hostname != ki_control_node_ih
+      block:
+        # Before this node is taken rather than once at the start of the run. By
+        # the third node the question is no longer whether the cluster was well
+        # when the operator typed the command
+        - name: Execute check-k8s-cluster-healthy.sh
+          shell: "{{ scripts }}/k8s-node/check-k8s-cluster-healthy.sh {{ vars_path_arg }}"
+          delegate_to: "{{ cp_helper }}"
+
+        # Every ki cp node runs a load balancer of its own and the vip can move
+        # between them at any moment, so a node is only really out of rotation
+        # once every one of them has been told
+        - name: Take this node out of the load balancer of every ki cp node
+          shell: "{{ lb_admin_cmd }} drain {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+          when: inventory_hostname in k8s_cp_nodes
+
+        - name: Execute drain-node.sh
+          shell: "{{ scripts }}/k8s-node/drain-node.sh {{ vars_path_arg }} {{ knn }}"
+          delegate_to: "{{ cp_helper }}"
+
+        # The timeout is generous on purpose. The machines this is for are the
+        # ones that take longest to come back: a node with several cards and a
+        # lot of memory spends minutes in firmware before the kernel is reached
+        - name: Reboot the node
+          reboot:
+            reboot_timeout: 1800
+          become: yes
+
+        # The reboot may have taken /tmp with it, and every script run on this
+        # node from here on reads the vars file from there. Written again rather
+        # than conditioned on whether this node keeps /tmp across a boot, which
+        # is a fact about the machine that nothing here asks
+        - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
+          shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+
+        - name: Create vars file
+          copy:
+            content: "{{ hostvars[inventory_hostname] | to_yaml }}"
+            dest: "{{ ki_tmp_vars_path }}"
+          become: yes
+
+        # kubelet replaces the static pods after the manifests are read again, so
+        # the machine answering ssh says nothing about whether this apiserver is
+        # serving. The load balancer would only learn of a backend that is not
+        # there from its own health check, several seconds after it was given
+        # traffic
+        - name: Execute wait-k8s-apiserver.sh
+          shell: "{{ scripts }}/k8s-node/wait-k8s-apiserver.sh {{ vars_path_arg }}"
+          when: inventory_hostname in k8s_cp_nodes
+
+        # Before the cluster is asked anything, because the answer would be about
+        # this node and it is not back yet. The reboot module returns as soon as
+        # ssh answers, which is minutes before kubelet has registered and the
+        # container runtime and the cni are up, so the node is NotReady here as a
+        # matter of course. This is the wait that knows to keep asking; the check
+        # below fails on the first no
+        - name: Execute wait-k8s-node-ready.sh
+          shell: "{{ scripts }}/k8s-node/wait-k8s-node-ready.sh {{ vars_path_arg }} {{ knn }}"
+          delegate_to: "{{ cp_helper }}"
+
+        # The same three questions as before the node was taken, now that this
+        # node has answered the one it is the subject of. This is what stops a
+        # rolling reboot from walking into a cluster it has broken: an etcd member
+        # that has not rejoined is a cluster that can not afford the next node
+        - name: Execute check-k8s-cluster-healthy.sh
+          shell: "{{ scripts }}/k8s-node/check-k8s-cluster-healthy.sh {{ vars_path_arg }}"
+          delegate_to: "{{ cp_helper }}"
+
+        - name: Execute uncordon-node.sh
+          shell: "{{ scripts }}/k8s-node/uncordon-node.sh {{ vars_path_arg }} {{ knn }}"
+          delegate_to: "{{ cp_helper }}"
+
+        - name: Put this node back into the load balancer of every ki cp node
+          shell: "{{ lb_admin_cmd }} ready {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+          when: inventory_hostname in k8s_cp_nodes
+
+        # Before the next node is taken out. Moving on while this one is not
+        # being given traffic again would take the control plane down to one
+        # fewer node than it looks like
+        - name: Wait for every ki cp node to be giving this node traffic again
+          shell: "{{ lb_admin_cmd }} wait-ready {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+          when: inventory_hostname in k8s_cp_nodes
+
+        # The reboot is what puts a boot configuration in force, so this is the
+        # moment it can be told whether it took. A node that came back without it
+        # is a failure rather than a notice: the run was asked to deliver exactly
+        # this and has not
+        - name: Execute check-vfio-pci.sh
+          shell: "{{ scripts }}/k8s-node/vfio-pci/check-vfio-pci.sh --node {{ inventory_hostname }} {{ vfio_pci_device_ids | join(' ') }}"
+          register: vfio_pci_result
+
+        - name: Refuse a node that was rebooted and did not take its vfio-pci configuration
+          fail:
+            msg: "{{ vfio_pci_result.stdout_lines }}"
+          when: vfio_pci_result.stdout | trim | length > 0
+
+        - name: Execute check-kernel-args.sh
+          shell: "{{ scripts }}/k8s-node/kernel-args/check-kernel-args.sh --node {{ inventory_hostname }}"
+          register: kernel_args_result
+
+        - name: Refuse a node that was rebooted and did not take its kernel command line
+          fail:
+            msg: "{{ kernel_args_result.stdout_lines }}"
+          when: kernel_args_result.stdout | trim | length > 0
+
+      # A node that is left drained and out of the load balancer takes no work
+      # for good, which is worse than the failure that got here. Putting it back
+      # is attempted and the run stops after that.
+      #
+      # Attempted rather than done: a node that does not come back from its
+      # reboot is the failure this is most likely to meet, and on a cluster with
+      # one control plane node that node is also where these two are delegated,
+      # so both can fail. They are allowed to, because a run that died here has
+      # already said what went wrong and a second error on top of it says
+      # nothing, but that is why the message below does not claim more than it
+      # knows. Uncordoning a node that is down changes nothing while it is down
+      # and costs nothing once it is up, and the nodes after it in the inventory
+      # are not touched either way
+      rescue:
+        - name: Execute uncordon-node.sh
+          shell: "{{ scripts }}/k8s-node/uncordon-node.sh {{ vars_path_arg }} {{ knn }}"
+          delegate_to: "{{ cp_helper }}"
+          ignore_errors: yes
+
+        - name: Put this node back into the load balancer of every ki cp node
+          shell: "{{ lb_admin_cmd }} ready {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+          when: inventory_hostname in k8s_cp_nodes
+          ignore_errors: yes
+
+        - name: Report that rebooting the node failed
+          fail:
+            msg: >-
+              Rebooting node["{{ inventory_hostname }}"] failed. Uncordoning it and putting
+              it back into the load balancer of every ki cp node were both attempted, and
+              the two tasks above this one say whether they were reached: a node that did
+              not come back from its reboot is also a node these can fail against. The
+              nodes after it in the inventory were not touched
+
+    - name: "Remove temporary variables"
+      set_fact:
+        vfio_pci_result: null
+        kernel_args_result: null

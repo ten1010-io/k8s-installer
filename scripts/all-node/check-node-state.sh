@@ -94,6 +94,18 @@ ki_preflight_clock_offset_max_seconds=""
 
 knn_to_ih_dict=""
 
+# The node check_k8s_cluster_matches_inventory does not require the cluster and
+# the inventory to agree about, held as a list so that it can be empty.
+#
+# A playbook that names a node with target_node_op is adding it or taking it
+# away, so the two lists differ by exactly that node while the run is what closes
+# the gap: add-node has not joined it yet, remove-node and remove-broken-node are
+# taking it out. reboot-nodes names a node with no op, and for it the answer is
+# the opposite - the node it is about to drain has to be a member already, and a
+# node that is in the inventory and not in the cluster is exactly what has to be
+# refused there rather than exempted
+exempt_ih_list="[]"
+
 main() {
   require_file_exists "$vars_path"
   import_ki_opt_vars
@@ -118,6 +130,8 @@ main() {
 
   knn_to_ih_dict=$(get_knn_to_ih_dict)
 
+  [[ -n $target_node_op && $target_node_op != "null" ]] && exempt_ih_list="[\"$target_node\"]"
+
   # About this machine rather than about the cluster it is in, so they run for
   # every playbook and before the switch below. A node that has no room left or
   # whose clock is wrong fails whatever it was asked to do, at a place that does
@@ -137,12 +151,20 @@ main() {
       return 0
     fi
 
-    require_linux_packages_installed
-    if [[ $(is_ki_cp_node "$inventory_hostname") = "true" ]]; then
-      require_ki_cp_node
-    else
-      require_not_ki_cp_node
-    fi
+    require_node_matches_its_role
+    [[ $(is_k8s_cp_node "$inventory_hostname") = "true" ]] && check_k8s_cluster_matches_inventory
+
+    return 0
+  fi
+
+  # Nothing about a single node is asked here. Whether the cluster can afford to
+  # lose one is check-k8s-cluster-healthy.sh, which the play asks again between
+  # nodes, and whether a node needs a reboot at all is decided from what it is
+  # booted with. What is left for this is the run as a whole: an inventory that no
+  # longer matches the cluster is a run that would drain a node the cluster does
+  # not have
+  if [[ $playbook = "reboot-nodes" ]]; then
+    require_node_matches_its_role
     [[ $(is_k8s_cp_node "$inventory_hostname") = "true" ]] && check_k8s_cluster_matches_inventory
 
     return 0
@@ -153,12 +175,7 @@ main() {
   # deleting the node from the cluster and taking its etcd member out are both
   # writes, and a cluster that has lost quorum can not take either
   if [[ $playbook = "remove-broken-node" ]]; then
-    require_linux_packages_installed
-    if [[ $(is_ki_cp_node "$inventory_hostname") = "true" ]]; then
-      require_ki_cp_node
-    else
-      require_not_ki_cp_node
-    fi
+    require_node_matches_its_role
 
     if [[ $(is_k8s_cp_node "$inventory_hostname") = "true" ]]; then
       require_k8s_cluster_reachable
@@ -444,6 +461,23 @@ has_command() {
   return 0
 }
 
+# That this node is still the node the inventory says it is: the packages are on
+# it and it is running the ki cp services if it is a ki cp node and none of them
+# if it is not. Every playbook that works on a cluster that already exists asks
+# this of every node it is going to touch, which is why it is one function rather
+# than the same five lines in each branch of main
+require_node_matches_its_role() {
+  require_linux_packages_installed
+
+  if [[ $(is_ki_cp_node "$inventory_hostname") = "true" ]]; then
+    require_ki_cp_node
+  else
+    require_not_ki_cp_node
+  fi
+
+  return 0
+}
+
 require_k8s_cluster_reachable() {
   local output
   local exit_code=0
@@ -575,7 +609,7 @@ check_k8s_cluster_all_nodes() {
   fi
 
   ih_list1=$(get_k8s_cluster_all_ih_list)
-  ih_list2=$($yq_cmd -o json --null-input "$(get_inventory_k8s_node_ih_list) - [\"$target_node\"]")
+  ih_list2=$($yq_cmd -o json --null-input "$(get_inventory_k8s_node_ih_list) - $exempt_ih_list")
   diff_ih_list=$($yq_cmd -o json --null-input "$ih_list2 - $ih_list1")
   diff_len=$($yq_cmd --null-input "$diff_ih_list | length")
   [[ $diff_len -gt 0 ]] && die "[ERROR] Inventory has k8s nodes that are not in k8s cluster\n$diff_ih_list"
@@ -605,7 +639,7 @@ check_k8s_cluster_cp_nodes() {
   fi
 
   ih_list1=$(get_k8s_cluster_cp_ih_list)
-  ih_list2=$($yq_cmd -o json --null-input "$(get_inventory_k8s_cp_node_ih_list) - [\"$target_node\"]")
+  ih_list2=$($yq_cmd -o json --null-input "$(get_inventory_k8s_cp_node_ih_list) - $exempt_ih_list")
   diff_ih_list=$($yq_cmd -o json --null-input "$ih_list2 - $ih_list1")
   diff_len=$($yq_cmd --null-input "$diff_ih_list | length")
   [[ $diff_len -gt 0 ]] && die "[ERROR] Inventory has k8s control plane nodes that are not in k8s cluster\n$diff_ih_list"
