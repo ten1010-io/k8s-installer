@@ -15,6 +15,17 @@
 
 - import_playbook: tasks/setup-vars-file.yml
 
+# The node checks every other playbook that works on a cluster runs, and this one
+# did not. It is the playbook that needs them most: it pushes a whole release of
+# images into the registry of every ki cp node, so a node that is nearly full
+# fills up partway through and leaves the cluster with some nodes upgraded and
+# some not. After setup-vars-file.yml, which is where the thresholds reach the
+# node, and before the snapshot below, which a full disk would fail
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/check-node-state.sh
+    every_node: true
+
 - import_playbook: tasks/backup-etcd.yml
 
 - import_playbook: tasks/upgrade-k8s-registry.yml

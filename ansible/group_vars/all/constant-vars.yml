@@ -326,6 +326,16 @@ ki_metrics_path: "{{ ki_var_root_path }}/metrics"
 # only useful if they are seen coming
 ki_cert_expiry_warning_days: 180
 
+# The fallbacks for the preflight thresholds vars.yml carries. An upgrade keeps
+# the vars.yml of the user, so a cluster taking the release that added them has a
+# file with no line for any of them, and validate-hostvars.py asks for all three:
+# without these, upgrading the installer refuses every playbook until that file
+# is edited by hand. vars.yml is read after this one and wins wherever it names
+# them, including when it names them null
+ki_preflight_disk_free_min: "10Gi"
+ki_preflight_disk_free_percent_min: 5
+ki_preflight_clock_offset_max_seconds: 5
+
 # What has to happen when a variable changes. update-cluster.yml compares the
 # current values against ki_etc_applied_vars_path and decides from this table
 # what to run, so a variable that is not listed here is one nothing knows how to
@@ -458,6 +468,10 @@ ki_var_classes:
     # Read by backup-etcd.sh the next time it runs and by nothing else, so a
     # changed count applies itself without anything being done to a node
     - ki_etcd_backup_retention_count
+    # Read by check-node-state.sh at the start of the next playbook, the same way
+    - ki_preflight_clock_offset_max_seconds
+    - ki_preflight_disk_free_min
+    - ki_preflight_disk_free_percent_min
     # Read while a node is being provisioned and never again. Changing it does
     # not reach a node that already exists, and does not need to: whether the
     # installer rebooted that node once is not a property the node carries

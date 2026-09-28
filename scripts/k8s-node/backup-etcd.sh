@@ -132,7 +132,30 @@ require_etcd_quorum() {
   local exit_code=0
   output=$($etcdctl_cmd --endpoints=https://127.0.0.1:2379 --command-timeout=10s endpoint health 2>&1) || exit_code=$?
 
-  [[ $exit_code != 0 ]] && die "[ERROR] Etcd cluster has no quorum, so a snapshot of it would not be one to restore from\n$output"
+  [[ $exit_code = 0 ]] && return 0
+
+  # endpoint health commits a proposal, so a raised alarm fails it exactly the
+  # way a lost quorum does, and the two want opposite answers. A snapshot taken
+  # under an alarm is a good one - the cluster has quorum and is merely refusing
+  # writes - so this says what is actually wrong rather than sending an operator
+  # to restore a cluster that a defragment would fix
+  local alarms
+  alarms=$(get_etcd_alarms)
+  [[ -n $alarms ]] &&
+    die "[ERROR] Etcd has raised an alarm on this cluster. It still has quorum, so this snapshot would be one to restore from, but whatever comes after it will fail on the first write:\n$alarms\nDefragment every member and disarm the alarm before running this again"
+
+  die "[ERROR] Etcd cluster has no quorum, so a snapshot of it would not be one to restore from\n$output"
+}
+
+# Empty when there is no alarm and empty again when the cluster can not be asked,
+# which is what makes it worth asking after endpoint health has already failed: a
+# cluster that has really lost quorum answers neither
+get_etcd_alarms() {
+  local output
+  output=$($etcdctl_cmd --endpoints=https://127.0.0.1:2379 --command-timeout=10s alarm list 2>/dev/null) || return 0
+  [[ -z ${output//[[:space:]]/} ]] && return 0
+
+  echo "$output"
 
   return 0
 }

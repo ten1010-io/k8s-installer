@@ -157,6 +157,32 @@ k8s_cp_extra_files: []
 
 k8s_certificate_validity_period: "26280h" # 26280h = 3 year
 
+# What a node has to have before a playbook starts working on it.
+#
+# The disk is checked on every filesystem this installer and kubernetes put
+# things on, and both thresholds have to be met. The absolute one is what an
+# upgrade actually needs, since it pushes a whole release of images into the
+# registry of every ki cp node; the percentage is for small disks, where a
+# filesystem can be over the absolute and still be close enough to the eviction
+# thresholds of kubelet for pods to start moving.
+#
+# The clock is checked because certificates are issued against it and etcd
+# measures its peers by it, so a node that is wrong about the time fails in ways
+# that name neither. Nothing here sets the clock - the time daemon does - and
+# what this asks is whether it worked.
+#
+# A playbook that is taking a cluster apart or rescuing a node that has already
+# failed only reports these. The operator came to fix or remove, and a full disk
+# is a reason they came rather than a reason to turn them away.
+#
+# null is not asking at all. It is here for the site the question does not fit -
+# an air-gapped one with no time source to synchronise to answers the clock at no
+# threshold, and there is nothing it could set instead. Setting the clock one to
+# null drops the synchronised flag with it, since that is the same question
+ki_preflight_disk_free_min: "10Gi"
+ki_preflight_disk_free_percent_min: 5
+ki_preflight_clock_offset_max_seconds: 5
+
 # How many etcd snapshots each k8s cp node keeps. The oldest over this are
 # removed as each new one is taken, because nothing else removes them and they
 # sit on the root filesystem of a control plane node

@@ -967,6 +967,21 @@ class VarsModel(BaseModel):
     k8s_minor_version: Annotated[str, StringConstraints(pattern=K8S_MINOR_VERSION_PATTERN)]
     k8s_certificate_validity_period: Annotated[str, StringConstraints(pattern=VALIDITY_PERIOD_PATTERN)]
 
+    # What a node has to have before a playbook starts working on it. Present on
+    # a cluster whose vars.yml predates them because constant-vars.yml carries
+    # the same values as fallbacks.
+    #
+    # None is what turns a check off, which a site needs a way to say. The disk
+    # can be answered by clearing space, but a node with no time source at all
+    # can not be answered at any threshold: without this, an air-gapped site that
+    # runs no ntp would take an installer upgrade and find add-node and
+    # upgrade-cluster refused with nothing it could set to let them through.
+    # check-node-state.sh already asks nothing it has no threshold for
+    ki_preflight_disk_free_min: Optional[
+        Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]] = None
+    ki_preflight_disk_free_percent_min: Optional[int] = Field(default=None, ge=0, le=100)
+    ki_preflight_clock_offset_max_seconds: Optional[int] = Field(default=None, ge=0)
+
     # What is added to the apiserver of every control plane node. Empty leaves it
     # as kubeadm builds it
     k8s_apiserver_extra_args: List[ApiServerExtraArgModel]
