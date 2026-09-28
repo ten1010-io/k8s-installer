@@ -1,23 +1,22 @@
-apiVersion: kubeadm.k8s.io/v1beta4
-kind: ClusterConfiguration
-imageRepository: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}
-networking:
-  serviceSubnet: {{ k8s_service_subnet }}
-  podSubnet: {{ k8s_pod_subnet }}
-kubernetesVersion: {{ k8s_version }}
-{%- if k8s_apiserver_extra_args or k8s_apiserver_extra_volumes %}
-apiServer:
-{%- if k8s_apiserver_extra_args %}
+{#-
+  The extra arguments and volumes of the control plane components. Which
+  components there are, what each one is called in this configuration, where it
+  sits and where its values come from is ki_k8s_cp_components of
+  constant-vars.yml. One loop over that rather than a block per component: a copy
+  that drifts is one component quietly not carrying what it was given, and a
+  component opened in that table is rendered here without this file being edited.
+-#}
+{%- macro extra_args(args) %}
   extraArgs:
-{%- for extra_arg in k8s_apiserver_extra_args %}
+{%- for extra_arg in args %}
 {%- set arg_value = ('true' if extra_arg.value else 'false') if extra_arg.value is boolean else extra_arg.value | string %}
   - name: {{ extra_arg.name | tojson }}
     value: {{ arg_value | tojson }}
 {%- endfor %}
-{%- endif %}
-{%- if k8s_apiserver_extra_volumes %}
+{%- endmacro -%}
+{%- macro extra_volumes(volumes) %}
   extraVolumes:
-{%- for extra_volume in k8s_apiserver_extra_volumes %}
+{%- for extra_volume in volumes %}
   - name: {{ extra_volume.name | tojson }}
     hostPath: {{ extra_volume.hostPath | tojson }}
     mountPath: {{ extra_volume.mountPath | tojson }}
@@ -26,8 +25,29 @@ apiServer:
     pathType: {{ extra_volume.pathType }}
 {%- endif %}
 {%- endfor %}
+{%- endmacro -%}
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+imageRepository: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}
+networking:
+  serviceSubnet: {{ k8s_service_subnet }}
+  podSubnet: {{ k8s_pod_subnet }}
+kubernetesVersion: {{ k8s_version }}
+{%- for component in ki_k8s_cp_components %}
+{%- if component.args or component.volumes %}
+{#-
+  etcd is the one that sits a level down, under local, and the indent follows
+  from that rather than from which component it is
+-#}
+{%- set body_indent = 2 if component.config_nested_key else 0 %}
+{{ component.config_key }}:
+{%- if component.config_nested_key %}
+  {{ component.config_nested_key }}:
 {%- endif %}
+{%- if component.args %}{{ extra_args(component.args) | indent(body_indent, false) }}{% endif %}
+{%- if component.volumes %}{{ extra_volumes(component.volumes) | indent(body_indent, false) }}{% endif %}
 {%- endif %}
+{%- endfor %}
 controlPlaneEndpoint: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_cp_lb_port }}
 certificateValidityPeriod: {{ k8s_certificate_validity_period }}
 caCertificateValidityPeriod: {{ k8s_ca_certificate_validity_period }}

@@ -69,14 +69,10 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
-# The static pod that has to be replaced for a file it reads to take effect. Only
-# the apiserver: it is the one component whose configuration this places files
-# for, and restarting the others would be work nobody asked for
-STATIC_POD_NAME=kube-apiserver
-# How long it is given to shut down on its own before it is killed. kubeadm sets
-# no terminationGracePeriodSeconds on these, so nothing else bounds it, and an
-# apiserver that is finishing a request wants more than the ten seconds crictl
-# would otherwise allow. The same number renew-k8s-certs.sh uses
+# How long a static pod is given to shut down on its own before it is killed.
+# kubeadm sets no terminationGracePeriodSeconds on these, so nothing else bounds
+# it, and an apiserver that is finishing a request wants more than the ten
+# seconds crictl would otherwise allow. The same number renew-k8s-certs.sh uses
 STATIC_POD_STOP_TIMEOUT=45
 
 ki_opt_root_path=""
@@ -86,13 +82,24 @@ ki_opt_venv_path=""
 
 yq_cmd=""
 
-# Replaces the apiserver of this node so that it reads its files again.
+# Replaces the control plane components of this node that read a placed file, so
+# that they read it again.
 #
-# kube-apiserver reads what its arguments name once, at start. An audit policy
+# A control plane component reads what its arguments name once, at start. A file
 # that changed on disk is not picked up by rewriting the static pod manifest
 # either: the manifest is the same file it was, so kubelet sees nothing to do and
 # the process goes on running with what it read when it started. Only a restart
 # moves it.
+#
+# Which components there are and what a changed file costs each of them is
+# placed_file_restart of ki_k8s_cp_components in the vars file, not a list here.
+# "always" is the apiserver, since k8s_cp_extra_files was made for it and what
+# reaches this script is that some file changed rather than which one: restarting
+# it a second time inside a window the node is already out of costs seconds, and
+# not restarting it costs a file that was placed and never read. "when_mounting"
+# is the two that are only reached through a volume of their own, where
+# restarting moves a leader rather than a process. "never" is etcd, which takes
+# no volumes.
 #
 # The caller takes this node out of every load balancer first and puts it back
 # after, the same as renewing a certificate. Nothing here does that, because a
@@ -105,8 +112,37 @@ main() {
   require_directory_exists "$ki_opt_root_path"
   validate_ki_opt_directory
 
-  restart_static_pod
+  restart_by_policy "always"
+
+  # Before the rest rather than after all of it. What the caller is waiting to
+  # put back into the load balancer is the apiserver, and the components below
+  # hold a lease against it: one brought back while the apiserver it renews
+  # against is still starting comes up only to lose it
   wait_apiserver_ready
+
+  restart_by_policy "when_mounting"
+
+  return 0
+}
+
+restart_by_policy() {
+  local policy=$1
+
+  local count
+  count=$($yq_cmd '.ki_k8s_cp_components // [] | length' < "$vars_path")
+
+  local idx
+  for (( idx = 0; idx < count; idx++ )); do
+    [[ $($yq_cmd ".ki_k8s_cp_components[$idx].placed_file_restart" < "$vars_path") = "$policy" ]] || continue
+
+    # A placed file reaches a component through a volume and no other way, so one
+    # that declares none can not be holding the file that changed
+    if [[ $policy = "when_mounting" ]]; then
+      [[ $($yq_cmd ".ki_k8s_cp_components[$idx].volumes // [] | length" < "$vars_path") -gt 0 ]] || continue
+    fi
+
+    restart_static_pod "$($yq_cmd ".ki_k8s_cp_components[$idx].static_pod" < "$vars_path")"
+  done
 
   return 0
 }
@@ -120,18 +156,20 @@ main() {
 # turn its own /readyz negative and finish what it is holding, which is the
 # graceful shutdown it has for exactly this
 restart_static_pod() {
+  local static_pod_name=$1
+
   local container_ids
-  container_ids=$(crictl ps --name "$STATIC_POD_NAME" -q)
+  container_ids=$(crictl ps --name "$static_pod_name" -q)
   # Silence here would mean reporting a restart that did not happen: the file on
   # disk is new and the process still holds the old one, which is only found when
   # somebody asks why the change did nothing
   [[ -z $container_ids ]] &&
-    die "[ERROR] Found no running container of static pod[\"$STATIC_POD_NAME\"] to restart. the files of this node were placed but nothing has read them yet"
+    die "[ERROR] Found no running container of static pod[\"$static_pod_name\"] to restart. the files of this node were placed but nothing has read them yet"
 
-  msg "[INFO] Restarting static pod[\"$STATIC_POD_NAME\"]"
+  msg "[INFO] Restarting static pod[\"$static_pod_name\"]"
   # shellcheck disable=SC2086
   crictl stop --timeout $STATIC_POD_STOP_TIMEOUT $container_ids > /dev/null ||
-    die "[ERROR] Failed to restart static pod[\"$STATIC_POD_NAME\"]"
+    die "[ERROR] Failed to restart static pod[\"$static_pod_name\"]"
 
   return 0
 }

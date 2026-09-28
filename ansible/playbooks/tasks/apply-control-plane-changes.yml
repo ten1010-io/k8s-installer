@@ -7,12 +7,12 @@
 # and reaches a node by its manifests being written again - the upload has
 # already happened in apply-cluster-config-var-changes.yml, which is why that one
 # runs whether or not a variable of its own class changed. A file placed by
-# apply-k8s-cp-extra-files.yml reaches the apiserver only when the process starts
+# apply-k8s-cp-extra-files.yml reaches a component only when that process starts
 # again, because that is when it reads what its arguments name. Doing both in one
 # visit is what keeps a node that had both change from being drained twice.
 #
-# Only the control plane nodes: the apiserver is what all of this describes, and
-# a worker runs none.
+# Only the control plane nodes: the control plane is what all of this describes,
+# and a worker runs none.
 #
 # renew-k8s-certs.yml is the same play around a different script. Two copies is
 # one fewer than it takes to be worth a shared play taking the script as a
@@ -46,13 +46,17 @@
           when: control_plane_changed | bool
 
         # Not conditioned on the manifests having been left alone. Writing them
-        # again restarts the apiserver only when what was written differs, and
+        # again restarts a component only when what was written differs, and
         # "the arguments changed enough to change the file" is not something this
         # can know from here. Restarting a second time inside a window the node is
         # already out of costs seconds; not restarting at all costs a file that
-        # was placed and never read
-        - name: Execute restart-k8s-apiserver.sh
-          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/restart-k8s-apiserver.sh {{ vars_path_arg }}"
+        # was placed and never read.
+        #
+        # Which components it restarts is decided in the script by which of them
+        # mount a volume at all: a placed file reaches a component through a
+        # volume and no other way
+        - name: Execute restart-k8s-cp-components.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/restart-k8s-cp-components.sh {{ vars_path_arg }}"
           when: cp_extra_files_changed | bool
 
       # A drained node that is never put back takes no work for good, which is

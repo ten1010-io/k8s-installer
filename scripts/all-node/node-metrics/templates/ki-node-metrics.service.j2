@@ -25,5 +25,5 @@ ExecStart=-{{ ki_opt_scripts_path }}/k8s-node/vfio-pci/check-vfio-pci.sh --node 
 {%- endif %}
 ExecStart=-{{ ki_opt_scripts_path }}/all-node/nvidia-cdi/check-nvidia-cdi.sh --node "{{ inventory_hostname }}" --gpu-passthrough {{ gpu_passthrough | lower }} --metrics-path "{{ metrics }}/nvidia-cdi.prom"
 {%- if k8s_cp %}
-ExecStart=-{{ ki_opt_scripts_path }}/k8s-node/extra-files/check-k8s-cp-file-drift.sh --node "{{ inventory_hostname }}" --metrics-path "{{ metrics }}/k8s-cp-file-drift.prom"{% for volume in k8s_apiserver_extra_volumes %} --host-path "{{ volume.hostPath | replace("%", "%%") }}"{% endfor %}{% for file in k8s_cp_extra_files %} "{{ file.dest | replace("%", "%%") }}"{% endfor %}
+ExecStart=-{{ ki_opt_scripts_path }}/k8s-node/extra-files/check-k8s-cp-file-drift.sh --node "{{ inventory_hostname }}" --metrics-path "{{ metrics }}/k8s-cp-file-drift.prom"{% for component in ki_k8s_cp_components if component.volumes_var %}{% for volume in component.volumes %} --mount "{{ (component.static_pod ~ "=" ~ volume.hostPath) | replace("%", "%%") }}"{% endfor %}{% endfor %}{% for file in k8s_cp_extra_files %} "{{ file.dest | replace("%", "%%") }}"{% endfor %}
 {%- endif %}

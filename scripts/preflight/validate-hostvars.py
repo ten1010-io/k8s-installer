@@ -38,7 +38,11 @@ CPU_SET_PATTERN = r"^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$"
 KERNEL_CMDLINE_ARG_PATTERN = r"^[A-Za-z0-9_.-]+(=[^\s\"']+)?$"
 # A volume of a pod is named with a dns 1123 label, which bounds its length at 63
 DNS_1123_LABEL_PATTERN = r"[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?"
-APISERVER_ARG_NAME_PATTERN = r"[a-z0-9][a-z0-9-]*"
+CONTROL_PLANE_ARG_NAME_PATTERN = r"[a-z0-9][a-z0-9-]*"
+# What a variable holding the extra arguments or volumes of a control plane
+# component is named, used to ask VarsModel which of its fields are those without
+# the list of them being written out a second time
+EXTRA_ARG_OR_VOLUME_VAR_PATTERN = re.compile(r"k8s_[a-z0-9_]+_extra_(args|volumes)")
 # The name half of a label or a taint key, and the value of either. Both are what
 # kubernetes calls a qualified name: 63 characters of alphanumerics, dashes,
 # underscores and dots, starting and ending with an alphanumeric. A label value
@@ -92,18 +96,6 @@ KUBEADM_CONTROL_PLANE_VOLUME_NAMES = frozenset({
     "usr-share-ca-certificates",
 })
 
-# The flags this installer decides and then reads back. kubeadm lets extraArgs
-# override what it builds, so one of these set here leaves the apiserver
-# somewhere nothing goes looking: wait-k8s-apiserver.sh asks k8s_apiserver_port
-# of the node it is on, and the load balancer sends traffic to the same place
-KI_DECIDED_APISERVER_ARGS = frozenset({
-    "advertise-address",
-    "bind-address",
-    "etcd-servers",
-    "secure-port",
-    "service-cluster-ip-range",
-})
-
 
 # The kernel command line arguments the vfio-pci component derives from the
 # devices a node is given and writes itself. Named in kernel_cmdline_extra_args
@@ -141,7 +133,9 @@ def main():
     validate_k8s_node_metadata(hostvars_errors, hostvars)
     validate_kubelet_policy(hostvars_errors, hostvars)
     validate_kubelet_reservations(hostvars_errors, hostvars)
-    validate_k8s_apiserver_extra_volumes(hostvars_errors, hostvars)
+    validate_k8s_cp_components(hostvars_errors, hostvars)
+    validate_control_plane_extra_args(hostvars_errors, hostvars)
+    validate_control_plane_extra_volumes(hostvars_errors, hostvars)
     validate_k8s_cp_extra_files(hostvars_errors, hostvars)
     validate_k8s_minor_version(hostvars_errors, hostvars)
 
@@ -571,28 +565,148 @@ def is_within(path: str, parent: str) -> bool:
     return path_parts[: len(parent_parts)] == parent_parts
 
 
-def validate_k8s_apiserver_extra_volumes(hostvars_errors: List[HostvarsError], hostvars):
-    """Rejects two apiserver volumes that carry the same name.
+def validate_k8s_cp_components(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects a control plane component this installer only half knows about.
 
-    The name is the name of a volume of the static pod, so two of them is a
-    manifest kubernetes refuses, and the manifest is written by kubeadm on a node
-    that has just been taken out of the load balancer to restart its apiserver.
-    The node comes back without one, which is the most expensive place to find a
-    duplicated word
+    ki_k8s_cp_components of constant-vars.yml is the one table: the kubeadm
+    configuration is rendered from it, the node scripts read it out of the vars
+    file, and the checks here walk it. Three things can not be written into it
+    and are declared beside what they belong to - the fields of VarsModel, the
+    lines of vars.yml, and class["control_plane"] of ki_var_classes.
+
+    Each of those disagreeing with the table is silent on its own. A variable in
+    the table and not on the model is one nothing validates; on the model and not
+    in the table is one nothing renders; in either and not in the class is one
+    update-cluster.yml does not know how to apply. Saying so here is what makes
+    the table worth having, since the alternative is the reader checking four
+    files against each other
     """
     lo_hostvars = hostvars["localhost"]
 
-    names = [extra_volume["name"]
-             for extra_volume in lo_hostvars.get("k8s_apiserver_extra_volumes") or []
-             if isinstance(extra_volume, dict) and "name" in extra_volume]
+    components = lo_hostvars.get("ki_k8s_cp_components")
+    var_classes = lo_hostvars.get("ki_var_classes")
+    if not components or not var_classes:
+        return
 
-    for name in sorted({name for name in names if names.count(name) > 1}):
+    table_vars = set()
+    for component in components:
+        for key in ("args_var", "volumes_var"):
+            var_name = component.get(key)
+            # volumes_var is None for a component that takes no volumes
+            if var_name:
+                table_vars.add(var_name)
+
+    model_vars = {name for name in VarsModel.model_fields
+                  if EXTRA_ARG_OR_VOLUME_VAR_PATTERN.fullmatch(name)}
+    class_vars = set(var_classes.get("control_plane") or [])
+
+    for var_name in sorted(table_vars - model_vars):
         error = HostvarsError("localhost",
-                              ("k8s_apiserver_extra_volumes",),
-                              name,
-                              f"Variable[\"k8s_apiserver_extra_volumes\"] carries name[{name}] more than"
-                              " once. A volume of a pod is named once")
+                              ("ki_k8s_cp_components",),
+                              var_name,
+                              f"Variable[\"{var_name}\"] is read by"
+                              " variable[\"ki_k8s_cp_components\"] and is no field of"
+                              " VarsModel, so nothing checks what is written in it")
         hostvars_errors.append(error)
+
+    for var_name in sorted(model_vars - table_vars):
+        error = HostvarsError("localhost",
+                              ("ki_k8s_cp_components",),
+                              var_name,
+                              f"Variable[\"{var_name}\"] is a field of VarsModel and is in no"
+                              " entry of variable[\"ki_k8s_cp_components\"], so nothing renders"
+                              " it into the kubeadm configuration and no node script looks at it")
+        hostvars_errors.append(error)
+
+    for var_name in sorted(table_vars - class_vars):
+        error = HostvarsError("localhost",
+                              ("ki_var_classes", "control_plane"),
+                              var_name,
+                              f"Variable[\"{var_name}\"] is read by"
+                              " variable[\"ki_k8s_cp_components\"] and is not in"
+                              " class[\"control_plane\"], so update-cluster.yml does not know"
+                              " that changing it is the manifests being written again")
+        hostvars_errors.append(error)
+
+    for var_name in sorted(class_vars - table_vars):
+        error = HostvarsError("localhost",
+                              ("ki_var_classes", "control_plane"),
+                              var_name,
+                              f"Variable[\"{var_name}\"] is in class[\"control_plane\"] and is"
+                              " in no entry of variable[\"ki_k8s_cp_components\"]. A variable"
+                              " applied by rewriting the manifests is one that table renders")
+        hostvars_errors.append(error)
+
+
+def validate_control_plane_extra_args(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects an argument this installer decides for that component itself.
+
+    kubeadm applies extraArgs over the arguments it builds and the later one of a
+    name wins, so one of these is not an argument added, it is the installer being
+    answered by the file it wrote. What that costs is different on each component,
+    which is why the names are held per variable rather than in one list: the same
+    word is installer decided on one of them and free on another.
+
+    Here rather than on ExtraArgModel, which is one shape shared by every one of
+    those variables and so can not know which one it is being read for
+    """
+    lo_hostvars = hostvars["localhost"]
+
+    for component in lo_hostvars.get("ki_k8s_cp_components") or []:
+        decided_names = component.get("ki_decided_args") or []
+        if not decided_names:
+            continue
+
+        var_name = component["args_var"]
+        reason = (component.get("ki_decided_reason") or "").strip()
+
+        for extra_arg in lo_hostvars.get(var_name) or []:
+            if not isinstance(extra_arg, dict):
+                continue
+
+            name = extra_arg.get("name")
+            if name not in decided_names:
+                continue
+
+            error = HostvarsError("localhost",
+                                  (var_name,),
+                                  name,
+                                  f"Variable[\"{var_name}\"] carries name[{name}], which is decided by"
+                                  f" this installer and read back by it. {reason}")
+            hostvars_errors.append(error)
+
+
+def validate_control_plane_extra_volumes(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects two volumes of one component that carry the same name.
+
+    The name is the name of a volume of the static pod, so two of them is a
+    manifest kubernetes refuses, and the manifest is written by kubeadm on a node
+    that has just been taken out of the load balancer to restart the component.
+    The node comes back without one, which is the most expensive place to find a
+    duplicated word.
+
+    Per variable rather than across them: two components may each mount the same
+    directory under the same name, and they are different pods
+    """
+    lo_hostvars = hostvars["localhost"]
+
+    for component in lo_hostvars.get("ki_k8s_cp_components") or []:
+        var_name = component.get("volumes_var")
+        # None is a component that takes no volumes, which is etcd
+        if not var_name:
+            continue
+
+        names = [extra_volume["name"]
+                 for extra_volume in lo_hostvars.get(var_name) or []
+                 if isinstance(extra_volume, dict) and "name" in extra_volume]
+
+        for name in sorted({name for name in names if names.count(name) > 1}):
+            error = HostvarsError("localhost",
+                                  (var_name,),
+                                  name,
+                                  f"Variable[\"{var_name}\"] carries name[{name}] more than"
+                                  " once. A volume of a pod is named once")
+            hostvars_errors.append(error)
 
 
 def validate_k8s_minor_version(hostvars_errors: List[HostvarsError], hostvars):
@@ -1118,10 +1232,23 @@ class VarsModel(BaseModel):
     ki_preflight_disk_free_percent_min: Optional[int] = Field(default=None, ge=0, le=100)
     ki_preflight_clock_offset_max_seconds: Optional[int] = Field(default=None, ge=0)
 
-    # What is added to the apiserver of every control plane node. Empty leaves it
-    # as kubeadm builds it
-    k8s_apiserver_extra_args: List[ApiServerExtraArgModel]
-    k8s_apiserver_extra_volumes: List[ApiServerExtraVolumeModel]
+    # What is added to the control plane components of every control plane node,
+    # one pair of fields each. Empty leaves a component as kubeadm builds it.
+    #
+    # Which components there are and which of them takes volumes is
+    # ki_k8s_cp_components of constant-vars.yml. These are declared here as well
+    # because a pydantic model has to name its fields, and
+    # validate_k8s_cp_components checks the two against each other so that the
+    # second copy can not quietly disagree with the first
+    k8s_apiserver_extra_args: List[ExtraArgModel]
+    k8s_apiserver_extra_volumes: List[ExtraVolumeModel]
+    k8s_controller_manager_extra_args: List[ExtraArgModel]
+    k8s_controller_manager_extra_volumes: List[ExtraVolumeModel]
+    k8s_scheduler_extra_args: List[ExtraArgModel]
+    k8s_scheduler_extra_volumes: List[ExtraVolumeModel]
+    # Arguments and no volumes, which is what volumes_var being null says about
+    # etcd in that table
+    k8s_etcd_extra_args: List[ExtraArgModel]
 
     # The files placed on every control plane node for those volumes to carry
     k8s_cp_extra_files: List[CpExtraFileModel]
@@ -1324,7 +1451,7 @@ class CpExtraFileModel(BaseModel):
     mode: Annotated[str, StringConstraints(pattern=FILE_MODE_PATTERN)] = "0644"
 
 
-class ApiServerExtraArgModel(BaseModel):
+class ExtraArgModel(BaseModel):
     @field_validator("name")
     @classmethod
     def must_be_a_flag_name(cls, name: str) -> str:
@@ -1333,14 +1460,9 @@ class ApiServerExtraArgModel(BaseModel):
         # listing which characters are allowed
         if name.startswith("-"):
             raise ValueError("name is the flag without its dashes")
-        if re.fullmatch(APISERVER_ARG_NAME_PATTERN, name) is None:
+        if re.fullmatch(CONTROL_PLANE_ARG_NAME_PATTERN, name) is None:
             raise ValueError("name is the name of a flag, which carries lower case letters,"
                              " digits and dashes and nothing else")
-        if name in KI_DECIDED_APISERVER_ARGS:
-            raise ValueError(f"name[{name}] is decided by this installer and read back by it."
-                             " Setting it here moves the apiserver out from under the wait that"
-                             " follows a manifest being written and out from under the load"
-                             " balancer")
         return name
 
     # Closed, because readOnly and pathType are the only optional fields of any
@@ -1356,7 +1478,7 @@ class ApiServerExtraArgModel(BaseModel):
     value: Annotated[Union[str, int], Field(union_mode='left_to_right')]
 
 
-class ApiServerExtraVolumeModel(BaseModel):
+class ExtraVolumeModel(BaseModel):
     # The name reaches two places that both refuse what the other would take.
     # kubernetes reads it as the name of a volume of the static pod, and kubeadm
     # reads it as the key it files the volume under. The manifest is written by

@@ -164,13 +164,46 @@ k8s_minor_version: "1.36"
 k8s_apiserver_extra_args: []
 k8s_apiserver_extra_volumes: []
 
+# The same for the rest of the control plane, which is configured the same way
+# and was not reachable at all.
+#
+# What each one is for, in the order below: the controller manager decides how
+# large a slice of the pod subnet a node is given (--node-cidr-mask-size), which
+# is how many pods a node can hold and is not a thing to discover after the
+# cluster is built. The scheduler carries the feature gates a workload may
+# require. And etcd holds the quota its database is refused writes at
+# (--quota-backend-bytes), which defaults to 2GiB and is the wall a long running
+# cluster meets. Defragmenting gives back the space already deleted; this raises
+# the wall itself.
+#
+#   k8s_controller_manager_extra_args:
+#     - name: node-cidr-mask-size
+#       value: 22
+#   k8s_etcd_extra_args:
+#     - name: quota-backend-bytes
+#       value: 8589934592
+#
+# etcd takes arguments and no volumes. A volume there would be a path mounted
+# into the member holding the state of the cluster, and the one path it reads is
+# its data directory, which is not a value this installer lets a node move.
+#
+# Everything the apiserver block above says applies here too: the name of an
+# argument carries no dashes, a file a volume mounts is not put there by this
+# installer, and a component that will not start is a control plane node that
+# does not come back
+k8s_controller_manager_extra_args: []
+k8s_controller_manager_extra_volumes: []
+k8s_scheduler_extra_args: []
+k8s_scheduler_extra_volumes: []
+k8s_etcd_extra_args: []
+
 # Files this installer puts on every control plane node, for the volumes above to
-# carry into the apiserver. Empty puts nothing anywhere.
+# carry into the component that declared them. Empty puts nothing anywhere.
 #
 # A volume declares a path of the node and an argument names a file inside it,
 # and until now nothing put the file there. That leaves the two halves of one
 # decision in different places: the argument is cluster wide, so a control plane
-# node joining later is told to read a file nobody has given it, and an apiserver
+# node joining later is told to read a file nobody has given it, and a component
 # that can not read what it was pointed at does not start.
 #
 #   k8s_cp_extra_files:

@@ -349,6 +349,128 @@ ki_preflight_disk_free_min: "10Gi"
 ki_preflight_disk_free_percent_min: 5
 ki_preflight_clock_offset_max_seconds: 5
 
+
+# The control plane components a node can be given arguments and volumes for, and
+# what each one is called wherever something looks at it.
+#
+# One table, because opening a component used to mean finding every place that
+# had the other four written out and none of them pointed at the others: the
+# template that renders the kubeadm configuration, the preflight that refuses an
+# argument, the node script that looks for the file an argument names, the one
+# that restarts what holds a changed file, and the play that reports a file newer
+# than the process reading it. All of them read this now, and what is left
+# outside it - the fields of VarsModel, the lines of vars.yml and the
+# class["control_plane"] below - is checked against it by validate-hostvars.py
+# rather than trusted to agree.
+#
+# args and volumes carry the values and not only the names. The template is
+# rendered by jinja2 and the node scripts read the vars file with yq, and neither
+# can look a variable up by the name of another variable. default([], true) so
+# that a vars.yml written before one of these existed still reaches
+# validate-hostvars.py, which says which line is missing, rather than failing
+# here as an undefined name.
+#
+# volumes_var is null for etcd on purpose, and that is what says etcd takes no
+# volumes: a volume there mounts a host path into the member holding the state of
+# the cluster, and the one path it reads is its data directory, which is not a
+# value this installer lets a node move.
+#
+# ki_decided_args are the flags this installer decides for that component and
+# then reads back. kubeadm applies extraArgs over what it builds and the later
+# one of a name wins, so one of these given here is not an argument added, it is
+# the installer answered by the file it wrote. They are per component because the
+# same word means a different thing on each: bind-address moves the apiserver out
+# from under the load balancer, and on the scheduler it moves nothing this
+# installer looks at. The scheduler's list is empty for that reason and not
+# because nobody filled it in.
+#
+# placed_file_restart says what a changed k8s_cp_extra_files costs that component.
+# The apiserver is always restarted because that variable was made for it and
+# what reaches the script is that some file changed rather than which one. The
+# other two only when they mount something, since a placed file reaches a
+# component through a volume and no other way and restarting them moves a leader.
+# etcd never, since nothing placed is mounted into it
+ki_k8s_cp_components:
+  - name: apiserver
+    static_pod: kube-apiserver
+    config_key: apiServer
+    config_nested_key: null
+    args_var: k8s_apiserver_extra_args
+    volumes_var: k8s_apiserver_extra_volumes
+    args: "{{ k8s_apiserver_extra_args | default([], true) }}"
+    volumes: "{{ k8s_apiserver_extra_volumes | default([], true) }}"
+    placed_file_restart: always
+    ki_decided_args:
+      - advertise-address
+      - bind-address
+      - etcd-servers
+      - secure-port
+      - service-cluster-ip-range
+    ki_decided_reason: >-
+      Setting it here moves the apiserver out from under the wait that follows a
+      manifest being written and out from under the load balancer
+  - name: controller manager
+    static_pod: kube-controller-manager
+    config_key: controllerManager
+    config_nested_key: null
+    args_var: k8s_controller_manager_extra_args
+    volumes_var: k8s_controller_manager_extra_volumes
+    args: "{{ k8s_controller_manager_extra_args | default([], true) }}"
+    volumes: "{{ k8s_controller_manager_extra_volumes | default([], true) }}"
+    placed_file_restart: when_mounting
+    ki_decided_args:
+      - cluster-cidr
+      - service-cluster-ip-range
+    ki_decided_reason: >-
+      The subnets of the cluster are k8s_pod_subnet and k8s_service_subnet, which a
+      cluster that exists can not be moved off. Setting it here hands out a
+      different one without moving them, so the declaration and the cluster
+      disagree and nothing says so
+  - name: scheduler
+    static_pod: kube-scheduler
+    config_key: scheduler
+    config_nested_key: null
+    args_var: k8s_scheduler_extra_args
+    volumes_var: k8s_scheduler_extra_volumes
+    args: "{{ k8s_scheduler_extra_args | default([], true) }}"
+    volumes: "{{ k8s_scheduler_extra_volumes | default([], true) }}"
+    placed_file_restart: when_mounting
+    ki_decided_args: []
+    ki_decided_reason: ""
+  # Written as local, which is what kubeadm assumes when nothing says otherwise:
+  # this installer stacks etcd on the control plane nodes and has no external
+  # datastore
+  - name: etcd
+    static_pod: etcd
+    config_key: etcd
+    config_nested_key: local
+    args_var: k8s_etcd_extra_args
+    volumes_var: null
+    args: "{{ k8s_etcd_extra_args | default([], true) }}"
+    volumes: []
+    placed_file_restart: never
+    ki_decided_args:
+      - advertise-client-urls
+      - cert-file
+      - client-cert-auth
+      - data-dir
+      - initial-advertise-peer-urls
+      - initial-cluster
+      - initial-cluster-token
+      - key-file
+      - listen-client-urls
+      - listen-peer-urls
+      - name
+      - peer-cert-file
+      - peer-key-file
+      - peer-trusted-ca-file
+      - trusted-ca-file
+    ki_decided_reason: >-
+      backup-etcd.sh and restore-etcd.sh reach this member at
+      https://127.0.0.1:2379 with the pki kubeadm issued, and restore it into
+      k8s_etcd_data_path with the membership the inventory describes. Setting it
+      here moves the member out from under its own backup
+
 # What has to happen when a variable changes. update-cluster.yml compares the
 # current values against ki_etc_applied_vars_path and decides from this table
 # what to run, so a variable that is not listed here is one nothing knows how to
@@ -425,18 +547,30 @@ ki_var_classes:
     - k8s_certificate_validity_period
   # Written into the same kubeadm configuration, and then into the static pod
   # manifest of every control plane node, one node at a time. Uploading it is not
-  # enough for these: what the apiserver of a node is running with is the manifest
+  # enough for these: what a component of a node is running with is the manifest
   # kubelet reads, so it is rewritten from the configuration that was just
-  # uploaded and the node is out of the load balancer while it restarts
+  # uploaded and the node is out of the load balancer while it restarts.
+  #
+  # Which component each of these belongs to is ki_k8s_cp_components above, and
+  # they are checked against it rather than trusted to agree. etcd is one of them,
+  # and a changed argument of it is the member itself replaced rather than a
+  # process restarted beside it, which is the most expensive thing in this class
   control_plane:
     - k8s_apiserver_extra_args
     - k8s_apiserver_extra_volumes
-  # Placed on every control plane node and read by the apiserver when it starts,
-  # so applying a change is the file being written and then that apiserver being
-  # restarted, one node at a time. The play that places them runs whole rather
-  # than off this diff, the way the one for labels and taints does, and what the
-  # class is for is the record: what a node applied last time is the only thing
-  # that says which paths this installer may take away when an entry is dropped
+    - k8s_controller_manager_extra_args
+    - k8s_controller_manager_extra_volumes
+    - k8s_etcd_extra_args
+    - k8s_scheduler_extra_args
+    - k8s_scheduler_extra_volumes
+  # Placed on every control plane node and read by the component that mounts them
+  # when it starts, so applying a change is the file being written and then that
+  # component being restarted, one node at a time. Which components are restarted
+  # for it is placed_file_restart of ki_k8s_cp_components. The play that places
+  # them runs whole rather than off this diff, the way the one for labels and
+  # taints does, and what the class is for is the record: what a node applied last
+  # time is the only thing that says which paths this installer may take away when
+  # an entry is dropped
   cp_extra_files:
     - k8s_cp_extra_files
   # Written onto the node object of the cluster rather than onto the node. A

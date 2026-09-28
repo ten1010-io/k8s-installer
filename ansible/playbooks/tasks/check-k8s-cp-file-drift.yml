@@ -1,18 +1,18 @@
-# Reports a control plane node whose placed files are newer than the apiserver
+# Reports a control plane node whose placed files are newer than the component
 # that reads them. It only reports: the answer is a restart of that one
-# apiserver, which takes the node out of its load balancers for a moment, and
+# component, which takes the node out of its load balancers for a moment, and
 # whoever is running this may not be the one who decides when that happens.
 #
-# apply-k8s-cp-extra-files.yml restarts the apiserver of a node whose files it
+# apply-k8s-cp-extra-files.yml restarts the components of a node whose files it
 # changed, so an ordinary run leaves nothing here to find. What this is for is
 # the two cases that path can not see - a file edited on a node by hand, and one
 # that already held the new bytes when the declaration caught up with it, where
 # the copy has nothing to write and so nothing is restarted. Both leave a node
-# whose disk says one thing and whose apiserver is doing another, and neither
+# whose disk says one thing and whose control plane is doing another, and neither
 # looks like anything until someone asks why the change did nothing.
 #
 # At the end of a run rather than beside the check that runs when the files are
-# placed: at that point every file this run wrote is newer than an apiserver that
+# placed: at that point every file this run wrote is newer than a component that
 # has not been restarted yet, which is exactly the state this reports, so it
 # would say it about every node every time.
 #
@@ -31,11 +31,21 @@
   gather_facts: false
   any_errors_fatal: true
   vars:
+    # Every mounted directory of this node with the static pod it is mounted
+    # into, off ki_k8s_cp_components, so a component opened there reaches the
+    # script without the script or this file holding a list of its own. A
+    # component with no volumes_var mounts nothing and has nothing to pass.
+    #
     # Quoted, because these go onto a command line and nothing refuses a path
     # with a space in it: validate-hostvars.py asks only that they are absolute
     host_path_args: >-
-      {{ k8s_apiserver_extra_volumes | map(attribute='hostPath') | map('quote')
-         | map('regex_replace', '^', '--host-path ') | join(' ') }}
+      {% set mounts = [] %}
+      {%- for component in ki_k8s_cp_components if component.volumes_var %}
+      {%- for volume in component.volumes %}
+      {%- set _ = mounts.append('--mount ' ~ ((component.static_pod ~ '=' ~ volume.hostPath) | quote)) %}
+      {%- endfor %}
+      {%- endfor %}
+      {{- mounts | join(' ') }}
     file_args: "{{ k8s_cp_extra_files | map(attribute='dest') | map('quote') | join(' ') }}"
     # What the control plane nodes of this play reported. Undefined on every
     # other node, which is what the play has in place of a list naming them
