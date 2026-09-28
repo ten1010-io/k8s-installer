@@ -6,7 +6,7 @@ import re
 import sys
 from ipaddress import IPv4Network, IPv4Address
 from pathlib import Path, PurePosixPath
-from typing import List, Any, Literal, Optional, Annotated, Union
+from typing import Dict, List, Any, Literal, Optional, Annotated, Union
 
 import yaml
 from pydantic import BaseModel, ValidationError, StringConstraints, ConfigDict, field_validator, Field, \
@@ -20,6 +20,15 @@ CPU_QUANTITY_PATTERN = r"^([0-9]+m|[0-9]+(\.[0-9]+)?)$"
 EVICTION_THRESHOLD_PATTERN = r"^([0-9]+(\.[0-9]+)?%|[0-9]+[EPTGMK]i)$"
 FILE_MODE_PATTERN = r"^0[0-7]{3}$"
 PCI_DEVICE_ID_PATTERN = r"^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}$"
+KERNEL_MODULE_PATTERN = r"^[A-Za-z0-9_-]+$"
+# A key names a file under /proc/sys, so an interface name is part of one
+SYSCTL_KEY_PATTERN = r"^[A-Za-z0-9_][A-Za-z0-9_./-]*$"
+# One line. The value is written into /etc/sysctl.d as the right hand side of a
+# line, so one carrying a newline is a second setting in that file - a setting
+# nothing on the way in ever looked at, and one the readback confirms happily
+# because it reads the file back rather than the inventory. Everything a sysctl
+# holds is one line: a number, several of them, or a word
+SYSCTL_VALUE_PATTERN = r"^\S([^\n\r]*\S)?$"
 CPU_SET_PATTERN = r"^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$"
 # key or key=value, and nothing that would have to be quoted on a command line
 KERNEL_CMDLINE_ARG_PATTERN = r"^[A-Za-z0-9_.-]+(=[^\s\"']+)?$"
@@ -116,6 +125,7 @@ def main():
     validate_internal_network_subnets(hostvars_errors, hostvars)
     validate_k8s_subnets(hostvars_errors, hostvars)
     validate_kernel_cmdline_extra_args(hostvars_errors, hostvars)
+    validate_node_kernel_config(hostvars_errors, hostvars)
     validate_gpu_passthrough(hostvars_errors, hostvars)
     validate_k8s_node_metadata(hostvars_errors, hostvars)
     validate_kubelet_policy(hostvars_errors, hostvars)
@@ -640,6 +650,85 @@ def validate_kernel_cmdline_extra_args(hostvars_errors: List[HostvarsError], hos
             hostvars_errors.append(error)
 
 
+# What configure-linux.sh writes for kubernetes. Its k8s.conf sorts after the
+# 99-ki-sysctl.conf a node's own sysctls go into, so it is read last and wins a
+# key they both set, and a module loaded twice is a second owner for nothing.
+# Both are declared in one place and refused in the other
+KI_OWNED_KERNEL_MODULES = {
+    "br_netfilter",
+    "overlay",
+}
+KI_OWNED_SYSCTLS = {
+    "fs.inotify.max_user_instances",
+    "fs.inotify.max_user_watches",
+    "net.bridge.bridge-nf-call-ip6tables",
+    "net.bridge.bridge-nf-call-iptables",
+    "net.ipv4.ip_forward",
+}
+
+
+def validate_node_kernel_config(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects a kernel module or a sysctl this installer already owns.
+
+    Kubernetes needs the ones listed above to hold the values the node setup
+    gives them. A key set in both files does not fight: /etc/sysctl.d is read in
+    file name order and k8s.conf sorts last, so the node keeps what the node
+    setup wrote and drops what the inventory asked for, with nothing anywhere
+    saying it did. Saying no here is cheaper than the afternoon spent on a node
+    that is holding a value nobody wrote
+    """
+    for ih in sorted(hostvars):
+        if ih == "localhost":
+            continue
+
+        node_hostvars = hostvars[ih]
+
+        for kernel_module in node_hostvars.get("kernel_modules_extra") or []:
+            if module_name_of(kernel_module) not in KI_OWNED_KERNEL_MODULES:
+                continue
+
+            error = HostvarsError(ih,
+                                  ("kernel_modules_extra",),
+                                  str(kernel_module),
+                                  f"Variable[\"kernel_modules_extra\"] names kernelModule[{kernel_module}],"
+                                  " which this installer already loads for kubernetes. Take it out")
+            hostvars_errors.append(error)
+
+        for key in node_hostvars.get("sysctl_extra") or {}:
+            if sysctl_key_of(key) not in KI_OWNED_SYSCTLS:
+                continue
+
+            error = HostvarsError(ih,
+                                  ("sysctl_extra",),
+                                  str(key),
+                                  f"Variable[\"sysctl_extra\"] names sysctl[{key}], which this installer"
+                                  " already sets for kubernetes. Two files setting one key leave the value to"
+                                  " whichever of them /etc/sysctl.d reads last. Take it out")
+            hostvars_errors.append(error)
+
+
+def module_name_of(name) -> str:
+    """The name of a kernel module as modprobe reads it.
+
+    modprobe takes "-" and "_" for the same character, so br-netfilter and
+    br_netfilter are one module. Comparing the two spellings as written would
+    refuse one of them and let the other through to load a second time what the
+    node setup already loads
+    """
+    return str(name).replace("-", "_")
+
+
+def sysctl_key_of(key) -> str:
+    """The dotted spelling of a sysctl key.
+
+    A key names a file under /proc/sys and sysctl takes either separator for it,
+    so net/ipv4/ip_forward and net.ipv4.ip_forward are one setting. Comparing the
+    two as written would let the slash spelling past the check that exists to
+    keep one owner per key
+    """
+    return str(key).replace("/", ".")
+
+
 def validate_gpu_passthrough(hostvars_errors: List[HostvarsError], hostvars):
     """Rejects a node told to hand over every gpu and given no device to hand.
 
@@ -1060,6 +1149,17 @@ class ConstantVarsModel(BaseModel):
             raise ValueError("path must be absolute")
         return path
 
+    @field_validator("sysctl_extra")
+    @classmethod
+    def key_can_not_leave_proc_sys(cls, extra: dict) -> dict:
+        # sysctl builds the file name by pasting the key onto /proc/sys and does
+        # not resolve what it gets, so a key carrying ".." is a write to a file
+        # somewhere else on the node, as root, reported as a sysctl
+        for key in extra:
+            if ".." in key:
+                raise ValueError("a sysctl key names a file under /proc/sys and can not leave it")
+        return extra
+
     model_config = ConfigDict(regex_engine='python-re')
 
     ansible_python_interpreter: Path
@@ -1102,6 +1202,17 @@ class ConstantVarsModel(BaseModel):
     # vendor:device, as lspci -nn prints it
     vfio_pci_device_ids: List[
         Annotated[str, StringConstraints(pattern=PCI_DEVICE_ID_PATTERN)]]
+
+    # What a node loads and what it is set to, on top of what the node setup
+    # writes for kubernetes. A sysctl value is written into the file as it is
+    # given, so the three scalars yaml produces are all taken
+    kernel_modules_extra: List[
+        Annotated[str, StringConstraints(pattern=KERNEL_MODULE_PATTERN)]]
+    sysctl_extra: Dict[
+        Annotated[str, StringConstraints(pattern=SYSCTL_KEY_PATTERN)],
+        Annotated[Union[Annotated[str, StringConstraints(pattern=SYSCTL_VALUE_PATTERN)], int, bool],
+                  Field(union_mode='left_to_right')]]
+
     provision_reboot: bool
     gpu_passthrough: bool
 

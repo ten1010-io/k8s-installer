@@ -26,6 +26,8 @@
 
 - import_playbook: tasks/apply-node-metadata.yml
 
+- import_playbook: tasks/apply-node-kernel-config.yml
+
 - import_playbook: tasks/record-applied-state.yml
   vars:
     ki_recorded_classes: all

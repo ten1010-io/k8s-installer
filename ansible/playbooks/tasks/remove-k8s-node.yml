@@ -46,6 +46,9 @@
         - name: Execute reset-kernel-args.sh
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/kernel-args/reset-kernel-args.sh {{ vars_path_arg }}"
 
+        - name: Execute reset-kernel-config.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/kernel-config/reset-kernel-config.sh {{ vars_path_arg }}"
+
 - hosts: ki_cp_node:!broken_node
   gather_facts: false
   any_errors_fatal: true

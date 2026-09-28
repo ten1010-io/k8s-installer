@@ -1,0 +1,18 @@
+# Puts the kernel modules and the sysctls of every node onto that node.
+#
+# Run whole rather than only for what changed, the same as apply-node-metadata.yml
+# and for the same reason: the script renders the files from the variables and
+# loads what they name, so a node already holding what it is asked for costs a
+# render and a modprobe that returns at once, and gating this on the diff would
+# add a condition without taking any work away. What was taken out of a list is
+# applied by the same run, since each file is the record of what this put there
+# and writing it again is what removes a line from it
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - when: target_node is none or inventory_hostname == target_node
+      name: Execute setup-kernel-config.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/kernel-config/setup-kernel-config.sh {{ vars_path_arg }}"

@@ -1,0 +1,4 @@
+# Written by k8s-installer. kernel_modules_extra of this node
+{%- for kernel_module in kernel_modules_extra | default([]) %}
+{{ kernel_module }}
+{%- endfor %}

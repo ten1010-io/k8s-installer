@@ -55,6 +55,12 @@
           shell: "{{ scripts }}/k8s-node/configure-linux.sh {{ vars_path_arg }}"
 
         # Written again because a release may have changed what goes in those
+        # files. A node whose inventory names neither a module nor a sysctl is
+        # left alone
+        - name: Execute setup-kernel-config.sh
+          shell: "{{ scripts }}/k8s-node/kernel-config/setup-kernel-config.sh {{ vars_path_arg }}"
+
+        # Written again because a release may have changed what goes in those
         # files. A node whose inventory names no device is left alone, and one
         # whose files are already what this writes is only re-rendered: the
         # devices keep the binding they took at the last boot either way

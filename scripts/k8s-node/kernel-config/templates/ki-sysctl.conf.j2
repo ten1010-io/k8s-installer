@@ -1,0 +1,7 @@
+{#- A yaml true reaches here as a python bool, which renders as the word "True"
+    and is not a value the kernel can take. The node is told 1 and 0 instead,
+    which is what somebody writing true for a flag meant -#}
+# Written by k8s-installer. sysctl_extra of this node
+{%- for key, value in (sysctl_extra | default({})).items() %}
+{{ key }} = {{ value | int if value is boolean else value }}
+{%- endfor %}

@@ -51,6 +51,14 @@ k8s_node:
       # setup-vfio-pci.sh refuses a node where this does not match what it finds
       #gpu_passthrough: true
     node4:
+      # Kernel modules this node loads and sysctls it is set to, for what the cni
+      # of this cluster asks of a node. Applied to the running node and kept
+      # across a reboot; the ones this installer sets for kubernetes are refused
+      #kernel_modules_extra:
+      #  - "openvswitch"
+      #  - "geneve"
+      #sysctl_extra:
+      #  net.ipv4.conf.all.rp_filter: 0
       # Labels and taints to put on the node object of this node. Both are
       # applied by talking to the apiserver, so they can be changed on a node
       # that is already running and update-cluster.yml applies the change.

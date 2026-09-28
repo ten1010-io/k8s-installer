@@ -36,6 +36,38 @@ ephemeral_storage_device: null
 # node that was not rebooted is reported at the end of every run until it is
 kernel_cmdline_extra_args: []
 
+# Kernel modules this node loads, and sysctls it is set to. Set per node in
+# inventory.yml, since what a node needs follows from what runs on it.
+#
+#   kernel_modules_extra:
+#     - "openvswitch"
+#     - "geneve"
+#   sysctl_extra:
+#     net.ipv4.conf.all.rp_filter: 0
+#
+# What this is for is what a cni asks of a node. This installer brings kubernetes
+# up and not the network on top of it, so what kubernetes itself needs is already
+# written by the node setup and what the layer above needs had nowhere to be
+# declared. Left to be run by hand, those are what a node quietly lacks after it
+# has been rebuilt.
+#
+# In force as soon as the playbook has run - the module is loaded and the sysctl
+# is set now, and the files are what bring them back at the next boot. So no
+# reboot is asked for, unlike the kernel command line.
+#
+# The five sysctls and the two modules this installer sets for kubernetes are
+# refused here. /etc/sysctl.d is read in the order its file names sort in and the
+# last value read is the one that holds, and the k8s.conf the node setup writes
+# sorts after the 99-ki-sysctl.conf these go into - "9" before "k" - so a key
+# claimed by both is one where what is written here loses without saying so.
+#
+# Emptying a list takes the file away, and with it what the node would have
+# loaded or set at its next boot. What is already loaded stays loaded and what is
+# already set stays set: a module in use can not be removed, and the value a
+# sysctl held before it was set is written down nowhere
+kernel_modules_extra: []
+sysctl_extra: {}
+
 internal_network_subnets:
   - "192.168.0.0/24"
 

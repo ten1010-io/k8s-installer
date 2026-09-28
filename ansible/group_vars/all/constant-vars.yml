@@ -282,6 +282,13 @@ ki_removed_vars:
 # has no line for it and the scripts would be reading a name that does not exist
 kernel_cmdline_extra_args: []
 
+# The fallbacks for the kernel module and sysctl variables vars.yml carries. An
+# upgrade keeps the vars.yml of the user, so a cluster taking the release that
+# added them has a file with no line for either, and the templates that render
+# the files of a node would be reading names that do not exist
+kernel_modules_extra: []
+sysctl_extra: {}
+
 # The pci devices of a node to bind to vfio-pci, as vendor:device, set per node
 # in inventory.yml. Empty leaves the node alone: neither the bootloader nor the
 # initramfs is touched on a node that names none
@@ -431,6 +438,12 @@ ki_var_classes:
   node_metadata:
     - k8s_node_labels
     - k8s_node_taints
+  # Written onto the node as a file and applied to the running node in the same
+  # step: the module is loaded and the sysctl is set now, and the file is what
+  # brings it back at the next boot. Nothing is drained and nothing is rebooted
+  node_kernel:
+    - kernel_modules_extra
+    - sysctl_extra
   # Decided while a node is being provisioned and not reachable afterwards. The
   # device is formatted, the container and installer state lives under these
   # paths, so moving any of them means the node is built again rather than
