@@ -842,6 +842,83 @@ After cpu setting is overwritten  kubeReserved={...} systemReserved={"cpu":"2"}
 거짓말입니다. 설치본이 라벨을 자동으로 붙이지는 않습니다 — 무엇을 기준으로 스케줄할지는 사이트의
 규약이고, `k8s_node_labels` 가 같은 인벤토리 파일에 있어서 두 줄이 나란히 놓입니다.
 
+== cgroup v1 노드를 통과시키는 자리
+
+=== 1.35 는 두 군데서 막습니다
+
+쿠버네티스 1.35 부터 `KubeletConfiguration` 의 `failCgroupV1` 기본값이 `true` 입니다. cgroup v1
+호스트의 kubelet 은 기동을 거부하고 죽습니다. 그리고 그것과 **별개로** kubeadm 의
+`SystemVerification` preflight 가 cgroup v1 을 치명적 오류로 올렸습니다.
+
+----
+[ERROR SystemVerification]: cgroups v1 support is deprecated and will be removed in a
+future release. ... you must set the kubelet configuration option 'FailCgroupV1' to
+'false'. You must also explicitly skip this validation.
+----
+
+메시지가 시키는 대로 `failCgroupV1: false` 만 넣으면 여전히 여기서 막힙니다. 반대로 preflight 만
+무시하면 kubelet 이 기동을 거부합니다. **둘은 같이 열어야 하고, 한쪽만 열면 아무 효과가 없습니다.**
+
+kubeadm 이 무시해 주는 단위는 개별 항목이 아니라 `SystemVerification` 체크 전체입니다. 그래서 그
+체크가 같이 보는 커널 릴리스와 컨테이너 런타임도 이 노드에서는 치명적이지 않게 됩니다. 더 좁게
+지정할 방법이 없습니다.
+
+=== RHEL 8 을 cgroup v2 로 옮기는 길은 없습니다
+
+RHEL 8 은 cgroup v1 로 뜹니다. `systemd.unified_cgroup_hierarchy=1` 을 커널 명령줄에 넣으면 v2 로
+뜨고, 그 자리는 `kernel_cmdline_extra_args` 로 이미 열려 있습니다. 그런데 커널이 4.18 입니다 —
+쿠버네티스가 cgroup v2 에 권장하는 커널은 5.10 이상이고, kubeadm 은 v2 로 부팅한 노드에서도 커널
+릴리스를 경고합니다. RHEL 계열이 v2 를 기본으로 두는 것은 9 부터입니다.
+
+이 릴리스는 RHEL 8.0 부터 8.10 까지를 지원한다고 적어 두었으므로, 그 범위 전체를 v2 로 옮기는
+것은 선택지가 아닙니다. 남는 것은 노드마다 v1 을 명시적으로 여는 것입니다.
+
+=== 선언하지 않고 노드에게 물어봅니다
+
+어느 노드가 v1 인지는 변수가 아니라 `get-cgroup-version.sh` 가 `/sys/fs/cgroup` 의 파일시스템
+타입을 보고 답합니다. `cgroup2fs` 면 v2, 아니면 v1 입니다 — **kubelet 이 자기에게 하는 질문과 같은
+질문**이라, 하이브리드 배치(v2 계층이 아래쪽에 마운트되어 있지만 컨트롤러는 v1)도 kubelet 과 같이
+v1 로 읽힙니다.
+
+배포판으로 유도하지 않는 이유는 배포판이 기본값일 뿐이기 때문입니다. `kernel_cmdline_extra_args`
+로 v2 를 켠 RHEL 8 노드는 v2 이고, 그 반대도 마찬가지입니다. 옮겨진 노드는 옮겨진 대로 읽혀야
+합니다.
+
+=== 베이스라인이 아니라 노드 패치입니다
+
+`failCgroupV1: false` 는 클러스터 ConfigMap 이 아니라 **그 노드의 패치**에 들어갑니다. 위
+<<베이스라인은 정책을 담지 않습니다>> 와 같은 이유이고, 걸린 것이 더 큽니다. 패치는 merge 라 키를
+지울 수 없으므로, RHEL 8 노드 하나가 베이스라인에 이 키를 넣으면 옆의 우분투 노드까지 cgroup v1
+위에서 뜨는 것이 허용되고 **아무것도 그것을 되돌릴 수 없습니다.**
+
+그래서 베이스라인을 렌더하는 두 곳 — `upload-k8s-kubelet-config.sh` 와 `init-k8s-cluster.sh` —
+이 `node_cgroup_version` 을 `v2` 로 덮은 임시 vars 파일로 렌더합니다. 템플릿의 그 블록이 조건부라
+베이스라인에는 한 줄도 들어가지 않습니다. `init-k8s-cluster.sh` 에는 그 덮어쓰기가 없었고, 그래서
+설치 경로에서는 정책 변수도 같은 식으로 새고 있었습니다. 같은 한 줄로 둘 다 닫힙니다.
+
+=== 업그레이드에도 붙습니다
+
+preflight 는 설치할 때만 도는 것이 아닙니다. `kubeadm upgrade apply` 와 `kubeadm upgrade node`
+양쪽이 같은 체크를 돌리므로, 이렇게 들어온 노드는 올라갈 때마다 다시 통과시켜야 합니다. init 과
+join 은 `--config` 를 쓰므로 `nodeRegistration.ignorePreflightErrors` 로 템플릿에 들어가고,
+업그레이드는 설정 파일이 없어서 `--ignore-preflight-errors` 명령줄 인자입니다.
+
+=== 이것은 한시적입니다
+
+오버라이드 자체가 없어질 예정입니다. 쿠버네티스가 1.37 까지는 남겨 두겠다고 했으므로, 다음
+윈도에서 이 자리를 다시 봐야 합니다. RHEL 8 노드가 그때까지 갈 곳은 새 운영체제로 재설치하는
+것뿐입니다.
+
+=== 검수 기준
+
+. cgroup v1 노드(RHEL 8)에서 `setup-cluster.yml` 이 `kubeadm init` 을 통과하고 kubelet 이 계속
+  돌아야 합니다
+. 그 노드의 `/var/lib/kubelet/config.yaml` 에 `failCgroupV1: false` 가 있고, 클러스터의
+  `kube-system/kubelet-config` ConfigMap 에는 **없어야** 합니다
+. cgroup v2 노드에서는 `/var/lib/kubelet/config.yaml` 에 그 키가 없어야 합니다 — 기본 보호가
+  그대로 남습니다
+. 같은 노드에서 `kubeadm upgrade` 가 preflight 에서 멈추지 않아야 합니다
+
 == 번들에 담는 컨테이너 이미지
 
 번들은 두 종류의 이미지를 나릅니다. ki cp 서비스가 도커로 실행하는 이미지와, 클러스터가

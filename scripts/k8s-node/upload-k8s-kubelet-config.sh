@@ -110,13 +110,19 @@ main() {
 # only overwrite one. The kubelet policy variables are exactly that kind - a gpu
 # node is static while the node beside it is none - so they are rendered at
 # their defaults here and every policy key the template writes is left out. What
-# a node runs under comes from the patch that node renders for itself
+# a node runs under comes from the patch that node renders for itself.
+#
+# node_cgroup_version is forced to v2 for the same reason and with more at stake:
+# it is not declared but read off the node running this, and the key it writes
+# takes the protection kubelet gives a cgroup v2 node away. One rhel 8 node in
+# the cluster would otherwise let every ubuntu node beside it come up on cgroup
+# v1 unnoticed, and nothing could ever put that back
 create_kubelet_config_file() {
   local tmp_vars_path
   tmp_vars_path="$ki_tmp_root_path"/kubeadm-kubelet-baseline-vars.yml
 
   cp "$vars_path" "$tmp_vars_path"
-  $yq_cmd -i '.kubelet_cpu_manager_policy = "none" | .kubelet_cpu_manager_full_pcpus_only = false | .kubelet_topology_manager_policy = "none" | .kubelet_topology_manager_scope = "container" | .kubelet_reserved_system_cpus = null | .kubelet_max_pods = null' "$tmp_vars_path"
+  $yq_cmd -i '.kubelet_cpu_manager_policy = "none" | .kubelet_cpu_manager_full_pcpus_only = false | .kubelet_topology_manager_policy = "none" | .kubelet_topology_manager_scope = "container" | .kubelet_reserved_system_cpus = null | .kubelet_max_pods = null | .node_cgroup_version = "v2"' "$tmp_vars_path"
 
   $jinja2_cmd --format yaml \
               -o "$ki_etc_kubeadm_path""/kubeadm-kubelet-config.yml" \

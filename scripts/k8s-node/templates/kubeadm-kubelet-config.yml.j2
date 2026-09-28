@@ -46,3 +46,18 @@ cpuManagerPolicyOptions:
 topologyManagerPolicy: {{ kubelet_topology_manager_policy }}
 topologyManagerScope: {{ kubelet_topology_manager_scope }}
 {%- endif %}
+{%- if node_cgroup_version == "v1" %}
+# kubelet of 1.35 and newer will not start on a cgroup v1 host on its own:
+# failCgroupV1 defaults to true there and kubelet exits saying it is configured
+# not to run on one. rhel 8 boots cgroup v1 and carries a 4.18 kernel, while
+# kubeadm itself says the kernel it recommends for cgroup v2 is 5.10 or newer, so
+# a node of the rhel 8 this release supports can not be moved to the other
+# hierarchy and is let through here instead
+#
+# Per node, and never in the baseline. A node on cgroup v2 keeps the default and
+# with it the protection, and a merge can not remove a key, so a baseline
+# carrying this would open cgroup v1 on every node of the cluster for good.
+# init-k8s-cluster.sh and upload-k8s-kubelet-config.sh render the baseline with
+# this variable forced to v2 for that reason
+failCgroupV1: false
+{%- endif %}

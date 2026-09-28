@@ -58,6 +58,24 @@
           set_fact:
             shell_result: null
 
+    # What the node boots rather than what its distribution defaults to. kubelet
+    # of 1.35 and newer refuses to start on cgroup v1 unless it is told to, and
+    # kubeadm refuses to run preflight on one, so the node configuration that is
+    # rendered from these variables has to know which of the two this node is on
+    - name: Setup variable[\"node_cgroup_version\"]
+      block:
+        - name: Execute get-cgroup-version.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/preflight/get-cgroup-version.sh"
+          register: shell_result
+
+        - name: Set_fact variable[\"node_cgroup_version\"]
+          set_fact:
+            node_cgroup_version: "{{ shell_result.stdout | from_yaml | community.general.json_query('cgroup_version') }}"
+
+        - name: Remove temporary variable[\"shell_result\"]
+          set_fact:
+            shell_result: null
+
     - name: Setup variable[\"kubelet_reservations\"]
       block:
         - name: Write temporary file for cli input

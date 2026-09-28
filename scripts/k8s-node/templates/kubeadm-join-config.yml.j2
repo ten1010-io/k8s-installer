@@ -28,6 +28,13 @@ nodeRegistration:
       effect: {{ node_taint.effect }}
 {%- endfor %}
 {%- endif %}
+{%- if node_cgroup_version == "v1" %}
+  # See kubeadm-init-config.yml.j2 - preflight is fatal on a cgroup v1 node from
+  # 1.35, and the join of such a node is stopped in the same place the init of
+  # one is
+  ignorePreflightErrors:
+    - SystemVerification
+{%- endif %}
 patches:
   directory: {{ ki_etc_kubeadm_path }}/patches
 {%- if k8s_cp | lower == "true" %}

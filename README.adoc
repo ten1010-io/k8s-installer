@@ -1232,6 +1232,18 @@ sudo docker compose -f /etc/k8s-installer/services/ki-cp-k8s-cp-lb/compose.yml l
 * Redhat 8
 ** 8.0 ~ 8.10 지원
 
+[NOTE]
+====
+RHEL 8 은 cgroup v1 으로 뜹니다. 쿠버네티스 1.35 부터 kubelet 이 cgroup v1 호스트에서 기동을
+거부하고 kubeadm 도 preflight 에서 막으므로, 설치본은 cgroup v1 인 노드에 한해 그 둘을 열어
+통과시킵니다. 어느 노드가 v1 인지는 노드를 보고 정하므로
+`systemd.unified_cgroup_hierarchy=1` 로 cgroup v2 에 올려 둔 노드에는 아무것도 붙지 않습니다.
+다만 RHEL 8 의 4.18 커널은 쿠버네티스가 cgroup v2 에 권장하는 커널보다 낮습니다.
+
+이 우회는 한시적입니다. 쿠버네티스가 cgroup v1 을 완전히 들어내면 RHEL 8 노드는 새 운영체제로
+재설치하는 것 외에 갈 곳이 없습니다.
+====
+
 == 보안 취약점 리포팅
 
 보안 취약점 발견시 *절대 이슈에 리포팅하지 마시고* hyeongdeok.yoon@ten1010.io으로 리포팅해주세요.

@@ -125,21 +125,40 @@ main() {
 
 # Becomes the cluster wide baseline. kubeadm uploads it to the kubelet-config
 # ConfigMap in the kube-system namespace, and every node joining later downloads
-# it to /var/lib/kubelet/config.yaml
+# it to /var/lib/kubelet/config.yaml.
+#
+# Rendered from a copy of the variables with everything that belongs to one node
+# put back to its default, which is what upload-k8s-kubelet-config.sh does to
+# rewrite the same file later and for the same reason: this node is only the one
+# that happened to run init, a node patches the baseline rather than replacing
+# it, and a merge can not remove a key. A policy or a cgroup hierarchy left in
+# here is one every other node of the cluster is handed and none of them can give
+# back
 create_kubelet_config_file() {
+  local tmp_vars_path
+  tmp_vars_path="$ki_tmp_root_path"/kubeadm-kubelet-baseline-vars.yml
+
+  cp "$vars_path" "$tmp_vars_path"
+  $yq_cmd -i '.kubelet_cpu_manager_policy = "none" | .kubelet_cpu_manager_full_pcpus_only = false | .kubelet_topology_manager_policy = "none" | .kubelet_topology_manager_scope = "container" | .kubelet_reserved_system_cpus = null | .kubelet_max_pods = null | .node_cgroup_version = "v2"' "$tmp_vars_path"
+
   $jinja2_cmd --format yaml \
               -o "$ki_etc_kubeadm_path""/kubeadm-kubelet-config.yml" \
               "$SCRIPT_DIR_PATH"/templates/kubeadm-kubelet-config.yml.j2 \
-              "$vars_path"
+              "$tmp_vars_path"
+
+  rm -f "$tmp_vars_path"
 
   return 0
 }
 
 # The reservations are calculated per node, so each node patches the baseline
-# with the values calculated for its own capacity. On this node the patch is
-# identical to the baseline, but it is written anyway so that the patch
-# directory referenced by kubeadm-init-config.yml is never empty and so that the
-# init path and the join path stay the same
+# with the values calculated for its own capacity. This node is no exception,
+# although it is the one the baseline was rendered on: what belongs to a single
+# node is taken back out of the baseline, so the policy this node was given and
+# the cgroup hierarchy it boots reach it through this file and nowhere else.
+# kubeadm-init-config.yml points kubeadm at the directory, and kubeadm applies
+# what is here when it writes /var/lib/kubelet/config.yaml, which is the same
+# thing the join path does
 create_kubelet_config_patch_file() {
   mkdir -p "$ki_etc_kubeadm_path""/patches"
   $jinja2_cmd --format yaml \

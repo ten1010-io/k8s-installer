@@ -81,6 +81,16 @@ yq_cmd=""
 
 k8s_version=""
 ki_etc_kubeadm_path=""
+node_cgroup_version=""
+
+# What is added to both kubeadm calls on a node that boots cgroup v1, and empty
+# on one that does not. From 1.35 the SystemVerification check calls cgroup v1
+# fatal, and it does so on the way into an upgrade as well as on the way into an
+# install, so a node that was let into the cluster this way has to be let through
+# again every time it is raised. The kubelet side of the same decision is in
+# kubeadm-kubelet-config.yml.j2, and this file only carries what the command line
+# needs
+preflight_args=()
 
 # Takes this node to the kubernetes version of the release the installer now
 # holds. The packages under it have already been replaced by the caller, so
@@ -100,6 +110,10 @@ main() {
 
   k8s_version=$($yq_cmd '.k8s_version' < "$vars_path")
   ki_etc_kubeadm_path=$($yq_cmd '.ki_etc_kubeadm_path' < "$vars_path")
+  node_cgroup_version=$($yq_cmd '.node_cgroup_version' < "$vars_path")
+
+  [[ $node_cgroup_version = "v1" ]] &&
+    preflight_args=(--ignore-preflight-errors=SystemVerification)
 
   if [[ $first_cp_node = "true" ]]; then
     upgrade_cluster
@@ -144,7 +158,7 @@ upgrade_cluster() {
   fi
 
   msg "[INFO] Raising the cluster to kubernetes[\"$k8s_version\"]"
-  kubeadm upgrade apply "$k8s_version" --yes --patches "$ki_etc_kubeadm_path""/patches" ||
+  kubeadm upgrade apply "$k8s_version" --yes --patches "$ki_etc_kubeadm_path""/patches" "${preflight_args[@]}" ||
     die "[ERROR] Failed to raise the cluster to kubernetes[\"$k8s_version\"]. the cluster is left at the version it reports, and the nodes after this one were not touched"
 
   return 0
@@ -155,7 +169,7 @@ upgrade_cluster() {
 # changes nothing, so there is nothing to decide
 upgrade_node() {
   msg "[INFO] Bringing this node to kubernetes[\"$k8s_version\"]"
-  kubeadm upgrade node --patches "$ki_etc_kubeadm_path""/patches" ||
+  kubeadm upgrade node --patches "$ki_etc_kubeadm_path""/patches" "${preflight_args[@]}" ||
     die "[ERROR] Failed to bring this node to kubernetes[\"$k8s_version\"]"
 
   return 0

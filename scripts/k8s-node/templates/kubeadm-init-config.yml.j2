@@ -21,6 +21,19 @@ nodeRegistration:
       effect: {{ node_taint.effect }}
 {%- endfor %}
 {%- endif %}
+{%- if node_cgroup_version == "v1" %}
+  # From 1.35 kubeadm will not go past preflight on a cgroup v1 node: the finding
+  # is fatal and it names failCgroupV1, and setting that in the kubelet
+  # configuration does not satisfy it. The two are opened together or neither
+  # takes effect.
+  #
+  # What is named is the whole SystemVerification check rather than the one
+  # finding, because that is the granularity kubeadm ignores at, so the kernel
+  # release and the container runtime it also looks at stop being fatal on this
+  # node too. Asked for only on a node that is actually on cgroup v1
+  ignorePreflightErrors:
+    - SystemVerification
+{%- endif %}
 localAPIEndpoint:
   advertiseAddress: {{ internal_network_interfaces[0]['ip'] }}
   bindPort: {{ k8s_apiserver_port }}
