@@ -2273,6 +2273,21 @@ prune 은 기본적으로 아무것도 지우지 않고 지울 것을 출력합�
 나머지는 막지 않습니다. 경고를 게이트로 만들면 사람이 게이트를 우회하는 법을 배우고, 그때부터는
 진짜로 막아야 할 것도 같이 지나갑니다.
 
+=== 경고는 보여야 경고입니다
+
+디스크와 시계를 보고만 하는 경로에서 스크립트는 rc 0 으로 끝납니다. 그런데 이 점검은
+`run-all-node-script.yml` 로 불리고 있었고, 그 파일은 결과를 register 하지 않습니다. ansible 은
+성공한 태스크의 출력을 찍지 않으므로 **경고가 아무 데도 나오지 않았습니다** — 실측에서
+`reset-cluster` 는 임계값을 넘겨 놓고도 조용히 끝났습니다. 그 상태의 warn 은 skip 과 같습니다.
+
+그래서 이 점검도 다른 점검들처럼 자기 task 파일을 갖습니다. 거부는 ansible 이 실패한 태스크의
+출력을 찍어 주므로 그대로 두고, 보고만 하는 쪽을 debug 로 꺼냅니다.
+
+단독 실행은 `playbooks/check-node-state.yml` 이라는 상위 플레이북으로 감쌉니다. `check-vfio-pci.yml`
+처럼 task 파일을 바로 부를 수는 없습니다 — 저쪽은 필요한 것을 전부 인자로 받지만 이 점검은 노드의
+vars 파일을 읽고, 그 파일은 `prepare-vars.yml` 과 `reset-vars-file.yml` 사이에만 존재하기 때문입니다.
+`tasks/check-user-registry.yml` 이 같은 이유로 같은 모양의 상위 플레이북을 갖고 있습니다.
+
 === 업그레이드가 빠져 있었습니다
 
 이 점검은 setup / add-node / remove-node / remove-broken-node / reset-cluster 다섯에서만 돌고 있었고,
@@ -2331,6 +2346,9 @@ timesyncd 는 `timedatectl timesync-status` 에게 묻습니다. `show-timesync`
 물었는데 답이 없으면 넘어갑니다. **닿지 않는 클러스터와 알람이 선 클러스터는 다른 것**이고, 그것을
 판정하는 자리는 `require_k8s_cluster_reachable` 과 `require_etcd_quorum` 입니다. 여기서 같이 판정하면
 클러스터가 내려간 이유로 그것을 고치러 온 플레이북이 막힙니다.
+
+`check-node-state` 도 묻습니다. 그쪽은 묻는 것 말고 하는 일이 없으므로, 살아 있는 클러스터를 바꾸지
+않는데도 묻는 유일한 이름입니다.
 
 === endpoint health 는 알람에서도 죽습니다
 

@@ -1,0 +1,20 @@
+# Answers "is this node fit to be worked on" without working on it.
+#
+# The same checks every playbook that touches a cluster runs at its start, and
+# nothing else: no node is changed by this, so it is the cheap thing to run
+# before setting aside a window for an upgrade rather than finding out inside one.
+#
+# The wrapper exists because tasks/check-node-state.yml reads ki_tmp_vars_path,
+# which is put on the nodes by prepare-vars.yml and taken off again by
+# reset-vars-file.yml, so that file can not be run on its own the way
+# check-vfio-pci.yml can. tasks/check-user-registry.yml is wrapped here for the
+# same reason
+- import_playbook: tasks/begin-playbook.yml
+  vars:
+    playbook: "check-node-state"
+
+- import_playbook: tasks/prepare-vars.yml
+
+- import_playbook: tasks/check-node-state.yml
+
+- import_playbook: tasks/reset-vars-file.yml

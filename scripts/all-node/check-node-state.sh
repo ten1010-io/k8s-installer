@@ -368,10 +368,10 @@ get_clock_offset_seconds() {
 # no etcd to ask yet, taking one apart does not care, and a node being rescued is
 # already being asked about quorum where that matters: require_etcd_quorum tells
 # an alarm apart from a lost quorum, so remove-broken-node is answered there and
-# answered correctly
+# answered correctly. check-node-state asks because asking is all it came to do
 require_no_etcd_alarm() {
   case "$playbook" in
-    add-node | remove-node | upgrade-cluster) ;;
+    add-node | remove-node | upgrade-cluster | check-node-state) ;;
     *) return 0 ;;
   esac
 

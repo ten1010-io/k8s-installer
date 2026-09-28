@@ -1,0 +1,32 @@
+# Runs the node checks and shows what they said.
+#
+# check-node-state.sh refuses the run for most of what it finds, and ansible
+# prints the output of a task that failed, so that half needs nothing here. The
+# other half does: the checks that only report - the disk and the clock on a
+# playbook that is taking a cluster apart or rescuing a node - leave the script
+# at rc 0, and run-all-node-script.yml registers nothing, so what they said went
+# nowhere. A warning nobody is shown is the same as no check at all.
+#
+# Runnable on its own through playbooks/check-node-state.yml, which answers "is
+# this node fit to be worked on" without working on it. It is wrapped rather than
+# run directly the way check-vfio-pci.yml is, because this reads the vars file of
+# the node and that file only exists between prepare-vars.yml and
+# reset-vars-file.yml
+- hosts: all:!localhost:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute check-node-state.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/all-node/check-node-state.sh {{ vars_path_arg }}"
+      register: shell_result
+
+    - name: Report what this node said
+      debug:
+        msg: "{{ shell_result.stderr_lines }}"
+      when: shell_result.stderr | trim | length > 0
+
+    - name: "Remove temporary variable[\"shell_result\"]"
+      set_fact:
+        shell_result: null

@@ -9,10 +9,7 @@
 
 - import_playbook: tasks/prepare-vars.yml
 
-- import_playbook: tasks/run-all-node-script.yml
-  vars:
-    script: all-node/check-node-state.sh
-    every_node: true
+- import_playbook: tasks/check-node-state.yml
 
 - import_playbook: tasks/reset-k8s-cluster.yml
 

@@ -21,10 +21,7 @@
 # fills up partway through and leaves the cluster with some nodes upgraded and
 # some not. After setup-vars-file.yml, which is where the thresholds reach the
 # node, and before the snapshot below, which a full disk would fail
-- import_playbook: tasks/run-all-node-script.yml
-  vars:
-    script: all-node/check-node-state.sh
-    every_node: true
+- import_playbook: tasks/check-node-state.yml
 
 - import_playbook: tasks/backup-etcd.yml
 

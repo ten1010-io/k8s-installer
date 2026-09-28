@@ -32,10 +32,7 @@
 
 - import_playbook: tasks/prepare-vars.yml
 
-- import_playbook: tasks/run-all-node-script.yml
-  vars:
-    script: all-node/check-node-state.sh
-    every_node: true
+- import_playbook: tasks/check-node-state.yml
 
 # Before the ki cp services are reconfigured rather than after. Both of these
 # need a working control plane, and reconfiguring the services restarts the load
