@@ -1624,6 +1624,28 @@ kubeadm 의 컨트롤 플레인 테인트는 후보에 들어가지 않습니다
 넘겼던 파일과 같은 모양이어야 합니다. 둘은 서로 다른 템플릿이 렌더하고 서로 다른 변수가 바꾸므로
 디스크에서는 따로 두고, 올릴 때만 임시 파일에 합칩니다.
 
+=== 그 임시 파일의 세 번째 문서가 InitConfiguration 입니다
+
+kubeadm 은 클러스터에 붙을 클라이언트를 "apiserver 가 어느 주소로 답하는가" 에서 만듭니다.
+InitConfiguration 이 없으면 그 주소를 노드의 기본 경로에서 가져오는데, 그것은 **노드가 바깥을
+향해 답하는 주소**이지 apiserver 인증서가 들고 있는 주소가 아닙니다. 그래서 만들어진 클라이언트가
+바로 그 apiserver 에게 거부당하고, phase 는 제한시간을 재시도로 다 씁니다.
+
+----
+could not bootstrap the admin user in file admin.conf: unable to create
+  ClusterRoleBinding: client rate limiter Wait returned an error: rate:
+  Wait(n=1) would exceed context deadline
+----
+
+메시지는 rate limiter 를 말하지만 뜻은 시간이 다 됐다는 것입니다. 3노드 클러스터에서 바깥을 향해
+답하는 노드로 실측하면, 1분 0.2초를 쓰고 실패하던 것이 주소를 넘겨 주자 곧바로 ConfigMap 을
+씁니다.
+
+파일에서 읽지 않고 스크립트가 만들어 붙이는 이유는, `kubeadm-init-config.yml` 을 들고 있는 노드가
+`kubeadm init` 을 돌린 그 한 대뿐이기 때문입니다. 조인해서 들어온 컨트롤 플레인 노드에는 그런
+파일이 없고, 모자란 것은 `localAPIEndpoint` 하나뿐입니다 — 나머지는 kubeadm 이 클러스터에서
+읽습니다. `upload-k8s-cluster-config.sh` 도 같은 이유로 같은 것을 들고 있습니다.
+
 === 기록은 그 실행이 적용한 것만 적습니다
 
 `applied-vars.yml` 은 "이 노드가 무엇으로 서 있는가" 를 적는 파일입니다. 그런데 오랫동안
