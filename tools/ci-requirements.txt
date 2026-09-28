@@ -1,0 +1,18 @@
+# What the checks install, pinned for the reason everything else this repository
+# installs is pinned: a floating version turns a pull request red for a change it
+# does not contain, and the red one after that is read as noise.
+#
+# These are the versions the checks run with and not the versions a node runs
+# with. A node installs pydantic and PyYAML from the bundle, and jinja2 arrives
+# there as jinja2-cli, so raising one of these does not move what is on a node
+# and raising what the bundle carries does not move these. The tests are what
+# would notice the two drifting apart far enough to matter.
+pytest==9.1.1
+
+# What validate-hostvars.py and the preflight scripts are written against
+pydantic==2.13.5
+PyYAML==6.0.3
+
+# The templates of scripts/k8s-node/templates are rendered on a node by
+# jinja2-cli, which is jinja2 with a command line around it
+Jinja2==3.1.6

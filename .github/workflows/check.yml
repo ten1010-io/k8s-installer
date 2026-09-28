@@ -112,3 +112,33 @@ jobs:
             exit 1
           fi
           shellcheck --severity=warning --format=gcc "${scripts[@]}"
+
+  # The python of scripts/preflight decides what an inventory is allowed to say
+  # and how much of a node kubernetes may not have. Neither answer fails
+  # anything when it is wrong: an inventory nobody refused is applied, and a
+  # reservation that is too large is a node that is quietly smaller than it
+  # looks. tests/ says what those answers are supposed to be.
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      # Both versions are asked even when one has already failed, since what is
+      # being looked for is exactly whether they differ
+      fail-fast: false
+      matrix:
+        # What the nodes run: ubuntu 22.04 carries python 3.10 and ubuntu 24.04
+        # and rhel 8 carry 3.12, so a script that only works on one of them is a
+        # cluster that only installs on some of the operating systems this
+        # release supports
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install what the tests need
+        run: pip install --disable-pip-version-check -r tools/ci-requirements.txt
+
+      - name: pytest
+        run: python -m pytest tests --quiet
