@@ -100,6 +100,13 @@ CPU_MANAGER_STATE_PATH=/var/lib/kubelet/cpu_manager_state
 # looping is not running when it is asked
 KUBELET_SETTLE_SECONDS=15
 
+# How long the cluster is given to answer the certificate request of this node.
+# An approver that watches these acts within a second or two of the request
+# appearing, and kubelet has already been up for KUBELET_SETTLE_SECONDS by the
+# time this is asked, so a minute is the difference between a cluster that
+# approves and one that has nothing to
+KUBELET_SERVING_CERT_SECONDS=60
+
 # Writes the kubelet configuration of this node again and restarts kubelet to
 # read it. The reservations are calculated from the capacity of the node, so the
 # cluster wide baseline is patched with the values of this one, which is the
@@ -125,6 +132,8 @@ main() {
   else
     restart_kubelet
   fi
+
+  require_kubelet_serving
 
   return 0
 }
@@ -199,6 +208,53 @@ require_kubelet_running() {
   done
 
   return 0
+}
+
+# Refuses to leave this node with a kubelet nothing can reach.
+#
+# serverTLSBootstrap makes kubelet ask the cluster for the certificate it
+# serves, and until something approves that request kubelet has nothing to serve
+# at all: it refuses every handshake on 10250, so kubectl logs, kubectl exec and
+# metrics-server stop for this node. A running kubelet is not enough to say the
+# node came back, which is why this is asked after require_kubelet_running
+# rather than instead of it.
+#
+# Nothing in this installer approves. kube-controller-manager signs these and
+# deliberately does not approve them, so whether the request is answered is a
+# property of the cluster this runs on rather than of the playbook running here.
+#
+# The plays that call this walk the nodes one at a time. Without this the walk
+# would take every node down in turn and report it at the end, with the cluster
+# already dark and every node needing the same hand. Stopping at the first one
+# costs one node and leaves the rest as they were, and on a cluster that does
+# approve it costs nothing: the certificate is there before this is asked.
+#
+# check-kubelet-serving-cert.sh decides, rather than a second copy of the same
+# question kept here. It says nothing when the node serves one the cluster
+# issued
+require_kubelet_serving() {
+  [[ $($yq_cmd '.kubelet_server_tls_bootstrap' < "$vars_path") = "true" ]] || return 0
+
+  local check_cmd="$ki_opt_scripts_path"/k8s-node/kubelet-serving-cert/check-kubelet-serving-cert.sh
+  local ca_path
+  ca_path=$($yq_cmd '.k8s_pki_path' < "$vars_path")/ca.crt
+  local step=5
+  local waited=0
+  local report
+
+  msg "[INFO] Waiting for this node to serve a certificate the cluster issued"
+  while :; do
+    report=$("$check_cmd" --node "$(hostname)" --ca-path "$ca_path")
+    [[ -z $report ]] && return 0
+
+    [[ $waited -ge $KUBELET_SERVING_CERT_SECONDS ]] && break
+
+    sleep "$step"s
+    waited=$((waited + step))
+  done
+
+  msg "$report"
+  die "[ERROR] Nothing answered the certificate request of this node within ${waited}s, so kubelet is serving nothing and nothing reaches this node - kubectl logs, kubectl exec and metrics-server included. The nodes after this one have not been touched. Approve the request and run the playbook again, or set kubelet_server_tls_bootstrap back to false"
 }
 
 

@@ -1,0 +1,88 @@
+# Reports nodes that are not serving a certificate the cluster issued while the
+# cluster has asked for issued ones. It only reports: the request kubelet makes
+# is approved by something outside this installer, and whoever approves may not
+# be whoever is running this.
+#
+# What it is for is the gap between asking and being approved, which is not a
+# quiet one. kubelet with no issued certificate has nothing to serve and does
+# not fall back to one it signed itself: it refuses every handshake on 10250, so
+# that node answers nothing at all until the request is approved. Naming those
+# nodes is the difference between a cluster that is being switched over and one
+# that is half down with nothing saying which half.
+#
+# Runnable on its own, which is what the report tells the operator to do after
+# approving:
+#
+#   ansible-playbook -i inventory.yml playbooks/tasks/check-kubelet-serving-cert.yml
+#
+# Whether the cluster asked for these at all is decided here rather than inside
+# the script. The variable is cluster wide - validate-hostvars.py refuses it on a
+# node - so it is one answer for the whole play, and a cluster that never turned
+# this on has nothing to ask a node about. The script used to be run everywhere
+# and told which it was, which spent an ssh and a sudo per node per run to reach
+# an exit.
+#
+# The ca path is still an argument, for the reason check-vfio-pci.yml gives:
+# ki_tmp_vars_path only exists while a playbook is running, so a script that read
+# the vars file of the node would fail at the end of every run
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    # One gate for the whole play rather than one per task. The variable is
+    # cluster wide - validate-hostvars.py refuses it on a node - so it is the
+    # same answer for every host here, and on a cluster that never asked for
+    # these there is nothing for any of this to say
+    - when: kubelet_server_tls_bootstrap | bool
+      block:
+        - name: Execute check-kubelet-serving-cert.sh
+          shell: >-
+            sudo {{ ki_opt_scripts_path }}/k8s-node/kubelet-serving-cert/check-kubelet-serving-cert.sh
+            --node {{ inventory_hostname }}
+            --ca-path {{ k8s_pki_path }}/ca.crt
+          register: shell_result
+
+        # Kept as a fact because the line below has to know whether any node in
+        # the play said anything, and shell_result is about to be cleared
+        - name: "Record what node[\"{{ inventory_hostname }}\"] reported"
+          set_fact:
+            kubelet_serving_cert_report: "{{ shell_result.stdout | trim }}"
+
+        - name: Report nodes that are not serving an issued certificate
+          debug:
+            msg: "{{ shell_result.stdout_lines }}"
+          when: kubelet_serving_cert_report | length > 0
+
+        # The nodes are half of it. The apiserver does not verify what a kubelet
+        # serves unless it is told which ca to trust, so a cluster that went
+        # through all of the above and never set kubelet-certificate-authority
+        # bought nothing from the client the change is mostly for, and every
+        # line here would say it was fine.
+        #
+        # Read from the variables rather than from the apiserver of a node. What
+        # is declared is what the installer applies, and a declared change that
+        # has not been applied is already what diff-applied-vars and
+        # check-k8s-cp-file-drift are for, so asking the node here would only
+        # answer a question that has an owner
+        - name: Report that the apiserver is not told to verify what the nodes serve
+          debug:
+            msg:
+              - '[WARN] The cluster asks for issued kubelet certificates and the apiserver is not told to verify them.'
+              - '       Give k8s_apiserver_extra_args an entry named "kubelet-certificate-authority" with value "{{ k8s_pki_path }}/ca.crt" and apply it.'
+              - '       Until then these certificates buy only what other clients verify.'
+          run_once: true
+          when: k8s_apiserver_extra_args | selectattr('name', 'eq', 'kubelet-certificate-authority') | list | length == 0
+
+        # Silence is the answer when every node is where it should be, and
+        # silence is also what a check that did not run looks like. Someone who
+        # has just approved a request and come back to confirm it is owed the
+        # difference
+        - name: Report that every node is serving an issued certificate
+          debug:
+            msg: "[INFO] Every node is serving a certificate the cluster issued"
+          run_once: true
+          when: ansible_play_hosts | map('extract', hostvars, 'kubelet_serving_cert_report') | select('ne', '') | list | length == 0
+
+        - name: "Remove temporary variable[\"shell_result\"]"
+          set_fact:
+            shell_result: null

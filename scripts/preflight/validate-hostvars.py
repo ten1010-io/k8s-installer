@@ -116,6 +116,12 @@ VFIO_PCI_OWNED_KERNEL_ARGS = frozenset({"intel_iommu", "amd_iommu", "iommu", "vf
 # the list is what carries the meaning. Every other argument is taken once
 POSITIONAL_KERNEL_ARGS = frozenset({"hugepagesz", "hugepages"})
 
+# Variables that describe the cluster rather than a node, and so may only be set
+# in vars.yml. ki_var_classes covers both files, so a name in it is a name the
+# inventory may carry too, and these are the ones where that would be accepted
+# and then not mean anything
+CLUSTER_WIDE_VARS = frozenset({"kubelet_server_tls_bootstrap"})
+
 
 def main():
     hostvars = yaml.safe_load(sys.stdin)
@@ -123,6 +129,7 @@ def main():
 
     check_type(hostvars_errors, hostvars)
     validate_var_classes(hostvars_errors, hostvars)
+    validate_cluster_wide_vars(hostvars_errors, hostvars)
     validate_broken_node_group(hostvars_errors, hostvars)
     validate_control_node(hostvars_errors, hostvars)
     validate_ki_cp_ha_mode_vip(hostvars_errors, hostvars)
@@ -203,6 +210,39 @@ def validate_var_classes(hostvars_errors: List[HostvarsError], hostvars):
             continue
 
         hostvars_errors.append(build_unclassified_error(var_name, value, "inventory.yml"))
+
+
+def validate_cluster_wide_vars(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects a cluster wide variable that the inventory sets on a node.
+
+    Some variables describe the cluster and not a node, and the difference is not
+    visible where they are read: hostvars carries one value per node whether the
+    value came from vars.yml or from that node's entry. So a value set on a node
+    is taken, classified and applied, and then means whatever the code reading it
+    happens to mean - for kubelet_server_tls_bootstrap, the cluster wide baseline
+    a node patches is rendered from one node's variables, so the value of every
+    other node is only as good as the merge that follows it, and the check that
+    reports on this is told each node's own value and would leave out the ones
+    that said no.
+
+    Refused here rather than worked around there. The documentation already says
+    where these belong and this is that sentence being enforced
+    """
+    lo_hostvars = hostvars["localhost"]
+    ansible_path = lo_hostvars.get("ki_opt_ansible_path")
+    if not ansible_path:
+        return
+
+    inventory_path = Path(ansible_path) / "inventory.yml"
+    for var_name, value in sorted(read_inventory_host_vars(inventory_path).items()):
+        if var_name not in CLUSTER_WIDE_VARS:
+            continue
+
+        hostvars_errors.append(HostvarsError(
+            "localhost", (var_name,), str(value),
+            f"Variable[\"{var_name}\"] of inventory.yml describes the cluster rather than"
+            f" a node, so it is set once in vars.yml. Set per node it is taken and"
+            f" applied and still does not mean what it says"))
 
 
 def build_removed_error(var_name: str, value: Any, file_name: str, reason: str) -> HostvarsError:
@@ -1117,6 +1157,11 @@ class VarsModel(BaseModel):
     kubelet_auto_nodefs_available_max: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
     kubelet_auto_ephemeral_storage_min: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
     kubelet_auto_ephemeral_storage_max: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
+
+    # Cluster wide rather than per node. Which file it may appear in is not
+    # something a model over one node's variables can see, so that half is
+    # validate_cluster_wide_vars reading inventory.yml as a file
+    kubelet_server_tls_bootstrap: bool
 
     kubelet_ki_cp_extra_cpu: Annotated[str, StringConstraints(pattern=CPU_QUANTITY_PATTERN)]
     kubelet_ki_cp_extra_memory: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]

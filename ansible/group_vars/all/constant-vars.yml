@@ -245,6 +245,7 @@ kubelet_topology_manager_policy: "none"
 kubelet_topology_manager_scope: "container"
 kubelet_reserved_system_cpus: null
 kubelet_max_pods: null
+kubelet_server_tls_bootstrap: false
 
 k8s_ca_certificate_validity_period: "87600h" # 87600h = 10 year
 k8s_cp: false
@@ -395,6 +396,7 @@ ki_var_classes:
     - kubelet_kube_reserved_memory
     - kubelet_kube_reserved_pid
     - kubelet_max_pods
+    - kubelet_server_tls_bootstrap
     - kubelet_system_reserved_cpu
     - kubelet_system_reserved_ephemeral_storage
     - kubelet_system_reserved_memory

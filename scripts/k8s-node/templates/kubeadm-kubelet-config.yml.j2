@@ -29,6 +29,13 @@ evictionHard:
   nodefs.available: "{{ kubelet_reservations['eviction_hard']['nodefs.available'] }}"
   imagefs.available: "{{ kubelet_reservations['eviction_hard']['imagefs.available'] }}"
   nodefs.inodesFree: "{{ kubelet_reservations['eviction_hard']['nodefs.inodesFree'] }}"
+{#- Above the line below on purpose: this one is cluster wide, so the baseline
+    carries it and every node renders the same value. Written whether it is on or
+    off, unlike the keys under kubelet_baseline. A node patches the baseline and
+    a merge can not remove a key, only overwrite one, so a key left out when the
+    value is false could never turn off what the baseline turned on - the node
+    would go on asking and the check, told that node is off, would not look #}
+serverTLSBootstrap: {{ kubelet_server_tls_bootstrap | lower }}
 {#- Everything below is set per node, and the cluster wide baseline is rendered
     from the variables of whichever node happens to upload it - so a baseline
     carrying any of it hands what belongs to that one node to every other node,

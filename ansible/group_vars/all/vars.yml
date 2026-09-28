@@ -320,6 +320,52 @@ kubelet_topology_manager_scope: "container"
 # installer calculates is overwritten the same way and is left where it is
 kubelet_reserved_system_cpus: null
 
+# Whether kubelet asks the cluster for the certificate it serves on, rather than
+# signing one itself.
+#
+# Left off, every kubelet serves a certificate it made up, so everything that
+# connects to one either skips verification or fails. That is what
+# --kubelet-insecure-tls is for in metrics-server, and it is the same hole for
+# "kubectl top", "kubectl logs" and anything else that reaches a node.
+#
+# Turned on, kubelet requests one through a certificate signing request at
+# startup and at every rotation.
+#
+# *** nothing approves those requests, and the node is down until something does ***
+#
+# kube-controller-manager signs kubelet-serving requests and deliberately does
+# not approve them: a node asks for the names and addresses it will be reached
+# at, and believing that without checking is how one node gets a certificate for
+# another.
+#
+# While it waits kubelet does not fall back to one it signed itself. It has
+# nothing to serve and refuses every handshake on 10250 - "no serving
+# certificate available for the kubelet" - so kubectl logs, kubectl exec,
+# kubectl top and metrics-server all stop for that node, and
+# --kubelet-insecure-tls buys nothing because there is no certificate to skip
+# verifying. So applying this stops at the first node the cluster does not
+# answer for, rather than walking the rest of them down behind it: one node is
+# waiting, the others are untouched, and the run says so.
+#
+# So this is turned on with the approval already arranged, not ahead of it -
+# an approver that checks the request against what the cluster knows about the
+# node, or a person standing by with "kubectl certificate approve". The requests
+# come back at every rotation, so approving by hand is a standing chore rather
+# than a step. check-kubelet-serving-cert.yml reports the nodes that are not
+# serving an issued certificate.
+#
+# For the apiserver to gain anything from it, it has to be told which ca to
+# trust: k8s_apiserver_extra_args with kubelet-certificate-authority pointing at
+# /etc/kubernetes/pki/ca.crt. Without that the apiserver goes on not verifying,
+# and what this buys is only what other clients verify, which
+# check-kubelet-serving-cert.yml says when the argument is not there.
+#
+# Cluster wide on purpose, in this file rather than per node, and the preflight
+# refuses it on a node rather than leaving that to be read here. A cluster where
+# some kubelets are verifiable and others are not is one where every client has
+# to know which is which, and no client is written that way
+kubelet_server_tls_bootstrap: false
+
 # The most pods kubelet accepts on a node. Left null, kubernetes decides (110).
 # A node running many small pods reaches it; a node whose pods are virtual
 # machines with large cpu and memory never gets near it

@@ -25,8 +25,12 @@ TEMPLATES = K8S_NODE / "templates"
 TEMPLATE = "kubeadm-kubelet-config.yml.j2"
 UPLOAD_SCRIPT = K8S_NODE / "upload-k8s-kubelet-config.sh"
 
-# What the template writes for every node, whatever that node asked for
-ALWAYS_PRESENT = {"apiVersion", "kind", "systemReserved", "kubeReserved", "evictionHard"}
+# What the template writes for every node, whatever that node asked for.
+# serverTLSBootstrap is here rather than behind the gate on purpose: it is
+# decided for the cluster, so the baseline carries it and a node that wanted it
+# off could not take it back out of a merge
+ALWAYS_PRESENT = {"apiVersion", "kind", "systemReserved", "kubeReserved", "evictionHard",
+                  "serverTLSBootstrap"}
 
 # The -D the upload script hands jinja2 to render the baseline, and the variable
 # the template asks about before it writes anything that belongs to one node
@@ -55,14 +59,17 @@ def baseline_flag_gated_on():
 def policy_variables():
     """The kubelet variables the template decides a per node key on.
 
-    kubelet_reservations is written for every node and the gate is not something
-    a node asks for, so neither of them is one
+    Which ones those are is read off the gate rather than listed here: a
+    variable the template names only below it is one the gate covers, and one
+    named above it - the reservations, the gate itself, a key decided for the
+    cluster - is written for every node and is not a per node key
     """
     source = (TEMPLATES / TEMPLATE).read_text(encoding="utf-8")
     names = meta.find_undeclared_variables(Environment().parse(source))
+    gate = BASELINE_FLAG_GATED.search(source).start()
 
-    return {name for name in names if name.startswith("kubelet_")} - {
-        "kubelet_reservations", baseline_flag_gated_on()}
+    return {name for name in names
+            if name.startswith("kubelet_") and source.find(name) > gate}
 
 
 def render(hostvars, **overrides):
