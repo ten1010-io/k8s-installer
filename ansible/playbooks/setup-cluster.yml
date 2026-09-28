@@ -73,3 +73,5 @@
 - import_playbook: tasks/check-vfio-pci.yml
 
 - import_playbook: tasks/check-nvidia-cdi.yml
+
+- import_playbook: tasks/check-k8s-cp-file-drift.yml
