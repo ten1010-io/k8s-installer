@@ -151,6 +151,44 @@ require_bundle_archive() {
     die "[ERROR] File[\"$src_bundle_archive_path\"] not exists. execute \"download-bundle.sh\", or place the bundle of this release there"
   [[ ! -f $src_bundle_archive_path ]] && die "[ERROR] File[\"$src_bundle_archive_path\"] is not a regular file"
 
+  verify_bundle_archive
+
+  return 0
+}
+
+# What the release says its bundle is. The archive is 1.9G and an air gapped
+# control node carries it across on media, which is where a transfer ends short
+# or a file is replaced - and a bundle that unpacks is not the same thing as the
+# bundle that was published.
+#
+# A snapshot has nothing to check against: it keeps its name while its content
+# changes, which is the one thing release.yml says a release version must never
+# do. A release that declares no checksum is refused rather than passed through,
+# since a check that is sometimes skipped is one nobody can rely on
+verify_bundle_archive() {
+  # A grep that matches nothing ends this script without a word, so the line is
+  # asked for by its shape before its value is read. A key that is not there, or
+  # a value left unquoted, is a release.yml this can not read rather than a
+  # release that declares nothing
+  grep -q '^bundle_sha256: "' < "$SRC_RELEASE_META_PATH" ||
+    die "[ERROR] File[\"$SRC_RELEASE_META_PATH\"] has no bundle_sha256. it is written as bundle_sha256: \"<sha256>\", and only a snapshot leaves it empty"
+
+  local expected
+  expected=$(grep -oP '^bundle_sha256: "\K[^"]*' < "$SRC_RELEASE_META_PATH")
+  if [[ -z $expected ]]; then
+    [[ $(is_snapshot "$version") = "true" ]] ||
+      die "[ERROR] Release[\"$version\"] declares no bundle_sha256. a release bundle is published once, so fill it in release.yml"
+
+    return 0
+  fi
+
+  local actual
+  actual=$(sha256sum "$src_bundle_archive_path" | cut -d' ' -f1)
+  [[ $actual != "$expected" ]] &&
+    die "[ERROR] Bundle of release[\"$version\"] has sha256[\"$actual\"] and release.yml declares sha256[\"$expected\"]"
+
+  msg "[INFO] Bundle matches the sha256 release.yml declares"
+
   return 0
 }
 

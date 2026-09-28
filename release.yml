@@ -150,6 +150,27 @@ binaries:
   yq: "4.53.6"
   crane: "0.22.1"
 
+# The sha256 of the bundle this release is published with, which setup.sh,
+# upgrade.sh and download-bundle.sh check the archive against before it is
+# unpacked.
+#
+# The whole release scheme rests on one sentence of this file - two nodes
+# reporting the same release hold the same thing - and until now nothing but the
+# permissions on the bucket stood behind it. The archive is 1.9G and the air
+# gapped path carries it across on media by hand, which is where a transfer ends
+# short or a file is replaced, and a bundle that unpacks is not the same thing as
+# the bundle that was published.
+#
+# Empty for a snapshot and required for a release. A snapshot keeps its name
+# while its content changes, so there is no one value to write down; a release
+# bundle is never rebuilt, so there is exactly one and cutting the release is
+# when it is known. The scripts refuse a release whose bundle they can not check
+# rather than passing it through, since a check that is sometimes skipped is one
+# nobody can rely on.
+#
+#   sha256sum bundle-<version>.tgz
+bundle_sha256: ""
+
 # Releases that upgrade.sh and upgrade-k8s-installer.yml accept as a starting
 # point. Empty means this release can only be installed from scratch, which is the
 # case for the first release that lays out the installer under /opt/k8s-installer.
