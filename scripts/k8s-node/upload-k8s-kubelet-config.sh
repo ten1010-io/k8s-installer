@@ -108,28 +108,19 @@ main() {
 # this, so anything in it that is set per node would be handed to every other
 # node: a node writes its own patch over this and a merge can not remove a key,
 # only overwrite one. The kubelet policy variables are exactly that kind - a gpu
-# node is static while the node beside it is none - so they are rendered at
-# their defaults here and every policy key the template writes is left out. What
-# a node runs under comes from the patch that node renders for itself.
-#
-# node_cgroup_version is forced to v2 for the same reason and with more at stake:
-# it is not declared but read off the node running this, and the key it writes
-# takes the protection kubelet gives a cgroup v2 node away. One rhel 8 node in
-# the cluster would otherwise let every ubuntu node beside it come up on cgroup
-# v1 unnoticed, and nothing could ever put that back
+# node is static while the node beside it is none - so kubelet_baseline tells
+# the template to write no key that belongs to one node. What a node runs
+# under comes from the patch that node renders for itself, and so does the
+# cgroup hierarchy it is allowed to run on: node_cgroup_version is read off
+# whichever node happens to run this, and a baseline carrying what it writes
+# would let every node beside that one come up on cgroup v1 with nothing able
+# to take it back
 create_kubelet_config_file() {
-  local tmp_vars_path
-  tmp_vars_path="$ki_tmp_root_path"/kubeadm-kubelet-baseline-vars.yml
-
-  cp "$vars_path" "$tmp_vars_path"
-  $yq_cmd -i '.kubelet_cpu_manager_policy = "none" | .kubelet_cpu_manager_full_pcpus_only = false | .kubelet_topology_manager_policy = "none" | .kubelet_topology_manager_scope = "container" | .kubelet_reserved_system_cpus = null | .kubelet_max_pods = null | .node_cgroup_version = "v2"' "$tmp_vars_path"
-
-  $jinja2_cmd --format yaml \
+  $jinja2_cmd -D kubelet_baseline=true \
+              --format yaml \
               -o "$ki_etc_kubeadm_path""/kubeadm-kubelet-config.yml" \
               "$SCRIPT_DIR_PATH"/templates/kubeadm-kubelet-config.yml.j2 \
-              "$tmp_vars_path"
-
-  rm -f "$tmp_vars_path"
+              "$vars_path"
 
   return 0
 }

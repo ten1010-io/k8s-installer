@@ -29,6 +29,14 @@ evictionHard:
   nodefs.available: "{{ kubelet_reservations['eviction_hard']['nodefs.available'] }}"
   imagefs.available: "{{ kubelet_reservations['eviction_hard']['imagefs.available'] }}"
   nodefs.inodesFree: "{{ kubelet_reservations['eviction_hard']['nodefs.inodesFree'] }}"
+{#- Everything below is set per node, and the cluster wide baseline is rendered
+    from the variables of whichever node happens to upload it - so a baseline
+    carrying any of it hands what belongs to that one node to every other node,
+    and a patch is a merge, which can only overwrite a key and never take one
+    away. The caller that renders the baseline says so with kubelet_baseline; a
+    node rendering its own patch leaves it unset. This is the only list of which
+    keys those are, so there is nothing for a second copy of it to drift from #}
+{%- if not kubelet_baseline | default(false) %}
 {%- if kubelet_reserved_system_cpus %}
 reservedSystemCPUs: "{{ kubelet_reserved_system_cpus }}"
 {%- endif %}
@@ -52,12 +60,11 @@ topologyManagerScope: {{ kubelet_topology_manager_scope }}
 # not to run on one. rhel 8 boots cgroup v1 and carries a 4.18 kernel, while
 # kubeadm itself says the kernel it recommends for cgroup v2 is 5.10 or newer, so
 # a node of the rhel 8 this release supports can not be moved to the other
-# hierarchy and is let through here instead
+# hierarchy and is let through here instead.
 #
-# Per node, and never in the baseline. A node on cgroup v2 keeps the default and
-# with it the protection, and a merge can not remove a key, so a baseline
-# carrying this would open cgroup v1 on every node of the cluster for good.
-# init-k8s-cluster.sh and upload-k8s-kubelet-config.sh render the baseline with
-# this variable forced to v2 for that reason
+# Not a policy, but it sits under the same flag for the same reason and with
+# more at stake: it takes away the protection kubelet gives a cgroup v2 node,
+# and a node that inherited it from the baseline could never give it back
 failCgroupV1: false
+{%- endif %}
 {%- endif %}
