@@ -76,6 +76,13 @@ parse_params "$@"
 # this directory. See vfio-pci-common.sh
 source "$SCRIPT_DIR_PATH"/vfio-pci-common.sh
 
+# Where the kernel publishes which cpus belong to which numa node. Not a pci
+# path, and read here because the two answers are read together: the numa node a
+# device sits on is only useful beside the cpus of that node. Overridable for the
+# same reason PCI_DEVICES_PATH is, so that this can be pointed at a directory of
+# fixtures and checked without a machine that has two sockets
+NUMA_NODES_PATH=${NUMA_NODES_PATH:-/sys/devices/system/node}
+
 # The pci class codes worth naming. Unlike the drivers of a card, which are a
 # fact about the machine and are asked of it, these are a fixed enumeration of
 # the pci specification, so writing them down is reading a constant rather than
@@ -102,10 +109,17 @@ declare -A CLASS_NAMES=(
 # to be named together, while the onboard audio in its own group is the same
 # driver and must be left alone.
 #
+# Each device also carries the numa node it sits on, and the cpus of every numa
+# node are printed above the list. Those two decide kubelet_reserved_system_cpus
+# and whether kubelet_topology_manager_policy single-numa-node can be satisfied at
+# all: a guest given cpus on the other side of the machine reaches its own card
+# across the interconnect, and nothing reports that as anything but slow.
+#
 # Read from sysfs rather than from lspci: lspci comes from pciutils and the
 # bundle does not carry it. The cost is that the vendor and device names are not
 # available, since those live in the pci.ids file that same package ships. The
-# driver a device is on says more here anyway
+# driver a device is on says more here anyway. The cpu lists come from sysfs for
+# the same reason lscpu is not called
 main() {
   local state
   state=$(iommu_state)
@@ -117,9 +131,53 @@ main() {
     echo "  booted with its iommu on, so the ids below are complete and the grouping is not"
   fi
 
+  numa_lines
+
   device_lines | sort | cut -f2-
 
   exit 0
+}
+
+# The cpus of each numa node, which is the half of the answer the device list can
+# not carry. Sorted by number and not by name: the glob puts node10 before node2,
+# and a machine with that many nodes is exactly the machine this is for.
+#
+# A machine with no numa sysfs at all is one the kernel sees as uniform, and
+# saying so is the answer rather than the absence of one. It says it under the
+# same key as the rest, so that one grep finds the numa lines of any machine
+numa_lines() {
+  local path
+  local id
+
+  if ! compgen -G "$NUMA_NODES_PATH/node*/cpulist" > /dev/null; then
+    echo '[INFO] numa["-"] cpus["-"] no numa sysfs on this kernel, so every cpu is one pool'
+    return 0
+  fi
+
+  for path in "$NUMA_NODES_PATH"/node*; do
+    [[ -f $path/cpulist ]] || continue
+
+    id=${path##*/node}
+    printf '%s\t[INFO] numa["%s"] cpus["%s"]\n' "$id" "$id" "$(cpu_list_of_numa_path "$path")"
+  done | sort -n | cut -f2-
+
+  return 0
+}
+
+# The cpus of one numa node, or - for a node that has none. An empty cpulist is a
+# memory only node - hbm in flat mode, a cxl expander, or a node whose cpus are
+# all offline - and an empty string there reads like a read that failed rather
+# than like a node with nothing to pin to
+cpu_list_of_numa_path() {
+  local path=$1
+  local value
+
+  value=$(< "$path"/cpulist)
+  [[ -n $value ]] || { echo "-"; return 0; }
+
+  echo "$value"
+
+  return 0
 }
 
 # One line per device, each prefixed with a sort key so that the devices of a
@@ -141,14 +199,32 @@ device_lines() {
     id="$(hex4 "$path"/vendor):$(hex4 "$path"/device)"
     group=$(iommu_group_of_sysfs_path "$path")
 
-    printf '%s\t%-12s %-14s %-12s %-24s %s\n' \
+    printf '%s\t%-12s %-14s %-12s %-12s %-24s %s\n' \
       "${group:-zzz}$slot" \
       "group[\"${group:--}\"]" \
       "$slot" \
       "$id" \
+      "numa[\"$(numa_node_of_sysfs_path "$path")\"]" \
       "$(class_name "$path")" \
       "driver[\"$(driver_of_sysfs_path "$path")\"]"
   done
+
+  return 0
+}
+
+# The numa node a device is attached to. The kernel writes -1 when it has no
+# answer - a machine with one node, or firmware that did not say - and that is
+# reported as unknown rather than as node -1, which would read like a place
+numa_node_of_sysfs_path() {
+  local path=$1
+  local value
+
+  [[ -f $path/numa_node ]] || { echo "-"; return 0; }
+
+  value=$(< "$path"/numa_node)
+  [[ $value = "-1" ]] && { echo "-"; return 0; }
+
+  echo "$value"
 
   return 0
 }

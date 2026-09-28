@@ -9,6 +9,14 @@
 # and lspci is not on the nodes anyway - it comes from pciutils and the bundle
 # does not carry it.
 #
+# Each device also carries the numa node it sits on, and the cpus of every numa
+# node come out above the list. Choosing what to pass through and choosing the
+# cpus of the guest that receives it are one decision: a guest given cpus on the
+# other side of the machine reaches its own card across the interconnect, and
+# nothing reports that as anything but slow. Those two lines are what
+# kubelet_reserved_system_cpus and kubelet_topology_manager_policy are picked
+# from.
+#
 # Narrow it to one node with the --limit of ansible:
 #
 #   ansible-playbook -i inventory.yml playbooks/list-pci-devices.yml --limit node4

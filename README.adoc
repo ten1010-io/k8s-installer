@@ -244,16 +244,33 @@ k8s_node:
 개 있으면 전부 묶입니다. GPU 를 넘길 때는 같은 IOMMU 그룹에 들어 있는 오디오 기능까지 함께
 적어야 합니다 — 그룹은 통째로 넘어가거나 아예 안 넘어갑니다.
 
-ID 와 IOMMU 그룹은 노드마다 들어가 보지 않고 아래로 확인합니다. 스크립트를 올리는 것은
-`setup-k8s-installer.yml` 이므로, 아직 클러스터에 넣기 전인 노드에도 그 다음부터는 돌아갑니다.
+ID 와 IOMMU 그룹, 그리고 장치가 붙은 NUMA 노드는 노드마다 들어가 보지 않고 아래로 확인합니다.
+스크립트를 올리는 것은 `setup-k8s-installer.yml` 이므로, 아직 클러스터에 넣기 전인 노드에도 그
+다음부터는 돌아갑니다.
 
 [source,shell]
 ----
 ansible-playbook -i inventory.yml playbooks/list-pci-devices.yml --limit node3
 ----
 
+출력은 NUMA 노드별 CPU 목록 뒤에 장치 한 줄씩이고, 각 줄은 IOMMU 그룹·슬롯·ID·**NUMA 노드**·
+분류·드라이버입니다.
+
+[source]
+----
+[INFO] node["node3"] iommu: on
+[INFO] numa["0"] cpus["0-31,64-95"]
+[INFO] numa["1"] cpus["32-63,96-127"]
+group["61"]  0000:61:00.0   10de:2230    numa["1"]    3D controller            driver["vfio-pci"]
+----
+
 IOMMU 그룹은 그 노드가 IOMMU 를 켜고 부팅한 뒤에야 보입니다. 처음 조회에서는 ID 만 나오므로,
 지정하고 재부팅한 다음 다시 조회하면 그룹과 `vfio-pci` 로 바뀐 드라이버가 함께 보입니다.
+
+NUMA 는 <<kubelet 이 CPU 를 나눠 주는 방식>> 에서 씁니다. `numa["-"]` 는 커널이 답을 주지 않은
+것으로, NUMA 가 하나인 기계이거나 펌웨어가 말해 주지 않은 경우입니다. CPU 목록 자리의 `cpus["-"]`
+는 CPU 가 붙어 있지 않은 노드(메모리 전용)이고, NUMA sysfs 자체가 없는 커널은 줄 하나로 그렇게
+말합니다.
 
 지정하면 그 노드에 다음이 설정됩니다.
 
@@ -328,9 +345,11 @@ k8s_node:
 |정렬을 컨테이너마다 볼지 파드 전체로 볼지. 가상머신은 `pod` 입니다
 
 |`kubelet_reserved_system_cpus`
-|시스템과 kubelet 이 쓸 CPU 를 **개수가 아니라 번호로** 지정. kubelet 이 개수 쪽을 이 집합의
-크기로 **덮어쓰므로**, `kubelet_system_reserved_cpu` 를 같이 적으면 둘 중 하나가 아무 일도 하지
-않게 되어 플레이북이 거부합니다
+|시스템과 kubelet 이 쓸 CPU 를 **개수가 아니라 번호로** 지정. 어느 번호가 어느 NUMA 노드에
+속하는지는 <<장치를 게스트에게 통과시키기 (vfio-pci)>> 의 `list-pci-devices.yml` 이 장치의 NUMA
+노드와 함께 보여 줍니다. kubelet 이 개수 쪽을 이 집합의 크기로 **덮어쓰므로**,
+`kubelet_system_reserved_cpu` 를 같이 적으면 둘 중 하나가 아무 일도 하지 않게 되어 플레이북이
+거부합니다
 
 |`kubelet_max_pods`
 |노드가 받는 최대 파드 수. 미지정이면 쿠버네티스 기본(110)
