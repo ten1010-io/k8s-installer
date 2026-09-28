@@ -116,6 +116,7 @@ main() {
   setup_cmd_vars
   require_directory_exists "$ki_opt_root_path"
   validate_ki_opt_directory
+  require_keep_file_names_something
 
   ki_var_root_path=$($yq_cmd '.ki_var_root_path' < "$vars_path")
   ki_etc_services_path=$($yq_cmd '.ki_etc_services_path' < "$vars_path")
@@ -161,6 +162,21 @@ main() {
   return 0
 }
 
+# A keep file naming nothing says every reference in the registry is one to
+# delete, which is a whole registry gone in a single --delete. The file that
+# says that is more likely the wrong file, or one whose keys got renamed, than
+# an operator who means it, and the archive it came from says so too:
+# build-user-registry-images.sh refuses to build one that declares nothing.
+#
+# Refused here rather than in get_kept_refs, which is reached through a command
+# substitution where a die only ends the subshell
+require_keep_file_names_something() {
+  [[ $($yq_cmd '((.images // []) + (.charts // [])) | length' < "$keep_path") -eq 0 ]] &&
+    die "[ERROR] File[\"$keep_path\"] declares nothing under key[\"images\"] or key[\"charts\"]. everything the registry holds would be a candidate for deletion"
+
+  return 0
+}
+
 set_readonly() {
   local readonly_enabled=$1
 
@@ -197,20 +213,23 @@ get_refs_to_delete() {
   return 0
 }
 
+# Both keys of the keep file. A chart the file names is kept for the same reason
+# an image it names is, and reading only the images would make the first prune of
+# a cluster carrying charts delete every one of them
 get_kept_refs() {
-  local images
+  local refs
   local mappings
-  images=$($yq_cmd -o json '.images' < "$keep_path")
+  refs=$($yq_cmd -o json '(.images // []) + (.charts // [])' < "$keep_path")
   mappings=$($yq_cmd -o json '.mappings // []' < "$keep_path")
 
   local full_name
   local repo_and_tag
-  for full_name in $($yq_cmd --null-input "$images | join(\" \")"); do
+  for full_name in $($yq_cmd --null-input "$refs | join(\" \")"); do
     repo_and_tag=$(get_repo_and_tag_from_mappings "$full_name" "$mappings")
     [[ -z $repo_and_tag ]] &&
       repo_and_tag=$(parse_repo_and_tag "$full_name")
     [[ -z $repo_and_tag ]] &&
-      die "[ERROR] Invalid image name[\"$full_name\"] in file[\"$keep_path\"]"
+      die "[ERROR] Invalid name[\"$full_name\"] in file[\"$keep_path\"]"
 
     echo "$repo_and_tag"
   done

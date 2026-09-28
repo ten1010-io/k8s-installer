@@ -701,7 +701,8 @@ ansible-playbook -i inventory.yml playbooks/tasks/check-k8s-cp-file-drift.yml
 클러스터에는 레지스트리가 둘 있습니다. kubeadm 이 쓰는 것(`ki-cp-k8s-registry`, 5000)은 릴리스가
 채우고, 워크로드가 쓰는 것(`ki-cp-user-registry`, 5001)은 여기서 채웁니다.
 
-담을 이미지를 `ki-cp-user-registry-images.yml` 에 선언합니다.
+담을 것을 `ki-cp-user-registry-images.yml` 에 선언합니다. 이미지는 `images`, helm 차트는 `charts`
+입니다.
 `ki-cp-user-registry-images.yml.example` 을
 복사해서 쓰면 됩니다. 그 다음 **이미지를 받을 수 있는 곳에서** 아카이브를 만듭니다.
 
@@ -754,6 +755,68 @@ ansible-playbook -i inventory.yml playbooks/check-user-registry.yml
 ----
 image: ki-cp.ki.local:5001/library/nginx:1.25
 ----
+
+==== helm 차트
+
+레지스트리에 있는 차트는 이미지가 아니라 oci 아티팩트입니다. 아무것도 그것을 실행하지 않고 helm 이
+당겨 가며, 고를 플랫폼이 없습니다 — 키가 둘인 이유가 그것입니다. 나르는 경로와 레지스트리는 같습니다.
+
+[source,yaml]
+----
+# ki-cp-user-registry-images.yml
+charts:
+  - ghcr.io/myorg/charts/myapp:1.4.0
+----
+
+이미지와 같습니다 — **떨어지는 것은 레지스트리 이름뿐이고 나머지 경로는 그대로 따라옵니다.** 위의
+차트는 `ki-cp.ki.local:5001/myorg/charts/myapp` 로 섭니다. 다른 경로에 세우려면 `mappings` 를
+쓰는데, 이미지가 쓰는 그 표를 차트도 함께 봅니다.
+
+[source,yaml]
+----
+# ki-cp-user-registry-images.yml
+mappings:
+  - from: ghcr.io/myorg/charts/myapp:1.4.0
+    to: charts/myapp:1.4.0
+----
+
+레지스트리는 **ki CA 가 발급한 인증서로 https 를 서비스합니다.** 노드에는 그 CA 가 이미 신뢰
+목록에 들어 있지만, 노드 밖이나 파드 안에서 당길 때는 따로 줘야 합니다. CA 는 모든 노드의
+`/etc/k8s-installer/pki/ki-ca.crt` 에 있습니다.
+
+[source,shell]
+----
+helm pull oci://ki-cp.ki.local:5001/myorg/charts/myapp --version 1.4.0 \
+  --ca-file /etc/k8s-installer/pki/ki-ca.crt
+----
+
+flux 라면 `OCIRepository` 나 `type: oci` 인 `HelmRepository` 가 같은 주소를 봅니다.
+source-controller 는 파드 안에서 돌아 노드의 신뢰 목록을 쓰지 않으므로, ki CA 를 담은 시크릿을
+`certSecretRef` 로 가리켜 줍니다. `insecure: true` 는 평문 http 로 붙으라는 뜻이라 여기서는
+맞지 않습니다 — 그렇게 두면 TLS 로 듣고 있는 레지스트리에 평문으로 말을 걸다 실패합니다.
+
+[source,shell]
+----
+kubectl -n flux-system create secret generic ki-ca \
+  --from-file=ca.crt=/etc/k8s-installer/pki/ki-ca.crt
+----
+
+[source,yaml]
+----
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: myorg-charts
+  namespace: flux-system
+spec:
+  type: oci
+  url: oci://ki-cp.ki.local:5001/myorg/charts
+  certSecretRef:
+    name: ki-ca
+----
+
+`check-user-registry`·`sync-user-registry`·`prune-user-registry` 는 차트를 이미지와 가려 다루지
+않습니다. 카탈로그에 함께 서고, 목록 파일에 없으면 정리 대상인 것도 같습니다.
 
 ==== 사용자 레지스트리 정리
 

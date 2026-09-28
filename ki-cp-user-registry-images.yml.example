@@ -1,5 +1,6 @@
-# The images the ki-cp-user-registry serves, which are the ones the workloads of
-# this cluster pull. Copy this file to ki-cp-user-registry-images.yml and declare them
+# What the ki-cp-user-registry serves, which is what the workloads of this
+# cluster pull: images under the images key and helm charts under the charts
+# key. Copy this file to ki-cp-user-registry-images.yml and declare them
 # there, the way ki-cp-k8s-registry-images.yml declares the ones kubeadm asks
 # for.
 #
@@ -19,8 +20,25 @@ images:
   - docker.io/library/nginx:1.25
   - quay.io/prometheus/node-exporter:v1.7.0
 
-# An image whose repository under the registry has to differ from the one it is
-# pulled from. Only needed when the path it lands on is not the one wanted
+# Helm charts, declared apart from the images and carried the same way. A chart
+# in a registry is an oci artifact rather than an image: nothing runs it, helm
+# pulls it, and it has no platform to choose between. That last part is the
+# reason for the second key - an image is pulled for one platform and a chart is
+# pulled whole, and a list that mixed the two would have to guess which it was
+# holding.
+#
+# Served under the same registry and read the same way, the registry part
+# dropped and the rest of the path kept, so the chart below is reached at
+# oci://ki-cp.<zone>:<user registry port>/myorg/charts/myapp
+#charts:
+#  - ghcr.io/myorg/charts/myapp:1.4.0
+
+# A reference whose repository under the registry has to differ from the one it
+# is pulled from. Only needed when the path it lands on is not the one wanted.
+# One table for both keys: a chart is looked up in it the same way an image is,
+# and it is the only way to move a chart off the path its source name gives it
 #mappings:
 #  - from: ghcr.io/myorg/myapp:v2.1.0
 #    to: myapp:v2.1.0
+#  - from: ghcr.io/myorg/charts/myapp:1.4.0
+#    to: charts/myapp:1.4.0

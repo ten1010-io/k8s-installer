@@ -93,7 +93,7 @@ main() {
   # shellcheck disable=SC2064
   trap "rm -rf '$staging_path'" EXIT
 
-  pull_images "$staging_path/$REGISTRY_NAME-images"
+  pull_references "$staging_path/$REGISTRY_NAME-images"
   create_archive "$staging_path"
 
   msg ""
@@ -120,38 +120,70 @@ require_images_yml() {
   return 0
 }
 
-# One oci layout per image, the same shape the bundle carries its registry
-# images in, because crane refuses to push a layout holding more than one entry
-# to a single reference. The path under the output directory is the reference
-# the image is pushed to, so nothing else has to carry a mapping from a file to
-# a reference
-pull_images() {
+# The images and the charts of the keep file, into one tree. Both end up in the
+# same registry and are carried in the same archive, so the only thing that tells
+# them apart here is how they are pulled
+pull_references() {
   local output_path=$1
 
   local images
+  local charts
   local mappings
-  images=$($YQ_CMD -o json '.images' < "$IMAGES_YML_PATH")
+  images=$($YQ_CMD -o json '.images // []' < "$IMAGES_YML_PATH")
+  charts=$($YQ_CMD -o json '.charts // []' < "$IMAGES_YML_PATH")
   mappings=$($YQ_CMD -o json '.mappings // []' < "$IMAGES_YML_PATH")
 
-  [[ $($YQ_CMD --null-input "$images | length") -eq 0 ]] &&
-    die "[ERROR] File[\"$IMAGES_YML_PATH\"] declares no image under key[\"images\"]"
+  [[ $($YQ_CMD --null-input "$images | length") -eq 0 &&
+     $($YQ_CMD --null-input "$charts | length") -eq 0 ]] &&
+    die "[ERROR] File[\"$IMAGES_YML_PATH\"] declares nothing under key[\"images\"] or key[\"charts\"]"
 
   mkdir -p "$output_path"
 
-  msg "[INFO] Pulling the images of the registry[\"$REGISTRY_NAME\"] for platform[\"$platform\"]"
+  pull_list "$output_path" "$images" "$mappings" image
+  pull_list "$output_path" "$charts" "$mappings" chart
+
+  return 0
+}
+
+# One oci layout per reference, the same shape the bundle carries its registry
+# images in, because crane refuses to push a layout holding more than one entry
+# to a single reference. The path under the output directory is the reference it
+# is pushed to, so nothing else has to carry a mapping from a file to a reference.
+#
+# An image is pulled for one platform and a chart is pulled whole. --platform
+# picks a child of an index, and the manifest of a chart is not one: asking for a
+# platform there is asking a question the artifact does not answer. The oci format
+# is what carries either - a docker tarball holds an image configuration and a
+# chart has none, so --format oci is not a preference here but the reason this
+# works for both
+pull_list() {
+  local output_path=$1
+  local refs=$2
+  local mappings=$3
+  local kind=$4
+
+  [[ $($YQ_CMD --null-input "$refs | length") -eq 0 ]] && return 0
+
+  local -a platform_args=()
+  if [[ $kind = "image" ]]; then
+    platform_args=(--platform "$platform")
+    msg "[INFO] Pulling the images of the registry[\"$REGISTRY_NAME\"] for platform[\"$platform\"]"
+  else
+    msg "[INFO] Pulling the charts of the registry[\"$REGISTRY_NAME\"]"
+  fi
 
   local full_name
   local repo_and_tag
-  for full_name in $($YQ_CMD --null-input "$images | join(\" \")"); do
+  for full_name in $($YQ_CMD --null-input "$refs | join(\" \")"); do
     repo_and_tag=$(get_repo_and_tag_from_mappings "$full_name" "$mappings")
     [[ -z $repo_and_tag ]] &&
       repo_and_tag=$(parse_repo_and_tag "$full_name")
     [[ -z $repo_and_tag ]] &&
-      die "[ERROR] Invalid image name[\"$full_name\"]"
+      die "[ERROR] Invalid $kind name[\"$full_name\"]"
 
     msg "[INFO]   $repo_and_tag  <-  $full_name"
     mkdir -p "$(dirname "$output_path/$repo_and_tag")"
-    "$CRANE_CMD" pull --platform "$platform" --format oci --annotate-ref "$full_name" "$output_path/$repo_and_tag"
+    "$CRANE_CMD" pull "${platform_args[@]}" --format oci --annotate-ref "$full_name" "$output_path/$repo_and_tag"
   done
 
   return 0
