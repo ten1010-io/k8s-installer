@@ -1,0 +1,85 @@
+# Reports a control plane node whose placed files are newer than the apiserver
+# that reads them. It only reports: the answer is a restart of that one
+# apiserver, which takes the node out of its load balancers for a moment, and
+# whoever is running this may not be the one who decides when that happens.
+#
+# apply-k8s-cp-extra-files.yml restarts the apiserver of a node whose files it
+# changed, so an ordinary run leaves nothing here to find. What this is for is
+# the two cases that path can not see - a file edited on a node by hand, and one
+# that already held the new bytes when the declaration caught up with it, where
+# the copy has nothing to write and so nothing is restarted. Both leave a node
+# whose disk says one thing and whose apiserver is doing another, and neither
+# looks like anything until someone asks why the change did nothing.
+#
+# At the end of a run rather than beside the check that runs when the files are
+# placed: at that point every file this run wrote is newer than an apiserver that
+# has not been restarted yet, which is exactly the state this reports, so it
+# would say it about every node every time.
+#
+# Runnable on its own, which is what the report tells the operator once they have
+# restarted something:
+#
+#   ansible-playbook -i inventory.yml playbooks/tasks/check-k8s-cp-file-drift.yml
+#
+# That is why the paths are passed as arguments rather than read from the vars
+# file of the node: ki_tmp_vars_path only exists while a playbook is running.
+# check-vfio-pci.yml is the same shape for the same reason.
+#
+# Only the control plane nodes, and by what the inventory says rather than by the
+# k8s_cp_nodes fact, which a run of this on its own does not have
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    # Quoted, because these go onto a command line and nothing refuses a path
+    # with a space in it: validate-hostvars.py asks only that they are absolute
+    host_path_args: >-
+      {{ k8s_apiserver_extra_volumes | map(attribute='hostPath') | map('quote')
+         | map('regex_replace', '^', '--host-path ') | join(' ') }}
+    file_args: "{{ k8s_cp_extra_files | map(attribute='dest') | map('quote') | join(' ') }}"
+    # What the control plane nodes of this play reported. Undefined on every
+    # other node, which is what the play has in place of a list naming them
+    cp_file_drift_reports: >-
+      {{ ansible_play_hosts | map('extract', hostvars, 'cp_file_drift_report')
+         | select('defined') | list }}
+  tasks:
+    - when: k8s_cp | bool
+      block:
+        - name: Execute check-k8s-cp-file-drift.sh
+          shell: >-
+            sudo {{ ki_opt_scripts_path }}/k8s-node/extra-files/check-k8s-cp-file-drift.sh
+            --node {{ inventory_hostname }} {{ host_path_args }} {{ file_args }}
+          register: shell_result
+
+        # Kept as a fact because the line below has to know whether any node in
+        # the play said anything, and shell_result is about to be cleared
+        - name: "Record what node[\"{{ inventory_hostname }}\"] reported"
+          set_fact:
+            cp_file_drift_report: "{{ shell_result.stdout | trim }}"
+
+        - name: Report control plane nodes running something other than the file they hold
+          debug:
+            msg: "{{ shell_result.stdout_lines }}"
+          when: cp_file_drift_report | length > 0
+
+        - name: "Remove temporary variable[\"shell_result\"]"
+          set_fact:
+            shell_result: null
+
+    # Outside the block on purpose. run_once asks the first host of the play and
+    # takes its answer for every host, so inside a block that only control plane
+    # nodes enter, a play whose first k8s node is a worker dropped this line for
+    # the whole cluster.
+    #
+    # Silence is the answer when every node is where it should be, and silence is
+    # also what a check that did not run looks like. Someone who has just
+    # restarted an apiserver and come back to confirm it is owed the difference -
+    # which is the other half of this condition, since a play that checked no
+    # node at all has nothing to say either
+    - name: Report that every control plane node is running the files it holds
+      debug:
+        msg: "[INFO] Every control plane node is running the files it holds"
+      run_once: true
+      when:
+        - cp_file_drift_reports | length > 0
+        - cp_file_drift_reports | select('ne', '') | list | length == 0
