@@ -127,10 +127,19 @@ main() {
 # be behind the ones that are gone, so it would record less than the cluster
 # held. Refusing says the cluster needs restoring rather than backing up, which
 # is also what the caller of this wanted to know before it changed anything
+#
+# Asked as a linearizable read rather than as endpoint health. Health commits a
+# proposal, which is a write, and a cluster carrying a NOSPACE alarm refuses
+# every write while its quorum is whole - so health answered "unhealthy" and
+# this refused to take a snapshot of the one cluster that most needs one taken,
+# saying it had lost quorum when it had not. A linearizable read goes to the
+# leader and waits on the same majority a write would, so it answers the
+# question this is asking, and an alarm does not stop it. Keys only: what is
+# being read is that a read is possible, not what is in the cluster
 require_etcd_quorum() {
   local output
   local exit_code=0
-  output=$($etcdctl_cmd --endpoints=https://127.0.0.1:2379 --command-timeout=10s endpoint health 2>&1) || exit_code=$?
+  output=$($etcdctl_cmd --endpoints=https://127.0.0.1:2379 --command-timeout=10s get "" --prefix --limit=1 --keys-only --consistency=l 2>&1) || exit_code=$?
 
   [[ $exit_code = 0 ]] && return 0
 

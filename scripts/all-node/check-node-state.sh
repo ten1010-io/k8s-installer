@@ -382,7 +382,7 @@ require_no_etcd_alarm() {
   alarms=$(get_etcd_alarms)
   [[ -z $alarms ]] && return 0
 
-  die "[ERROR] Etcd has raised an alarm on this cluster, so it is refusing writes and this playbook would fail partway through:\n$alarms\nDefragment every member and disarm the alarm before running this again"
+  die "[ERROR] Etcd has raised an alarm on this cluster, so it is refusing writes and this playbook would fail partway through:\n$alarms\nDefragment every member and disarm the alarm with defrag-etcd.yml before running this again"
 }
 
 # Empty when there is no alarm, and empty again when the cluster can not be asked
@@ -474,7 +474,7 @@ require_etcd_quorum() {
   local alarms
   alarms=$(get_etcd_alarms)
   [[ -n $alarms ]] &&
-    die "[ERROR] Etcd has raised an alarm on this cluster, so it is refusing the writes this playbook came to make. The cluster still has quorum:\n$alarms\nDefragment every member and disarm the alarm before running this again"
+    die "[ERROR] Etcd has raised an alarm on this cluster, so it is refusing the writes this playbook came to make. The cluster still has quorum:\n$alarms\nDefragment every member and disarm the alarm with defrag-etcd.yml before running this again"
 
   die "[ERROR] Etcd cluster has no quorum, so no node can be removed from it. Restore etcd first\n$output"
 }

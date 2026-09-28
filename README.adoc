@@ -866,8 +866,8 @@ kubelet 이 스스로 갱신합니다.
 === etcd 백업
 
 각 k8s cp 노드가 자기 etcd 스냅샷을 받아 노드 안에 보관합니다. 클러스터를 바꾸는 플레이북
-(`remove-node`, `renew-certs`, `upgrade-cluster`)이 시작 전에 자동으로 한 번 받고, 따로 돌릴 수도
-있습니다.
+(`remove-node`, `renew-certs`, `upgrade-cluster`, `defrag-etcd`)이 시작 전에 자동으로 한 번 받고,
+따로 돌릴 수도 있습니다.
 
 [source,shell]
 ----
@@ -912,6 +912,51 @@ ansible-playbook -i inventory.yml playbooks/restore-etcd.yml \
 기존 데이터 디렉토리는 지우지 않고 `/var/lib/etcd.replaced-<타임스탬프>` 로 이름만 바꿔 둡니다.
 잘못된 스냅샷으로 복구한 것을 알게 되는 시점에는 이미 스냅샷을 받을 대상이 없기 때문입니다.
 확인이 끝나면 직접 지우세요.
+
+=== etcd 조각 모음
+
+etcd 는 지워진 키가 쓰던 자리를 파일에서 돌려주지 않습니다. 그래서 오래 돈 클러스터는 **실제로 담고
+있는 것보다 파일이 훨씬 큰** 상태가 되고, 그 파일이 쿼터(기본 2GiB)에 닿으면 etcd 가 `NOSPACE` 알람을
+올리며 **쓰기를 전부 거부합니다.** 파드도 뜨지 않고 노드도 붙지 못하며, 이 설치본의 플레이북도 처음
+만나는 쓰기에서 죽습니다.
+
+조각 모음은 그 자리를 파일에서 돌려받는 유일한 방법이고, 알람이 섰다면 그 다음에 알람을 내리는 것까지가
+한 벌입니다.
+
+[source,shell]
+----
+source /opt/k8s-installer/venv/bin/activate
+cd /opt/k8s-installer/ansible
+ansible-playbook -i inventory.yml playbooks/defrag-etcd.yml
+----
+
+먼저 스냅샷을 받고, 컨트롤 플레인 노드를 한 대씩 돌면서 그 노드를 모든 ki cp 노드의 로드밸런서에서 뺀 뒤
+조각 모음을 하고 다시 넣습니다. 전부 끝난 뒤에 알람을 한 번 내립니다. 노드마다 파일이 얼마에서 얼마로
+줄었는지 보고합니다.
+
+[IMPORTANT]
+====
+* *조각 모음은 그 멤버를 멈춥니다.* 그래서 한 대씩이고, 그동안 클러스터를 받치는 것은 손대지 않은
+  나머지 멤버입니다
+* *알람은 전부 끝난 뒤에 한 번 내립니다.* 아직 자리가 없는 멤버가 남아 있는데 먼저 내리면 곧바로 다시
+  올라옵니다
+* *자리가 돌아왔는지는 알람이 아니라 크기로 봅니다.* 조각 모음 뒤에도 그 멤버의 `DBSize` 가 여전히
+  `DBSizeQuota` 이상이면 거기서 멈춥니다 — 뒤 노드는 손대지 않고 알람도 내리지 않습니다. 조각 모음이
+  돌려줄 수 있는 것을 다 돌려주고도 모자란다는 뜻이라, 쿼터를 올리든 내용을 줄이든 다른 문제입니다
+* *정기 작업이 아닙니다.* 부를 때는 알람이 섰을 때, 또는 `DBSize` 가 `DBSizeInUse` 보다 훨씬 큰 채로
+  쿼터에 가까워질 때입니다. 두 값은 아래로 봅니다
+====
+
+[source,shell]
+----
+etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+        --cert=/etc/kubernetes/pki/etcd/peer.crt \
+        --key=/etc/kubernetes/pki/etcd/peer.key \
+        --endpoints=https://127.0.0.1:2379 endpoint status --cluster -w table
+----
+
+이력을 지우는 쪽(compaction)은 이 플레이북이 하지 않습니다. apiserver 가 몇 분마다 스스로 하고 있고,
+조각 모음이 돌려받는 자리는 그렇게 이미 지워진 것들이 쓰던 자리입니다.
 
 === 인증서 만료 확인
 

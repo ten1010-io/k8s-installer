@@ -1,0 +1,14 @@
+- import_playbook: tasks/begin-playbook.yml
+  vars:
+    playbook: "defrag-etcd"
+
+- import_playbook: tasks/prepare-vars.yml
+
+# Before the members are rewritten. Defragmentation is not a change to what the
+# cluster holds, but it is the one operation that rewrites the file the cluster
+# is kept in, and a snapshot costs seconds
+- import_playbook: tasks/backup-etcd.yml
+
+- import_playbook: tasks/defrag-etcd.yml
+
+- import_playbook: tasks/reset-vars-file.yml
