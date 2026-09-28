@@ -30,6 +30,20 @@
   vars:
     ki_recorded_classes: all
 
+# The unit carries the declaration of the node in its ExecStart - the files and
+# the mounted directories the drift check is given - so a playbook that changes
+# that declaration has to write the unit again. class["cp_extra_files"] and
+# class["control_plane"] are both applied here, and left out, the timer would go
+# on measuring the declaration of the run before this one. The other three checks
+# read class["node_rebuild"] variables, which this playbook refuses rather than
+# applies, so the node is rebuilt and the unit written with it.
+#
+# It is also the way in for a cluster built before this existed: every other
+# playbook that writes the unit either builds a node or upgrades one
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/node-metrics/setup-node-metrics.sh
+
 - import_playbook: tasks/reset-vars-file.yml
 
 - import_playbook: tasks/check-vfio-pci.yml

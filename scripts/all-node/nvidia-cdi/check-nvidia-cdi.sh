@@ -4,12 +4,14 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--node name] [--gpu-passthrough true|false]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--node name] [--gpu-passthrough true|false] [--metrics-path path]
 Available options:
 -h, --help          Print this help and exit
 -v, --verbose       Print script debug info
 --node              Name to report this node under
 --gpu-passthrough   Whether this node was told to hand every gpu to a guest
+--metrics-path      Also write what was measured to this file, in the prometheus
+                    text format a node exporter textfile collector reads
 EOF
   exit
 }
@@ -17,6 +19,7 @@ EOF
 parse_params() {
   node=""
   gpu_passthrough="false"
+  metrics_path=""
 
   while :; do
     case "${1-}" in
@@ -31,6 +34,11 @@ parse_params() {
     --gpu-passthrough)
       [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
       gpu_passthrough="${2-}"
+      shift
+      ;;
+    --metrics-path)
+      [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
+      metrics_path="${2-}"
       shift
       ;;
     -?*) die "[ERROR] Unknown option: $1" ;;
@@ -101,6 +109,11 @@ parse_params "$@"
 # Reported rather than failed, and to stdout for a playbook to collect, the way
 # check-vfio-pci.sh is. See docs/impl-notes.adoc
 main() {
+  # Written first and on every node, so that what is measured and what is
+  # reported do not part company: the exits below are the cases where there is
+  # nothing to say, and each of them is a number worth having
+  [[ -n $metrics_path ]] && write_metrics_file
+
   # A node the toolkit is not on has a bigger problem than this, and
   # install-packages.sh is what says so
   command -v nvidia-ctk > /dev/null 2>&1 || exit 0
@@ -131,6 +144,56 @@ main() {
   exit 0
 }
 
+# Writes what was measured where a node exporter textfile collector reads it, so
+# that the answer is there between playbook runs as well as at the end of one.
+# What this measures changes at a boot and when a driver is installed, and
+# neither is a playbook.
+#
+# Written on every node, including the ones the report says nothing about: zeros
+# from a node with no driver are an answer, and a node that loses its driver has
+# to stop reporting the gpus it used to have. Replaced rather than appended to,
+# and moved into place, because a collector reads whatever is there when it is
+# scraped. Whether the file is still being refreshed is not carried in it:
+# node_exporter already exports node_textfile_mtime_seconds for every file it
+# reads
+write_metrics_file() {
+  local driver=0
+  local visible=0
+  local cdi=0
+
+  if driver_installed; then
+    driver=1
+    nvidia_smi_works && visible=$(gpu_count)
+  fi
+
+  command -v nvidia-ctk > /dev/null 2>&1 && cdi=$(cdi_gpu_count)
+
+  local passthrough=0
+  [[ $gpu_passthrough = "true" ]] && passthrough=1
+
+  mkdir -p "$(dirname "$metrics_path")"
+
+  cat > "$metrics_path".tmp <<EOF
+# HELP ki_node_nvidia_driver_present Whether the nvidia driver is installed on this node
+# TYPE ki_node_nvidia_driver_present gauge
+ki_node_nvidia_driver_present $driver
+# HELP ki_node_nvidia_gpus_visible Gpus the driver of this node can see
+# TYPE ki_node_nvidia_gpus_visible gauge
+ki_node_nvidia_gpus_visible $visible
+# HELP ki_node_nvidia_cdi_gpus Gpus the container device interface specification of this node offers
+# TYPE ki_node_nvidia_cdi_gpus gauge
+ki_node_nvidia_cdi_gpus $cdi
+# HELP ki_node_gpu_passthrough Whether this node was told to hand every gpu to a guest
+# TYPE ki_node_gpu_passthrough gauge
+ki_node_gpu_passthrough $passthrough
+EOF
+
+  chmod 0644 "$metrics_path".tmp
+  mv -f "$metrics_path".tmp "$metrics_path"
+
+  return 0
+}
+
 # Whether the node carries the driver at all, which is a different question from
 # whether the driver can see anything. The binary rather than the module: a node
 # whose kernel was upgraded past its driver has the one and not the other, and it
@@ -156,9 +219,16 @@ gpu_count() {
 }
 
 # The devices the specification actually offers. nvidia-ctk reads the same
-# directories containerd does, so an empty answer here is an empty answer there
+# directories containerd does, so an empty answer here is an empty answer there.
+#
+# Counted by the index names alone, because the lines of that list are not the
+# gpus in it: the specification names every card twice, once by index and once by
+# uuid, and adds one nvidia.com/gpu=all for the node. Measured on a node with one
+# gpu and nvidia-ctk 1.20.1: three lines. The index form is the one that appears
+# exactly once per device, and it is also the form the mig devices of a card take
+# - <gpu>:<mig> - so counting it does not lose them
 cdi_gpu_count() {
-  nvidia-ctk cdi list 2>/dev/null | grep -c "nvidia\.com/gpu" || true
+  nvidia-ctk cdi list 2>/dev/null | grep -cE '^nvidia\.com/gpu=[0-9]+(:[0-9]+)?$' || true
 }
 
 # Reached only on a node that did not declare gpu_passthrough, so this is not a

@@ -1,0 +1,29 @@
+[Unit]
+Description=Write what the checks of this node measured where a monitoring system can read it
+
+[Service]
+Type=oneshot
+# One check per line, each writing its own file. The - prefix is what keeps a
+# check that can not answer from taking the ones after it with it: a node with no
+# nvidia-ctk is not a node whose kernel arguments stop being worth reporting.
+#
+# Every path a site declares has its percent signs doubled. A unit file expands
+# %<letter> as a specifier before anything else reads the line - measured: "a%b"
+# reaches the script as the boot id of the node - and a letter that names no
+# specifier refuses the whole unit, which would take the other checks with it.
+# Dollar signs want nothing done to them: the quotes are what stops systemd
+# expanding those, and measured, they arrive as written
+{%- set metrics = ki_metrics_path | replace("%", "%%") %}
+# Only where the node can have what they ask about. setup-boot-config.yml writes
+# the kernel arguments and the vfio-pci configuration on k8s nodes and on no
+# others, which is why check-kernel-args.yml and check-vfio-pci.yml are scoped to
+# that group too. A ki cp node that runs no kubernetes would answer both of these
+# with zeros that nothing on it could ever change
+{%- if "k8s_node" in group_names %}
+ExecStart=-{{ ki_opt_scripts_path }}/k8s-node/kernel-args/check-kernel-args.sh --node "{{ inventory_hostname }}" --metrics-path "{{ metrics }}/kernel-args.prom"
+ExecStart=-{{ ki_opt_scripts_path }}/k8s-node/vfio-pci/check-vfio-pci.sh --node "{{ inventory_hostname }}" --metrics-path "{{ metrics }}/vfio-pci.prom"{% if vfio_pci_device_ids %} {{ vfio_pci_device_ids | join(" ") }}{% endif %}
+{%- endif %}
+ExecStart=-{{ ki_opt_scripts_path }}/all-node/nvidia-cdi/check-nvidia-cdi.sh --node "{{ inventory_hostname }}" --gpu-passthrough {{ gpu_passthrough | lower }} --metrics-path "{{ metrics }}/nvidia-cdi.prom"
+{%- if k8s_cp %}
+ExecStart=-{{ ki_opt_scripts_path }}/k8s-node/extra-files/check-k8s-cp-file-drift.sh --node "{{ inventory_hostname }}" --metrics-path "{{ metrics }}/k8s-cp-file-drift.prom"{% for volume in k8s_apiserver_extra_volumes %} --host-path "{{ volume.hostPath | replace("%", "%%") }}"{% endfor %}{% for file in k8s_cp_extra_files %} "{{ file.dest | replace("%", "%%") }}"{% endfor %}
+{%- endif %}

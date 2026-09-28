@@ -1367,6 +1367,64 @@ node_exporter --collector.textfile.directory=/var/lib/k8s-installer/metrics
 NOTE: <<인증서 만료 확인>> 을 직접 돌려도 같은 파일이 쓰입니다. 이 기능이 들어오기 전에 설치된
 클러스터에 파일을 만드는 방법이기도 합니다.
 
+=== 노드 상태 메트릭
+
+플레이북 끝에서 보고하는 체크들 — 커널 인자, vfio-pci 바인딩, CDI, 컨트롤 플레인 파일 드리프트 —
+이 같은 답을 파일로도 씁니다. 형식은 인증서 만료와 같고, 같은 디렉토리에 들어갑니다.
+
+[source]
+----
+/var/lib/k8s-installer/metrics/kernel-args.prom
+/var/lib/k8s-installer/metrics/vfio-pci.prom
+/var/lib/k8s-installer/metrics/nvidia-cdi.prom
+/var/lib/k8s-installer/metrics/k8s-cp-file-drift.prom
+----
+
+NOTE: 노드마다 놓이는 파일이 다릅니다. 커널 인자와 vfio-pci 는 k8s 노드만, 컨트롤 플레인 파일
+드리프트는 컨트롤 플레인 노드만 씁니다. 그 체크들이 묻는 것을 그 노드들만 받기 때문입니다 —
+쿠버네티스를 돌리지 않는 ki cp 노드에는 `nvidia-cdi.prom` 하나만 놓입니다.
+
+[cols="2,3"]
+|===
+|메트릭 |뜻
+
+|`ki_node_kernel_args_missing`
+|이 노드가 받았지만 지금 부팅에 들어 있지 않은 커널 인자 수. 0 이 아니면 재부팅 대기
+
+|`ki_node_vfio_pci_device_ids_declared` +
+`ki_node_vfio_pci_devices_present` +
+`ki_node_vfio_pci_devices_bound`
+|선언한 ID 수 / 그 ID 에 해당하는 이 노드의 장치 수 / 그중 지금 vfio-pci 가 몰고 있는 수.
+`bound < present` 가 "안 묶였다" 입니다
+
+|`ki_node_vfio_pci_booted_with_ids` +
+`ki_node_iommu_enabled`
+|이 노드가 설정을 들고 부팅했는지 / IOMMU 가 올라와 있는지
+
+|`ki_node_nvidia_driver_present` +
+`ki_node_nvidia_gpus_visible` +
+`ki_node_nvidia_cdi_gpus` +
+`ki_node_gpu_passthrough`
+|드라이버 유무 / 드라이버가 보는 GPU 수 / CDI 명세가 내주는 GPU 수 / 전부 넘기기로 한 노드인지.
+드라이버가 있고 `visible` 이 0 인데 `gpu_passthrough` 가 0 이면 카드를 잃은 노드입니다
+
+|`ki_node_cp_files_drifted`
+|그것을 읽는 apiserver 보다 늦게 쓰인 파일 수. 0 이 아니면 그 apiserver 는 다른 것을 돌리는 중.
+apiserver 가 떠 있지 않은 노드에는 이 파일이 아예 없습니다 — 물을 대상이 없는 질문이라
+0 을 쓰지 않습니다
+|===
+
+인증서 만료에는 타이머가 없지만 여기에는 있습니다 — **부팅 2분 뒤, 그리고 매시간**. 여기서 재는 것은
+부팅에 바뀌고(커널 인자·vfio 바인딩), 드라이버 설치나 apiserver 재시작에도 바뀝니다 — 셋 다
+플레이북이 아닙니다. 플레이북만 쓰면 손으로 재부팅한 노드가 한참 뒤까지 "대기 중" 으로 남습니다.
+
+NOTE: 파일이 갱신되고 있는지는 따로 내보내지 않습니다. node exporter 가 읽는 모든 파일에 대해
+`node_textfile_mtime_seconds` 를 이미 내주므로, 타이머가 죽은 노드는 그 값이 늙습니다.
+
+NOTE: 이미 서 있는 클러스터에는 <<설정 변경 적용>> 이 반영합니다. 유닛에는 그 노드의 선언이
+박혀 있어서 — 드리프트 체크에 넘길 파일과 마운트된 디렉토리 — 선언을 바꾸는 플레이북이 유닛도
+다시 씁니다.
+
 === 서비스 로그
 
 ki cp 노드의 여섯 서비스(dns · ntp · 로드밸런서 · 레지스트리 둘 · keepalived)는 각자

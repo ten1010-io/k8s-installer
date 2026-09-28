@@ -4,17 +4,20 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--node name]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--node name] [--metrics-path path]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
 --node          Name to report this node under
+--metrics-path  Also write what was measured to this file, in the prometheus text
+                format a node exporter textfile collector reads
 EOF
   exit
 }
 
 parse_params() {
   node=""
+  metrics_path=""
 
   while :; do
     case "${1-}" in
@@ -24,6 +27,11 @@ parse_params() {
     --node)
       [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
       node="${2-}"
+      shift
+      ;;
+    --metrics-path)
+      [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
+      metrics_path="${2-}"
       shift
       ;;
     -?*) die "[ERROR] Unknown option: $1" ;;
@@ -89,31 +97,77 @@ RECORD_PATH=/etc/k8s-installer/kernel-args
 # come back to confirm it. check-vfio-pci.sh is the same shape for the same
 # reason
 main() {
+  # Measured before the record is looked at, so that a node whose arguments were
+  # taken away writes a metric saying it is missing none. Left to the early exit
+  # below, the last number it wrote would stand for good
+  local missing
+  missing=$(missing_args)
+
+  [[ -n $metrics_path ]] && write_metrics_file "$missing"
+
   # A node that was given no argument has nothing to take, which is most of them
   [[ -f $RECORD_PATH ]] || exit 0
 
-  report_missing_args
+  report_missing_args "$missing"
 
   exit 0
+}
+
+# The arguments this node was given and is not booted with, one per line
+missing_args() {
+  [[ -f $RECORD_PATH ]] || return 0
+
+  local cmdline
+  cmdline=$(cat /proc/cmdline)
+
+  local arg
+  while IFS= read -r arg; do
+    [[ -z $arg ]] && continue
+    grep -qwF -- "$arg" <<< "$cmdline" || echo "$arg"
+  done < "$RECORD_PATH"
+
+  return 0
 }
 
 # Compared as fixed strings rather than as patterns. A kernel argument carries
 # dots more often than not, and a dot in a pattern matches anything, so a node
 # booted with a differently spelled argument would read as one that took it
 report_missing_args() {
-  local cmdline
-  cmdline=$(cat /proc/cmdline)
+  local missing=$1
 
-  local missing=()
-  local arg
-  while IFS= read -r arg; do
-    [[ -z $arg ]] && continue
-    grep -qwF -- "$arg" <<< "$cmdline" || missing+=("$arg")
-  done < "$RECORD_PATH"
+  [[ -z $missing ]] && return 0
 
-  [[ ${#missing[@]} -eq 0 ]] && return 0
+  local joined
+  joined=$(tr '\n' ' ' <<< "$missing")
 
-  echo "[WARN] node[\"$node\"] is not booted with kernelCmdlineExtraArgs[\"${missing[*]}\"]. the configuration is written and takes effect when the node is rebooted"
+  echo "[WARN] node[\"$node\"] is not booted with kernelCmdlineExtraArgs[\"${joined% }\"]. the configuration is written and takes effect when the node is rebooted"
+
+  return 0
+}
+
+# Writes what was measured where a node exporter textfile collector reads it, so
+# that the answer is there between playbook runs as well as at the end of one.
+#
+# Replaced rather than appended to, and moved into place, because a collector
+# reads whatever is there when it is scraped. Whether the file is still being
+# refreshed is not carried in it: node_exporter already exports
+# node_textfile_mtime_seconds for every file it reads
+write_metrics_file() {
+  local missing=$1
+
+  local count=0
+  [[ -n $missing ]] && count=$(grep -c . <<< "$missing")
+
+  mkdir -p "$(dirname "$metrics_path")"
+
+  cat > "$metrics_path".tmp <<EOF
+# HELP ki_node_kernel_args_missing Kernel command line arguments this node was given and is not booted with
+# TYPE ki_node_kernel_args_missing gauge
+ki_node_kernel_args_missing $count
+EOF
+
+  chmod 0644 "$metrics_path".tmp
+  mv -f "$metrics_path".tmp "$metrics_path"
 
   return 0
 }

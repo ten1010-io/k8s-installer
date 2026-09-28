@@ -4,13 +4,15 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--node name] [--host-path path]... [file...]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--node name] [--host-path path]... [--metrics-path path] [file...]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
 --node          Name to report this node under
 --host-path     A directory of this node the apiserver has mounted, given once
                 per volume. Only files under one of them are looked at
+--metrics-path  Also write what was measured to this file, in the prometheus text
+                format a node exporter textfile collector reads
 file...         The files this installer placed on this node
 EOF
   exit
@@ -19,6 +21,7 @@ EOF
 parse_params() {
   node=""
   host_paths=()
+  metrics_path=""
 
   while :; do
     case "${1-}" in
@@ -28,6 +31,11 @@ parse_params() {
     --node)
       [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
       node="${2-}"
+      shift
+      ;;
+    --metrics-path)
+      [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
+      metrics_path="${2-}"
       shift
       ;;
     --host-path)
@@ -108,15 +116,78 @@ APISERVER_PROCESS_NAME=kube-apiserver
 # check-vfio-pci.sh is. The answer is a restart of that one apiserver, and
 # whoever runs this may not be the one who decides when that happens
 main() {
-  [[ ${#args[@]} -eq 0 ]] && exit 0
-
   local started_at
   started_at=$(get_apiserver_started_at)
+
+  # Measured once and handed to both the metric and the report, the way
+  # check-kernel-args.sh does it. Two passes over the same files can disagree
+  # about one written between them, and then the report names a file the metric
+  # did not count
+  local lines=""
+  [[ -n $started_at ]] && lines=$(drifted_file_lines "$started_at")
+
+  # Measured before the exits below, so that a node whose files were taken out
+  # of the declaration stops reporting the ones it used to hold.
+  #
+  # A node with no apiserver running is left with no file at all. What is
+  # drifted is unanswerable there - there is no process for a file to be newer
+  # than - and a zero would read as "nothing has drifted", which is the one
+  # answer this can not give. The file is taken away rather than left alone,
+  # because a collector goes on reading whatever is there: left alone, the count
+  # from the last apiserver would be exported for as long as the node is up, and
+  # that is the thing writing these files at all exists to prevent. Gone, the
+  # series gaps, which is what an unanswerable question looks like
+  if [[ -n $metrics_path ]]; then
+    if [[ -n $started_at ]]; then
+      write_metrics_file "$lines"
+    else
+      delete_metrics_file
+    fi
+  fi
+
+  [[ ${#args[@]} -eq 0 ]] && exit 0
+
   # Nothing has read anything. A node whose apiserver is not running has a louder
   # problem than this one, and a line here would be noise on top of it
   [[ -z $started_at ]] && exit 0
 
-  report_drifted_files "$started_at"
+  report_drifted_files "$lines"
+
+  return 0
+}
+
+# Writes what was measured where a node exporter textfile collector reads it, so
+# that the answer is there between playbook runs as well as at the end of one.
+# This one answers about a running process, and that process restarts for its own
+# reasons: a file that drifted before a restart has not drifted after one.
+#
+# Replaced rather than appended to, and moved into place, because a collector
+# reads whatever is there when it is scraped. Whether the file is still being
+# refreshed is not carried in it: node_exporter already exports
+# node_textfile_mtime_seconds for every file it reads
+write_metrics_file() {
+  local lines=$1
+
+  local drifted=0
+  [[ -n $lines ]] && drifted=$(grep -c . <<< "$lines")
+
+  mkdir -p "$(dirname "$metrics_path")"
+
+  cat > "$metrics_path".tmp <<EOF
+# HELP ki_node_cp_files_drifted Files of this node written after the apiserver that reads them started
+# TYPE ki_node_cp_files_drifted gauge
+ki_node_cp_files_drifted $drifted
+EOF
+
+  chmod 0644 "$metrics_path".tmp
+  mv -f "$metrics_path".tmp "$metrics_path"
+
+  return 0
+}
+
+# So that the series gaps rather than standing still. See main
+delete_metrics_file() {
+  rm -f "$metrics_path"
 
   return 0
 }
@@ -128,10 +199,8 @@ main() {
 # find. What the operator is told to do takes a node out of its load balancers,
 # so they come back afterwards to see whether it worked
 report_drifted_files() {
-  local started_at=$1
+  local lines=$1
 
-  local lines
-  lines=$(drifted_file_lines "$started_at")
   [[ -z $lines ]] && return 0
 
   echo "[WARN] Node[\"$node\"] holds files written after its apiserver started, so that apiserver is running something else"

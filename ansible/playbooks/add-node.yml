@@ -74,6 +74,10 @@
 
 - import_playbook: tasks/check-user-registry.yml
 
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/node-metrics/setup-node-metrics.sh
+
 - import_playbook: tasks/reset-vars-file.yml
 
 - import_playbook: tasks/check-cert-expiry.yml

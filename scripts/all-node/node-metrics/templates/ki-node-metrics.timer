@@ -1,0 +1,16 @@
+[Unit]
+Description=Ask the checks of this node what they measure, on a schedule
+
+[Timer]
+# Two minutes after a boot, because a boot is when most of these answers change:
+# the kernel command line takes effect, the devices are bound or they are not, and
+# a node that was rebooted by hand has nothing else to tell anyone it is done. Not
+# at the boot itself - the drivers and the apiserver are still coming up
+OnBootSec=2min
+# And hourly after that, for the answers a boot does not decide: a driver
+# installed on a running node, an apiserver restarted for its own reasons. Nothing
+# here is expensive, and an hour is well inside how long any of it stays wrong
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target

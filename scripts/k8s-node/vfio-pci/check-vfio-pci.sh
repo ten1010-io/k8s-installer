@@ -4,17 +4,20 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--node name] [id...]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--node name] [--metrics-path path] [id...]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
 --node          Name to report this node under
+--metrics-path  Also write what was measured to this file, in the prometheus text
+                format a node exporter textfile collector reads
 EOF
   exit
 }
 
 parse_params() {
   node=""
+  metrics_path=""
 
   while :; do
     case "${1-}" in
@@ -24,6 +27,11 @@ parse_params() {
     --node)
       [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
       node="${2-}"
+      shift
+      ;;
+    --metrics-path)
+      [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
+      metrics_path="${2-}"
       shift
       ;;
     -?*) die "[ERROR] Unknown option: $1" ;;
@@ -93,12 +101,75 @@ source "$SCRIPT_DIR_PATH"/vfio-pci-common.sh
 # come back to confirm it. check-cert-expiry.sh is the same shape for the same
 # reason
 main() {
+  # Written before the early exit below, so that a node whose devices were taken
+  # out of the inventory says it now names none. Left to that exit, the last
+  # numbers it wrote would stand for good
+  [[ -n $metrics_path ]] && write_metrics_file
+
   # A node that names no device has nothing to take, which is most of them
   [[ ${#args[@]} -gt 0 ]] || exit 0
 
   report_unapplied_devices
 
   exit 0
+}
+
+# Writes what was measured where a node exporter textfile collector reads it, so
+# that the answer is there between playbook runs as well as at the end of one. A
+# node takes this configuration at a boot, and a boot is not a playbook.
+#
+# Replaced rather than appended to, and moved into place, because a collector
+# reads whatever is there when it is scraped. Whether the file is still being
+# refreshed is not carried in it: node_exporter already exports
+# node_textfile_mtime_seconds for every file it reads
+write_metrics_file() {
+  local present=0
+  local bound=0
+  local id
+  local path
+
+  for id in "${args[@]}"; do
+    for path in $(sysfs_paths_of_device_id "$id"); do
+      present=$((present + 1))
+      [[ $(driver_of_sysfs_path "$path") = "vfio-pci" ]] && bound=$((bound + 1))
+    done
+  done
+
+  # Whether this node booted with the ids written for it, rather than with ids at
+  # all. A node whose ids were changed after its last boot is carrying one list
+  # and booted with another, and vfio-pci.ids= is on its command line either way,
+  # so the presence of the argument answers a different question from the one the
+  # name of this metric asks. It is the question explain_state asks too
+  local booted=0
+  booted_with_vfio_pci_config && booted=1
+
+  local iommu=0
+  [[ $(iommu_state) = "on" ]] && iommu=1
+
+  mkdir -p "$(dirname "$metrics_path")"
+
+  cat > "$metrics_path".tmp <<EOF
+# HELP ki_node_vfio_pci_device_ids_declared Pci device ids this node was told to bind to vfio-pci
+# TYPE ki_node_vfio_pci_device_ids_declared gauge
+ki_node_vfio_pci_device_ids_declared ${#args[@]}
+# HELP ki_node_vfio_pci_devices_present Devices on this node matching those ids
+# TYPE ki_node_vfio_pci_devices_present gauge
+ki_node_vfio_pci_devices_present $present
+# HELP ki_node_vfio_pci_devices_bound Those devices that vfio-pci is driving now
+# TYPE ki_node_vfio_pci_devices_bound gauge
+ki_node_vfio_pci_devices_bound $bound
+# HELP ki_node_vfio_pci_booted_with_ids Whether this node booted with the ids the setup wrote onto its kernel command line
+# TYPE ki_node_vfio_pci_booted_with_ids gauge
+ki_node_vfio_pci_booted_with_ids $booted
+# HELP ki_node_iommu_enabled Whether the iommu of this node is up
+# TYPE ki_node_iommu_enabled gauge
+ki_node_iommu_enabled $iommu
+EOF
+
+  chmod 0644 "$metrics_path".tmp
+  mv -f "$metrics_path".tmp "$metrics_path"
+
+  return 0
 }
 
 # Silence is the report when everything is where it should be. The playbook only

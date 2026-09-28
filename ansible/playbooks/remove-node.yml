@@ -29,6 +29,10 @@
 
 - import_playbook: tasks/run-all-node-script.yml
   vars:
+    script: all-node/node-metrics/reset-node-metrics.sh
+
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
     script: all-node/ntp-client/reset-ntp-client.sh
 
 - import_playbook: tasks/run-all-node-script.yml

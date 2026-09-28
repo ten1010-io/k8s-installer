@@ -130,6 +130,9 @@
           shell: "{{ scripts }}/k8s-node/uncordon-node.sh {{ vars_path_arg }} {{ knn }}"
           delegate_to: "{{ k8s_cp_nodes[0] }}"
 
+        - name: Execute setup-node-metrics.sh
+          shell: "{{ scripts }}/all-node/node-metrics/setup-node-metrics.sh {{ vars_path_arg }}"
+
         - name: Put this node back into the load balancer of every ki cp node
           shell: "{{ lb_admin_cmd }} ready {{ inventory_hostname }}"
           delegate_to: "{{ item }}"

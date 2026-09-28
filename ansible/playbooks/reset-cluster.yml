@@ -17,6 +17,10 @@
 
 - import_playbook: tasks/run-all-node-script.yml
   vars:
+    script: all-node/node-metrics/reset-node-metrics.sh
+
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
     script: all-node/cert-expiry-metrics/reset-cert-expiry-metrics.sh
 
 - import_playbook: tasks/run-all-node-script.yml
