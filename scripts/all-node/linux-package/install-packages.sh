@@ -75,6 +75,8 @@ parse_params "$@"
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
+RHEL9_SUPPORTED_MINOR_VERSION=8
+RHEL10_SUPPORTED_MINOR_VERSION=2
 
 ki_opt_root_path=""
 ki_opt_scripts_path=""
@@ -113,6 +115,16 @@ main() {
 
   if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
     rhel8_install
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "9" && $os_minor_version -le "$RHEL9_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel9_install
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "10" && $os_minor_version -le "$RHEL10_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel10_install
     exit 0
   fi
 
@@ -235,55 +247,130 @@ rhel8_install() {
     runc \
     systemd-container
 
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nfs-utils
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nfs-utils
 
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/p11-kit
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/autogen-libopts
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/gmp
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libidn2
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libtasn1
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nettle
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/gnutls
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/chrony
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/p11-kit
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/autogen-libopts
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/gmp
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libidn2
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libtasn1
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nettle
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/gnutls
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/chrony
 
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/audit
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libsepol
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/pcre2
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libselinux
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libsemanage
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/python3-setools
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/checkpolicy
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/mcstrans
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/policycoreutils
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/selinux-policy
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/container-selinux
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libseccomp
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/containerd
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/audit
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libsepol
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/pcre2
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libselinux
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libsemanage
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/python3-setools
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/checkpolicy
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/mcstrans
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/policycoreutils
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/selinux-policy
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/container-selinux
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libseccomp
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/containerd
 
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/systemd
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/systemd
   kill -TERM 1
   wait_systemd_ready 300
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libaio
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/device-mapper
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/fuse3
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/fuse-overlayfs
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libcgroup
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/slirp
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/conntrack
-  if [[ $(rhel8_is_installed "^libibverbs\.") = "false" ]]; then
-    rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libibverbs
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libaio
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/device-mapper
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/fuse3
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/fuse-overlayfs
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libcgroup
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/slirp
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/conntrack
+  if [[ $(rhel_is_installed "^libibverbs\.") = "false" ]]; then
+    rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libibverbs
   fi
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/ebtables
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nftables
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/docker
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/ebtables
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nftables
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/docker
 
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nvidia-container-toolkit
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nvidia-container-toolkit
 
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/ethtool
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libbpf
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/iproute
-  rhel8_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/socat
-  rhel8_install_rpms "$k8s_packages_path"
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/ethtool
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libbpf
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/iproute
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/socat
+  rhel_install_rpms "$k8s_packages_path"
+
+  "$ki_opt_scripts_path/systemctl.sh" reload
+
+  settle_units
+
+  return 0
+}
+
+rhel9_install() {
+  rhel_install rhel9
+}
+
+rhel10_install() {
+  rhel_install rhel10
+}
+
+# rhel 9 and 10 are one path over two directories. The closure of each was
+# resolved on the oldest minor the release supports against what that minor
+# already has, so a directory holds the principal package and whatever an old
+# minor lacks for it, and the two directories hold the same names in the same
+# order. rhel 8 keeps a path of its own above: its closure was gathered
+# differently and carries things 9 dropped altogether, such as libcgroup and the
+# legacy ebtables.
+#
+# iptables-nft stands where ebtables stood. kubelet and docker both ask for
+# iptables, and on 9 and 10 the only thing that provides it is the nft backed one
+rhel_install() {
+  local os_dir=$1
+
+  require_packages_installable
+  set_k8s_packages_path "$os_dir"
+  require_declared_packages "$os_dir" rpm
+
+  [[ $(getenforce) != "Disabled" ]] && setenforce 0
+
+  dnf erase -y --disableplugin subscription-manager \
+    systemd-timesyncd \
+    ntp \
+    chrony
+
+  dnf erase -y --disableplugin subscription-manager \
+    podman \
+    runc \
+    systemd-container
+
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/nfs-utils
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/chrony
+
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/container-selinux
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/containerd
+
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/systemd
+  kill -TERM 1
+  wait_systemd_ready 300
+  # The openssl systemd brought is one the sshd of an old minor refuses to load,
+  # so the openssh built against it follows at once. Its package restarts sshd;
+  # the connection this runs over survives that, and the next one is served by
+  # the new daemon
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/openssh
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/fuse-overlayfs
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/slirp
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/conntrack
+  if [[ $(rhel_is_installed "^libibverbs\.") = "false" ]]; then
+    rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/libibverbs
+  fi
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/iptables-nft
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/nftables
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/docker
+
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/nvidia-container-toolkit
+
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/ethtool
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/iproute
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/socat
+  rhel_install_rpms "$k8s_packages_path"
 
   "$ki_opt_scripts_path/systemctl.sh" reload
 
@@ -413,7 +500,7 @@ list_bundled_packages() {
 #
 # Leaving what is already installed alone is also what an update is asking for. A
 # version the node does not have still goes in, downgrade and all
-rhel8_install_rpms() {
+rhel_install_rpms() {
   local dir=$1
 
   local to_install=()
@@ -437,7 +524,7 @@ rhel8_install_rpms() {
   return 0
 }
 
-rhel8_is_installed() {
+rhel_is_installed() {
   local pkg_regex=$1
 
   local exit_code=0

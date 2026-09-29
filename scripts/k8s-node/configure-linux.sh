@@ -72,6 +72,8 @@ parse_params "$@"
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
+RHEL9_SUPPORTED_MINOR_VERSION=8
+RHEL10_SUPPORTED_MINOR_VERSION=2
 
 ki_opt_root_path=""
 ki_opt_scripts_path=""
@@ -109,6 +111,16 @@ main() {
     exit 0
   fi
 
+  if [[ $os_distribution = "rhel" && $os_major_version = "9" && $os_minor_version -le "$RHEL9_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel9_configure
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "10" && $os_minor_version -le "$RHEL10_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel10_configure
+    exit 0
+  fi
+
   die "[ERROR] OS not supported\n$os_info"
 }
 
@@ -129,6 +141,28 @@ ubuntu2404_configure() {
 }
 
 rhel8_configure() {
+  [[ $(getenforce) != "Disabled" ]] && setenforce 0
+  sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
+
+  disable_swap
+  setup_modules
+  setup_kernel_parameters
+
+  return 0
+}
+
+rhel9_configure() {
+  [[ $(getenforce) != "Disabled" ]] && setenforce 0
+  sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
+
+  disable_swap
+  setup_modules
+  setup_kernel_parameters
+
+  return 0
+}
+
+rhel10_configure() {
   [[ $(getenforce) != "Disabled" ]] && setenforce 0
   sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
 

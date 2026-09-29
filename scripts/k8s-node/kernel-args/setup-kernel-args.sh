@@ -72,6 +72,8 @@ parse_params "$@"
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
+RHEL9_SUPPORTED_MINOR_VERSION=8
+RHEL10_SUPPORTED_MINOR_VERSION=2
 
 # The drop in ubuntu reads after its own file, and the record of what this put on
 # the command line. Both carry the name of the installer, so a file here is never
@@ -145,7 +147,19 @@ main() {
   fi
 
   if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
-    rhel8_setup
+    rhel_setup
+    report_state
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "9" && $os_minor_version -le "$RHEL9_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel_setup
+    report_state
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "10" && $os_minor_version -le "$RHEL10_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel_setup
     report_state
     exit 0
   fi
@@ -162,7 +176,7 @@ ubuntu_setup() {
   return 0
 }
 
-rhel8_setup() {
+rhel_setup() {
   remove_recorded_grubby_args
   add_grubby_args
   write_record
@@ -191,7 +205,7 @@ EOF
   return 0
 }
 
-# rhel8 has no drop in directory for this, so grubby edits the entries and the
+# rhel has no drop in directory for this, so grubby edits the entries and the
 # record is what makes that reversible. grubby replaces an argument of the same
 # name rather than repeating it, so adding is idempotent; what it can not know is
 # which arguments used to be asked for and are not any more, and taking those off

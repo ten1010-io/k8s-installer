@@ -72,6 +72,8 @@ parse_params "$@"
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
+RHEL9_SUPPORTED_MINOR_VERSION=8
+RHEL10_SUPPORTED_MINOR_VERSION=2
 
 ki_opt_root_path=""
 ki_opt_scripts_path=""
@@ -113,6 +115,16 @@ main() {
     exit 0
   fi
 
+  if [[ $os_distribution = "rhel" && $os_major_version = "9" && $os_minor_version -le "$RHEL9_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel9_reset
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "10" && $os_minor_version -le "$RHEL10_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel10_reset
+    exit 0
+  fi
+
   die "[ERROR] OS not supported\n$os_info"
 }
 
@@ -127,6 +139,16 @@ ubuntu2404_reset() {
 }
 
 rhel8_reset() {
+  disable_nm_dns
+  create_resolv_conf_file
+}
+
+rhel9_reset() {
+  disable_nm_dns
+  create_resolv_conf_file
+}
+
+rhel10_reset() {
   disable_nm_dns
   create_resolv_conf_file
 }

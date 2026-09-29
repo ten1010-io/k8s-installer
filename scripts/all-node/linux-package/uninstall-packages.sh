@@ -72,6 +72,8 @@ parse_params "$@"
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
+RHEL9_SUPPORTED_MINOR_VERSION=8
+RHEL10_SUPPORTED_MINOR_VERSION=2
 
 # Fixed by containerd rather than configurable. A node that needs it off the root
 # filesystem bind mounts it onto the ephemeral storage device instead, and
@@ -113,7 +115,17 @@ main() {
   fi
 
   if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
-    rhel8_uninstall
+    rhel_uninstall
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "9" && $os_minor_version -le "$RHEL9_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel_uninstall
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "10" && $os_minor_version -le "$RHEL10_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel_uninstall
     exit 0
   fi
 
@@ -198,7 +210,9 @@ ubuntu2404_uninstall() {
   return 0
 }
 
-rhel8_uninstall() {
+# One path for rhel 8, 9 and 10: what is taken off a node is named, not read
+# from a directory, and the names are the same on all three
+rhel_uninstall() {
   if [[ $("$ki_opt_scripts_path/systemctl.sh" exists kubelet) = "true" ]]; then
     yum erase -y --disableplugin subscription-manager \
       kubeadm \

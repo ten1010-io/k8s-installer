@@ -72,6 +72,8 @@ parse_params "$@"
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
+RHEL9_SUPPORTED_MINOR_VERSION=8
+RHEL10_SUPPORTED_MINOR_VERSION=2
 
 # The drop in ubuntu reads after its own file, and the record of what this put on
 # the command line. Both carry the name of the installer, so a file here is never
@@ -129,7 +131,17 @@ main() {
   fi
 
   if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
-    rhel8_reset
+    rhel_reset
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "9" && $os_minor_version -le "$RHEL9_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel_reset
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "10" && $os_minor_version -le "$RHEL10_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel_reset
     exit 0
   fi
 
@@ -145,7 +157,7 @@ ubuntu_reset() {
   return 0
 }
 
-rhel8_reset() {
+rhel_reset() {
   local arg
   local name
   while IFS= read -r arg; do

@@ -126,7 +126,7 @@ jobs:
       fail-fast: false
       matrix:
         # What the nodes run: ubuntu 22.04 carries python 3.10 and ubuntu 24.04
-        # and rhel 8 carry 3.12, so a script that only works on one of them is a
+        # and rhel 8, 9 and 10 carry 3.12, so a script that only works on one of them is a
         # cluster that only installs on some of the operating systems this
         # release supports
         python-version: ["3.10", "3.12"]
@@ -183,7 +183,7 @@ jobs:
       fail-fast: false
       matrix:
         # What the nodes run: ubuntu 22.04 carries python 3.10 and ubuntu 24.04
-        # and rhel 8 carry 3.12, and the ansible of a node is the one built for
+        # and rhel 8, 9 and 10 carry 3.12, and the ansible of a node is the one built for
         # its python. A playbook only the newer core accepts installs on some of
         # the operating systems this release supports and stops halfway on the
         # rest

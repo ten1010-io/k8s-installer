@@ -66,9 +66,9 @@ kubelet 이 nodefs 와 imagefs 를 같은 파일시스템으로 보게 되는데
 overlayfs 상성과 프로젝트 쿼타만 보면 XFS 가 낫지만 쓸 수 없습니다. K8S Installer는 패키지를
 `bundle/linux-packages/` 에 번들해서 설치하는 오프라인 구조인데, 디스크를 마운트하는 시점은
 `install-packages` 보다 *앞* 입니다. 즉 `xfsprogs` 가 스톡 이미지에 없으면 그 시점에
-설치할 방법이 없습니다. RHEL 8 은 기본 탑재지만 Ubuntu 는 보장되지 않습니다.
+설치할 방법이 없습니다. RHEL 8, 9, 10 은 기본 탑재지만 Ubuntu 는 보장되지 않습니다.
 
-`e2fsprogs` 는 지원하는 세 OS 모두 base 에 들어 있습니다. 덤으로 ext4 는 XFS 의 `ftype=1`
+`e2fsprogs` 는 지원하는 OS 모두 base 에 들어 있습니다. 덤으로 ext4 는 XFS 의 `ftype=1`
 요구사항(없으면 overlayfs 가 마운트를 거부)도 없습니다.
 
 포맷할 때 `quota,project` 피처를 켜 둡니다. 지금은 쓰지 않지만 kubelet 의 쿼타 기반
@@ -2343,7 +2343,7 @@ kubeadm 은 업그레이드하면서 새 버전의 이미지를 당깁니다. �
 
 그래서 `release.yml` 의 `packages` 와 `binaries` 가 이것들을 버전으로 적고, 설치 스크립트가
 아무것도 깔기 전에 번들과 대조합니다. 대조 대상은 **배포판 밖에서 온 것들뿐**입니다. 그것들은
-만든 곳의 저장소에서 오기 때문에 이름 하나와 업스트림 버전 하나가 세 OS 를 다 덮지만, 나머지는
+만든 곳의 저장소에서 오기 때문에 이름 하나와 업스트림 버전 하나가 모든 OS 를 다 덮지만, 나머지는
 OS 저장소가 준 그대로라 이름도 버전도 OS 마다 다르고 아무도 고른 적이 없습니다.
 
 바이너리는 실행해서 묻습니다. 패키지 파일과 달리 `bundle/bin/helm` 은 이름만으로는 어느 helm 인지
@@ -2423,6 +2423,104 @@ containerd 를 그대로 둔 릴리스의 `--update` 는 전부 여기서 멈춥
 않습니다). 그래도 그것은 지금 번들이 무엇을 담고 있는지에 대한 사실이지 rpm 에 대한 사실이
 아니므로, 건너뛰기를 그 이름으로 쓰지 않았습니다. ubuntu 쪽 dpkg 는 같은 버전 재설치를 그냥
 받아들이므로 이 문제가 없습니다.
+
+=== rhel 9 와 10 의 closure 는 지원 하한 마이너에서 뽑습니다
+
+`bundle/linux-packages/rhel9` 와 `rhel10` 은 `tools/build-bundle-rhel-packages.sh` 가 채웁니다.
+디렉토리 하나가 대표 패키지 하나와 **그 기계에 없는 의존성**이고, dnf 가 그 기계에 깔린 것을
+기준으로 답하므로 어느 기계에서 돌리느냐가 곧 번들이 무엇을 드는지입니다. **지원하는 가장 낮은
+마이너**에서 돌립니다 — 9.0 기준으로 뽑은 `nfs-utils` 디렉토리에는 9.8 의 `selinux-policy` 와
+`policycoreutils` 가 같이 들어오고, 9.8 노드는 그것을 이미 그 버전으로 갖고 있어
+`rhel_install_rpms` 가 건너뜁니다. 저장소는 어느 마이너가 묻든 그 메이저의 최신을 주므로, 내용은
+최신 마이너의 것이고 범위만 옛 마이너까지 내려갑니다. 9.2 에서 뽑았을 때는 9.1 이
+`keyutils-libs` 에서 멈췄습니다 — 9.2 가 이미 갖고 있던 것은 목록에 안 들어오기 때문입니다.
+
+가장 낮은 마이너에 저장소가 없을 때는 `--root` 를 씁니다. Red Hat 은 지원이 끝난 마이너의 클라우드
+이미지를 내리고, 고객 포털의 KVM guest 이미지에는 저장소가 하나도 없습니다. dnf 는 받은 루트의
+rpm 데이터베이스를 기준으로 풀므로, 그 마이너의 깨끗한 기계에서 `/var/lib/rpm` 과
+`/etc/os-release` 만 복사해 두면 저장소가 있는 같은 메이저의 아무 기계에서나 됩니다
+(`/etc/os-release` 는 심볼릭 링크라 실제 파일로 복사할 것). 그 기계에 무엇이 깔려 있는지는 보지
+않습니다.
+
+`rhel8` 디렉토리와 모양이 다른 이유입니다. 그쪽은 gnutls 사슬과 selinux 사슬이 디렉토리 열 개로
+따로 있고 `-devel` 까지 실려 있는데, 9 와 10 에서는 chrony 와 container-selinux 를 풀면 그것들이
+안에 따라옵니다. `libcgroup` 과 `ebtables` 는 9 부터 없고, kubelet 과 docker 가 요구하는
+`iptables` 를 제공하는 것은 `iptables-nft` 뿐이라 그 자리에 그것이 섭니다.
+
+푸는 명령은 `dnf install --downloadonly` 이지 `dnf download --resolve` 가 아닙니다. 후자는
+**없는 것만** 받습니다 — 깔려 있지만 너무 낮은 라이브러리는 그대로 두고, 그 구멍은 노드에서야
+드러납니다. 10.2 의 systemd 는 10.0 이미지에 없는 openssl 심볼을 원하는데 `--resolve` 는 systemd
+만 건넸습니다. 설치 트랜잭션은 올려야 할 것을 올리고, `--downloadonly` 가 그것을 이 기계에
+깔지 않게 하므로 디렉토리마다 같은 원래 상태를 기준으로 풀립니다.
+
+네 가지가 dnf 를 그대로 믿으면 틀립니다:
+
+* **버전.** docker-ce 를 풀면 containerd.io 는 저장소의 최신으로 옵니다. `release.yml` 이 2.3.5
+  라 하는데 2.3.6 이 실리고, `install-packages.sh` 가 선언 대조에서 멈춥니다. 같은 명령에
+  `containerd.io-2.3.5` 를 함께 이름 대면 해석기가 그것을 씁니다.
+* **커널.** rhel 10 의 어떤 `iptables-nft` 빌드는 `kernel-modules-extra` 를 요구하고, 그것은 최신
+  커널 전체를 끌고 옵니다. 커널은 노드가 정하는 것이라 `--exclude kernel*` 로 막고, 모듈이 없는
+  노드는 아래 <<rhel 10 은 커널 모듈을 노드에게 요구합니다>> 가 말합니다.
+* **다운그레이드.** 해석기는 요구를 채우는 가장 작은 변화가 내려가는 것이면 내려갑니다. 10.0 GA
+  의 `openssl-libs-1:3.2.2-16.el10` 이 `OPENSSL_3.4.0` 을 제공한다고 선언하고 있어서, 10.0 에서
+  최신 systemd 를 풀면 dnf 는 openssl 을 3.5 로 올리는 대신 그 빌드로 **내렸습니다.** 그 조합을 깐
+  10.0 노드는 `kill -TERM 1` 에서 PID 1 이 죽어 커널 패닉으로 갔고, 10.2 노드는 rpm 이
+  다운그레이드를 거부했습니다. 그래서 도구는 트랜잭션에 `Downgrading:` 이 있으면 내려가려던 그
+  버전을 `--exclude` 하고 다시 풉니다. 남는 길은 올라가는 것뿐이고, 그것이 최신 마이너 노드의
+  상태입니다.
+* **캐시.** `--downloadonly` 로 받은 rpm 은 dnf 에게 임시 파일이라, 그 기계에서 다음 `dnf install`
+  이 성공하면 어디에 받았든 지웁니다. `keepcache` 를 켭니다. 뽑은 뒤 커널을 올리고 재부팅했더니
+  디렉토리가 비어 있었습니다.
+
+두 가지는 의존관계가 말해 주지 않아서 대표로 직접 넣습니다. **expat**: 3.12 의 pyexpat 은 expat 2.4
+부터 있는 심볼을 부르는데 expat 은 심볼에 버전을 안 붙여서 rpm 은 9.0 의 2.2 가 낮다는 것을 모릅니다.
+`ensurepip` 이 `undefined symbol` 로 처음 알려 줍니다. 그래서 `python3.12` 디렉토리에 들어가고,
+`rhel9_setup` 은 python3.12 가 이미 있어도 그 디렉토리를 깝니다. 그리고 **openssh**. 9.0~9.3 의 sshd 는 접속마다
+자기가 빌드된 openssl 버전을 확인하고, 9.8 의 3.5 를 보면 `OpenSSL version mismatch` 로 죽습니다.
+rpm 의존성으로는 3.0 이든 3.5 든 `libcrypto.so.3` 이라 아무도 막지 않습니다. 그래서 openssl 을 올리는
+곳마다 openssh 가 따라갑니다 — `install-packages.sh` 의 systemd 다음에, 그리고 제어 노드에서 가장
+먼저 openssl 을 올리는 `python3.12` 디렉토리 안에. 9.3 의 KVM 이미지에서 `setup.sh` 직후 노드가
+자기 자신에게 ssh 를 못 해 첫 플레이북에서 멈추는 것으로 드러났습니다. 공식 AMI 는 9.2 부터 고쳐진
+openssh 를 들고 있어 거기서는 안 보였습니다.
+
+같은 rpm 이 두 대표에 걸리면 설치 순서에서 먼저 오는 디렉토리에만 남깁니다. **`python3.12` 는
+예외입니다** — `setup-venv.sh` 가 `install-packages.sh` 보다 먼저, 아무것도 깔리지 않은 제어
+노드에 그것을 깔기 때문에 `libtirpc` 처럼 `nfs-utils` 도 드는 것을 제 안에 다시 들어야 합니다.
+처음엔 그것을 빼서 9.8 의 `setup.sh` 가 첫 줄에서 죽었습니다.
+
+이 모든 것에도 클라우드 이미지는 최소 설치가 아닙니다. 셈이 맞는지는 지원 하한 마이너의 깨끗한
+기계에 저장소 없이 번들 전체를 까는 것으로 봅니다 — 그런 기계에서 `setup-cluster.yml` 을 돌리는
+것이 그것입니다.
+
+kubernetes 와 nvidia toolkit 의 rpm 은 배포판 태그가 없는 같은 파일이라 `rhel8` 에서 복사합니다.
+python 패키지는 python 마다 한 벌이고, rhel 9 의 3.12 와 10 의 3.12 가 같은 것을 씁니다.
+
+=== rhel 10 은 커널 모듈을 노드에게 요구합니다
+
+rhel 10 은 `br_netfilter` 와 iptables 의 `xt_*` 매치 모듈 전부를 `kernel-modules-extra` 로
+옮겼고, 최소 설치와 클라우드 이미지에는 그것이 없습니다. 없는 노드에서는
+`configure-linux.sh` 가 `modprobe br_netfilter` 에서 멈추거나, 그것을 지나면 docker 와 kube-proxy 가
+`Extension conntrack revision 0 not supported, missing kernel module?` 를 내며 규칙을 하나도 못
+씁니다 — 10.0 에서 실측했습니다. 9 는 아직 그 모듈들을 `kernel-modules-core` 에 둡니다.
+
+번들이 들 수 없는 것입니다. 모듈은 커널 하나에 맞춰 빌드되고 어느 커널을 도는지는 노드가 정합니다.
+그래서 `check-node-state.sh` 가 `modprobe -n` 으로 열두 개를 묻고, 없는 것을 이름 대며 노드를
+건드리기 전에 거부합니다. 운영체제로 분기하지 않습니다 — 묻는 것은 "이 커널이 이것을 올릴 수
+있는가" 이고, 답이 갈리는 곳이 지금은 rhel 10 일 뿐입니다. `xt_MASQUERADE` 는 목록에 없습니다.
+rhel 8 의 4.18 은 그것을 `ipt_MASQUERADE` 로 부릅니다.
+
+=== 검수 기준
+
+. rhel 9.8 과 10.2 에서 `setup-cluster.yml` 이 완주하고, flannel 을 얹으면 Ready. kubelet 설정에
+  `failCgroupV1` 이 **없어야** 합니다 (둘 다 cgroup v2)
+. 9.0 부터 9.7 까지와 10.0 / 10.1 각각에서 같은 설치가 완주. 9.0, 9.1, 9.3 은 Red Hat 이 AMI 를
+  회수해서 고객 포털의 KVM guest 이미지를 볼륨에 raw 로 써 AMI 로 등록해 썼습니다 — 저장소가 하나도
+  없는 완전 오프라인 노드입니다. 10.0 은 그 AMI 의 커널에 맞는 `kernel-modules-extra` 가 저장소에
+  남아 있지 않아, 최신 커널을 같이 올리고 재부팅한 뒤에 통과했습니다
+. 9.2 와 10.1 에서 `reset-cluster.yml` 뒤 `setup-cluster.yml` 이 다시 완주 (`rhel_uninstall` 경로)
+. `kernel-modules-extra` 없는 10.0 에서 `check-node-state.sh` 가 모듈 이름을 대며 거부
+. `upgrade-cluster.yml` 이 `install-packages.sh --update` 를 지나가고, 인벤토리의
+  `kernel_cmdline_extra_args` 가 grubby 를 거쳐 재부팅 뒤 `/proc/cmdline` 에 보임
 
 === 노드 안의 순서는 의존관계가 정합니다
 

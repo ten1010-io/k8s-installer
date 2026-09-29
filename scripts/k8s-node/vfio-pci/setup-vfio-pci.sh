@@ -72,6 +72,8 @@ parse_params "$@"
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
+RHEL9_SUPPORTED_MINOR_VERSION=8
+RHEL10_SUPPORTED_MINOR_VERSION=2
 
 # The paths, the markers and the sysfs lookups, which have to be the same in
 # every script of this directory. See vfio-pci-common.sh
@@ -83,7 +85,7 @@ ki_opt_bundle_path=""
 ki_opt_venv_path=""
 
 ki_etc_root_path=""
-# Where the kernel arguments this put on the boot entries of a rhel8 node are
+# Where the kernel arguments this put on the boot entries of a rhel node are
 # written down, so that the reset takes off what this put on and nothing else
 kernel_args_path=""
 
@@ -156,7 +158,19 @@ main() {
   fi
 
   if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
-    rhel8_setup
+    rhel_setup
+    report_state
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "9" && $os_minor_version -le "$RHEL9_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel_setup
+    report_state
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "10" && $os_minor_version -le "$RHEL10_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel_setup
     report_state
     exit 0
   fi
@@ -176,7 +190,7 @@ ubuntu_setup() {
   return 0
 }
 
-rhel8_setup() {
+rhel_setup() {
   create_modules_load_file
   create_modprobe_file
   create_dracut_file
@@ -405,7 +419,7 @@ EOF
   return 0
 }
 
-# rhel8 has no drop in directory for this, so grubby edits the entries. Every
+# rhel has no drop in directory for this, so grubby edits the entries. Every
 # argument is simply asked for: grubby replaces one of the same name rather than
 # leaving a second copy of it on the line.
 #

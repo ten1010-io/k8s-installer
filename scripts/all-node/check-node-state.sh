@@ -138,6 +138,7 @@ main() {
   # not name either of them
   check_disk_space "$(get_node_check_severity)"
   check_clock "$(get_node_check_severity)"
+  check_kernel_modules "$(get_node_check_severity)"
   require_no_etcd_alarm
 
   if [[ $playbook = "setup-cluster" ]]; then
@@ -277,6 +278,40 @@ check_disk_space() {
 
   report_or_die "$severity" \
     "$report\nThis node needs at least $ki_preflight_disk_free_min and $ki_preflight_disk_free_percent_min% free on each. What fills them is the images of the registries, the etcd snapshots and the container storage, and prune-k8s-registry.yml is what takes the images of releases this cluster no longer runs back out"
+
+  return 0
+}
+
+# Whether the kernel of this node can load what a node of the cluster loads:
+# overlay for the container storage, br_netfilter so that bridged traffic reaches
+# the filter, and the netfilter matches that kube-proxy, kubelet and docker write
+# their rules with, which the nft backed iptables loads through nft_compat.
+#
+# A distribution kernel used to have all of these in its base package, so nothing
+# asked. rhel 10 moved br_netfilter and every xt_ module into kernel-modules-extra,
+# which a minimal install does not hold, and a node without them fails a long
+# way from here: configure-linux.sh stops at modprobe, or docker and kube-proxy
+# start and then refuse every rule they try to write, saying only that an
+# extension revision is not supported. The bundle can not carry those modules,
+# since they are built for one kernel and the node decides which kernel that is.
+#
+# Asked with a dry run rather than by loading, because check-node-state.sh
+# changes nothing about a node, and a module that is built in answers the dry
+# run the same way one on disk does
+check_kernel_modules() {
+  local severity=$1
+
+  local missing=""
+  local module
+  for module in overlay br_netfilter nf_conntrack nft_compat xt_conntrack xt_comment xt_addrtype xt_mark xt_nat xt_multiport xt_statistic xt_recent; do
+    modprobe -n "$module" &>/dev/null && continue
+    missing="$missing $module"
+  done
+
+  [[ -z $missing ]] && return 0
+
+  report_or_die "$severity" \
+    "Kernel[\"$(uname -r)\"] can not load module[$missing ]. The container runtime and kube-proxy write their rules with these, and this installer does not carry kernel modules. On rhel 10 they are in kernel-modules-extra, so install the one of the running kernel and run this again:\n  dnf install kernel-modules-extra-$(uname -r)"
 
   return 0
 }

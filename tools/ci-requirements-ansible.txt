@@ -8,6 +8,8 @@
 #   ubuntu 22.04   python 3.10   ansible-core 2.17.13   (ansible 10.7.0)
 #   ubuntu 24.04   python 3.12   ansible-core 2.19.3    (ansible 12.1.0)
 #   rhel 8.10      python 3.12   ansible-core 2.19.3    (ansible 12.1.0)
+#   rhel 9.8       python 3.12   ansible-core 2.19.3    (ansible 12.1.0)
+#   rhel 10.2      python 3.12   ansible-core 2.19.3    (ansible 12.1.0)
 #
 # Both are installed, because the drift that reaches a customer is a playbook the
 # newer core accepts and the older one refuses, and a check that runs only the

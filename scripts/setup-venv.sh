@@ -75,6 +75,8 @@ parse_params "$@"
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=4
 RHEL8_SUPPORTED_MINOR_VERSION=10
+RHEL9_SUPPORTED_MINOR_VERSION=8
+RHEL10_SUPPORTED_MINOR_VERSION=2
 
 KI_OPT_SCRIPTS_PATH="$ki_opt_root_path"/scripts
 KI_OPT_BUNDLE_PATH="$ki_opt_root_path"/bundle
@@ -105,6 +107,16 @@ main() {
 
   if [[ $os_distribution = "rhel" && $os_major_version = "8" && $os_minor_version -le "$RHEL8_SUPPORTED_MINOR_VERSION" ]]; then
     rhel8_setup
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "9" && $os_minor_version -le "$RHEL9_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel9_setup
+    exit 0
+  fi
+
+  if [[ $os_distribution = "rhel" && $os_major_version = "10" && $os_minor_version -le "$RHEL10_SUPPORTED_MINOR_VERSION" ]]; then
+    rhel10_setup
     exit 0
   fi
 
@@ -186,11 +198,60 @@ ubuntu2404_setup() {
 }
 
 rhel8_setup() {
-  if [[ $(rhel8_is_installed python3\.12) = "false" ]]; then
+  if [[ $(rhel_is_installed python3\.12) = "false" ]]; then
     rpm --force -Uvh --oldpackage --replacepkgs "$KI_OPT_BUNDLE_PATH/linux-packages/rhel8/chkconfig/*.rpm"
     rpm --force -Uvh --oldpackage --replacepkgs "$KI_OPT_BUNDLE_PATH/linux-packages/rhel8/python3.12/*.rpm"
   fi
 
+  if [[ -e $KI_OPT_VENV_PATH ]]; then
+    msg "[INFO] K8s installer will use existing venv"
+  else
+    msg "[INFO] K8s installer will create virtual environment[\"venv\"]"
+
+    python3.12 -m venv "$KI_OPT_VENV_PATH"
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/netifaces netifaces
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/jinja2-cli jinja2-cli PyYAML
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/ansible ansible jmespath
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/pydantic pydantic
+  fi
+
+  validate_venv_directory
+
+  msg ""
+  msg "[INFO] To activate venv, run the following"
+  msg "source $KI_OPT_VENV_PATH/bin/activate"
+
+  return 0
+}
+
+# rhel 9 boots with python 3.9 and carries 3.12 as a package of its own, the way
+# rhel 8 does. Unlike the rhel 8 one it does not go through alternatives, so
+# there is no chkconfig to lay down first.
+#
+# The directory is laid down whether or not python3.12 is there, unlike on rhel
+# 8. It carries what the python of the newest minor needs at run time and rpm
+# does not know to ask for - the expat its pyexpat calls into, the openssh that
+# can load the openssl it brings - and a node that got python3.12 some other
+# way, from AppStream by hand or from an earlier run of this, has none of that
+# and dies at ensurepip or loses its sshd. rpm leaves what is already at the
+# version the directory holds alone
+rhel9_setup() {
+  rpm --force -Uvh --oldpackage --replacepkgs "$KI_OPT_BUNDLE_PATH/linux-packages/rhel9/python3.12/*.rpm"
+
+  rhel_create_venv
+
+  return 0
+}
+
+# rhel 10 boots with python 3.12 as its system python, so there is nothing to
+# install before the environment is made
+rhel10_setup() {
+  rhel_create_venv
+
+  return 0
+}
+
+rhel_create_venv() {
   if [[ -e $KI_OPT_VENV_PATH ]]; then
     msg "[INFO] K8s installer will use existing venv"
   else
@@ -234,7 +295,7 @@ ubuntu2404_is_installed() {
   return 0
 }
 
-rhel8_is_installed() {
+rhel_is_installed() {
   local pkg_regex=$1
 
   local exit_code=0
