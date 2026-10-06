@@ -153,24 +153,7 @@ ubuntu2204_install() {
       chrony
   fi
 
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/nfs-common
-
-  dpkg -R -i --force-confnew "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/systemd
-
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/libltdl7
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/pigz
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/slirp
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/containerd
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/conntrack
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/ebtables
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/nftables
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/docker
-
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/nvidia-container-toolkit
-
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/ethtool
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu22.04/socat
-  dpkg -R -i "$k8s_packages_path"
+  ubuntu_install_debs ubuntu22.04
 
   end_apt
 
@@ -203,23 +186,7 @@ ubuntu2404_install() {
       chrony
   fi
 
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/nfs-common
-
-  dpkg -R -i --force-confnew "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/systemd
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/dbus
-
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/pigz
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/slirp
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/containerd
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/iptables
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/conntrack
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/nftables
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/docker
-
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/nvidia-container-toolkit
-
-  dpkg -R -i "$ki_opt_bundle_path"/linux-packages/ubuntu24.04/ethtool
-  dpkg -R -i "$k8s_packages_path"
+  ubuntu_install_debs ubuntu24.04
 
   end_apt
 
@@ -500,6 +467,55 @@ list_bundled_packages() {
 #
 # Leaving what is already installed alone is also what an update is asking for. A
 # version the node does not have still goes in, downgrade and all
+# Hands dpkg the directories of an ubuntu, in the order the dependencies between
+# them want. One list for both: a directory is one principal and what the GA
+# image of that ubuntu lacks for it (tools/build-bundle-packages.sh fills them),
+# and a principal the GA image already holds at the newest version has no
+# directory at all. Such a one is skipped here, since dpkg refuses a directory
+# with no deb in it. What is already there at the version the bundle holds is
+# handed over anyway: reinstalling it is a no-op to dpkg, unlike to rpm
+ubuntu_install_debs() {
+  local os_dir=$1
+
+  local base="$ki_opt_bundle_path/linux-packages/$os_dir"
+
+  ubuntu_install_deb_dir "$base"/nfs-common
+
+  ubuntu_install_deb_dir "$base"/systemd --force-confnew
+  ubuntu_install_deb_dir "$base"/dbus
+
+  ubuntu_install_deb_dir "$base"/pigz
+  ubuntu_install_deb_dir "$base"/slirp
+  ubuntu_install_deb_dir "$base"/containerd
+  ubuntu_install_deb_dir "$base"/iptables
+  ubuntu_install_deb_dir "$base"/ebtables
+  ubuntu_install_deb_dir "$base"/conntrack
+  ubuntu_install_deb_dir "$base"/nftables
+  ubuntu_install_deb_dir "$base"/docker
+
+  ubuntu_install_deb_dir "$base"/nvidia-container-toolkit
+
+  ubuntu_install_deb_dir "$base"/ethtool
+  ubuntu_install_deb_dir "$base"/socat
+  dpkg -R -i "$k8s_packages_path"
+
+  return 0
+}
+
+ubuntu_install_deb_dir() {
+  local dir=$1
+  shift
+
+  if ! compgen -G "$dir/*.deb" >/dev/null; then
+    msg "[INFO] Directory[\"$(basename "$dir")\"] holds no deb. nothing this os lacks for it"
+    return 0
+  fi
+
+  dpkg -R -i "$@" "$dir"
+
+  return 0
+}
+
 rhel_install_rpms() {
   local dir=$1
 

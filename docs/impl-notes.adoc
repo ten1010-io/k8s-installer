@@ -2424,12 +2424,13 @@ containerd 를 그대로 둔 릴리스의 `--update` 는 전부 여기서 멈춥
 아니므로, 건너뛰기를 그 이름으로 쓰지 않았습니다. ubuntu 쪽 dpkg 는 같은 버전 재설치를 그냥
 받아들이므로 이 문제가 없습니다.
 
-=== rhel 9 와 10 의 closure 는 지원 하한 마이너에서 뽑습니다
+=== rhel 9·10 과 우분투의 closure 는 지원 하한에서 뽑습니다
 
-`bundle/linux-packages/rhel9` 와 `rhel10` 은 `tools/build-bundle-rhel-packages.sh` 가 채웁니다.
-디렉토리 하나가 대표 패키지 하나와 **그 기계에 없는 의존성**이고, dnf 가 그 기계에 깔린 것을
-기준으로 답하므로 어느 기계에서 돌리느냐가 곧 번들이 무엇을 드는지입니다. **지원하는 가장 낮은
-마이너**에서 돌립니다 — 9.0 기준으로 뽑은 `nfs-utils` 디렉토리에는 9.8 의 `selinux-policy` 와
+`bundle/linux-packages/rhel9`, `rhel10`, `ubuntu22.04`, `ubuntu24.04` 는
+`tools/build-bundle-packages.sh` 가 채웁니다. 디렉토리 하나가 대표 패키지 하나와 **그 기계에 없는
+의존성**이고, 패키지 관리자가 그 기계에 깔린 것을 기준으로 답하므로 어느 기계에서 돌리느냐가 곧
+번들이 무엇을 드는지입니다. **지원하는 가장 낮은 릴리스**에서 돌립니다 — rhel 은 하한 마이너,
+우분투는 GA 이미지입니다(우분투는 아래 따로). 9.0 기준으로 뽑은 `nfs-utils` 디렉토리에는 9.8 의 `selinux-policy` 와
 `policycoreutils` 가 같이 들어오고, 9.8 노드는 그것을 이미 그 버전으로 갖고 있어
 `rhel_install_rpms` 가 건너뜁니다. 저장소는 어느 마이너가 묻든 그 메이저의 최신을 주므로, 내용은
 최신 마이너의 것이고 범위만 옛 마이너까지 내려갑니다. 9.2 에서 뽑았을 때는 9.1 이
@@ -2494,6 +2495,52 @@ openssh 를 들고 있어 거기서는 안 보였습니다.
 
 kubernetes 와 nvidia toolkit 의 rpm 은 배포판 태그가 없는 같은 파일이라 `rhel8` 에서 복사합니다.
 python 패키지는 python 마다 한 벌이고, rhel 9 의 3.12 와 10 의 3.12 가 같은 것을 씁니다.
+
+==== 우분투는 GA 이미지가 하한입니다
+
+우분투 디렉토리는 2026-10-06 까지 손으로 채웠고 절차가 어디에도 없었습니다. 위의 드리프트 표가
+그 결과입니다. 같은 도구가 `--os ubuntu22.04` / `ubuntu24.04` 로 채웁니다.
+
+하한은 포인트 릴리스가 없는 GA 입니다. `get-os-info.sh` 가 `VERSION` 에 포인트가 없으면 minor 0
+으로 읽어 설치기가 받아들이므로, GA 미디어로 깔고 한 번도 업데이트하지 않은 노드가 지원 범위 안에
+있습니다. 22.04.1 에서 뽑으면 GA 와 .1 사이에 올라간 것이 빠지고, 9.2 에서 뽑았을 때 9.1 이 멈춘
+것과 같은 모양으로 노드에서야 드러납니다.
+
+GA 기계는 필요 없습니다. apt 는 `-o Dir::State::status=` 로 받은 dpkg status 파일을 기준으로
+풀므로, `--root` 디렉토리에 GA 의 `var/lib/dpkg/status` 와 `etc/os-release` 만 있으면 같은
+코드네임의 아무 기계에서나 됩니다. 그 둘은
+`cloud-images.ubuntu.com/releases/<codename>/release-<GA 시리얼>/` 의 `-root.tar.xz` 에 들어
+있습니다 (22.04 는 `jammy/release-20220420`, 24.04 는 `noble/release-20240423`; 경로에 `./` 가
+없으니 `--wildcards '*var/lib/dpkg/status'` 로 꺼내고, `etc/os-release` 는 링크라
+`usr/lib/os-release` 를 복사). GA AMI (`ami-063454de5fe8eba79`, `ami-0e6f2b2fa0ca704d0`) 는
+deprecated 지만 ID 로는 아직 뜨는데, 그 status 는 root tarball 보다 패키지가 스물몇 개 많습니다
+(chrony, grub, ec2 에이전트). 기준은 더 작은 쪽인 tarball 이고, AMI 는 시험하는 쪽입니다.
+
+apt 라서 rhel 쪽 함정 넷 중 둘만 남습니다. **버전**은 `apt-cache madison` 으로
+`5:29.8.1-1~ubuntu.22.04~jammy` 같은 저장소 전체 버전을 찾아 `=` 로 박습니다 — apt 에는 접두
+일치가 없습니다. **캐시**는 `-o Dir::Cache::archives=<디렉토리>` 로 디렉토리마다 따로 받고, apt 가
+거기 남기는 `lock` 과 `partial/` 을 지웁니다 (`APT::Sandbox::User=root` 도 같이 — 아니면 `_apt`
+가 root 의 디렉토리에 못 써서 파일마다 경고를 냅니다). 다운그레이드는 apt 가 이름 대지 않으면
+하지 않고 커널을 끄는 것도 없어서 그 둘은 없습니다. 대신 **제거**를 봅니다 — 이미지에 있는 것과
+충돌하는 대표는 그것을 빼는 계획이 되는데 노드의 dpkg 는 그런 일을 하지 않으므로 거부합니다.
+`--no-install-recommends` 가 `install_weak_deps=False` 자리입니다.
+
+디렉토리 목록은 두 우분투가 같습니다 (`install-packages.sh` 의 `ubuntu_install_debs`). GA 가
+이미 최신으로 들고 있는 대표는 디렉토리가 아예 없고 (24.04 의 `iptables`, `ethtool`) 노드
+스크립트가 그것을 건너뜁니다 — `dpkg -R -i` 는 deb 없는 디렉토리를 에러로 봅니다. python
+디렉토리는 `setup-venv.sh` 가 까는 순서대로 (22.04: `python3.10`, `python3`,
+`python3-distutils`, `python3.10-venv`; 24.04: `python3.12`, `python3.12-venv`) 본 dedupe 뒤에
+따로 풀고 저희끼리만 dedupe 합니다. 손으로 채우던 시절의 `libltdl7` (docker 29 는 더 이상 안
+원함), `rsync` (아무도 안 씀), 22.04 `systemd` 안의 `libudev-dev` 는 사라졌습니다. 24.04 의
+`systemd-dev` 는 apt 가 systemd 를 올리며 같이 올리는 것이라 남습니다.
+
+검수는 2026-10-06 에 저장소가 닫힌 박스(보안그룹 egress 를 VPC 로 제한)로 포인트 릴리스
+전부에서 했습니다 — 22.04 GA 부터 22.04.5 까지 여섯, 24.04 GA 부터 24.04.4 까지 다섯. 각각
+`setup.sh` → `setup-cluster.yml` 완주, `reset-cluster.yml` 뒤 재완주이고, 22.04 GA 에서는
+`install-packages.sh --update` 도 통과했습니다. 포인트별 AMI 는 이름에 포인트가 없어서
+cloud-images 의 manifest 에 적힌 `base-files` 버전을 그 패키지의 changelog("bump version to
+22.04.N")와 맞춰 골랐습니다. Canonical 은 중간 시리얼의 AMI 를 회수하므로, 각 포인트에서 남아
+있는 가장 오래된 것을 썼습니다.
 
 === rhel 10 은 커널 모듈을 노드에게 요구합니다
 
