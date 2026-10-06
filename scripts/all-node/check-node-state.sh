@@ -69,6 +69,11 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
+# The modules a node loads and how kernel versions are compared, which
+# kernel/setup-kernel.sh shares so that what is refused here and what is done
+# there agree
+source "$SCRIPT_DIR_PATH"/kernel/kernel-common.sh
+
 ki_opt_root_path=""
 ki_opt_scripts_path=""
 ki_opt_bundle_path=""
@@ -80,6 +85,8 @@ etcdctl_cmd=""
 
 playbook=""
 inventory_hostname=""
+ki_control_node_ih=""
+provision_reboot=""
 target_node=""
 target_node_op=""
 ki_cp_ha_mode=""
@@ -115,6 +122,8 @@ main() {
 
   playbook=$($yq_cmd '.playbook' < "$vars_path")
   inventory_hostname=$($yq_cmd '.inventory_hostname' < "$vars_path")
+  ki_control_node_ih=$($yq_cmd '.ki_control_node_ih' < "$vars_path")
+  provision_reboot=$($yq_cmd '.provision_reboot' < "$vars_path")
   target_node=$($yq_cmd '.target_node' < "$vars_path")
   target_node_op=$($yq_cmd '.target_node_op' < "$vars_path")
   ki_cp_ha_mode=$($yq_cmd '.ki_cp_ha_mode' < "$vars_path")
@@ -282,36 +291,95 @@ check_disk_space() {
   return 0
 }
 
-# Whether the kernel of this node can load what a node of the cluster loads:
-# overlay for the container storage, br_netfilter so that bridged traffic reaches
-# the filter, and the netfilter matches that kube-proxy, kubelet and docker write
-# their rules with, which the nft backed iptables loads through nft_compat.
+# Whether the kernel of this node can load what a node of the cluster loads, and
+# when it can not, whether setup-boot-config.yml will be able to do anything
+# about it. The modules and the version comparison are kernel-common.sh, which
+# kernel/setup-kernel.sh shares, so that what is promised here is what happens
+# there.
 #
 # A distribution kernel used to have all of these in its base package, so nothing
 # asked. rhel 10 moved br_netfilter and every xt_ module into kernel-modules-extra,
 # which a minimal install does not hold, and a node without them fails a long
 # way from here: configure-linux.sh stops at modprobe, or docker and kube-proxy
 # start and then refuse every rule they try to write, saying only that an
-# extension revision is not supported. The bundle can not carry those modules,
-# since they are built for one kernel and the node decides which kernel that is.
+# extension revision is not supported. Those modules are built for one kernel, so
+# the bundle carries the newest kernel of rhel 10 with them, and a node that
+# lacks them is moved onto it and rebooted while it is still empty. The cases
+# where that can not happen are refused here, before anything is built on the
+# node, each with what the operator can do instead:
 #
-# Asked with a dry run rather than by loading, because check-node-state.sh
-# changes nothing about a node, and a module that is built in answers the dry
-# run the same way one on disk does
+#   - an operating system the bundle carries no kernel for
+#   - a node running a kernel newer than the bundle's, which is never moved back
+#   - a node that may not reboot, because provision_reboot is off or because it
+#     is the control node this run is being made from
+#
+# Only a build asks this. A playbook that is taking a cluster apart has nothing
+# to gain from the modules, which is what the severity says
 check_kernel_modules() {
   local severity=$1
 
-  local missing=""
-  local module
-  for module in overlay br_netfilter nf_conntrack nft_compat xt_conntrack xt_comment xt_addrtype xt_mark xt_nat xt_multiport xt_statistic xt_recent; do
-    modprobe -n "$module" &>/dev/null && continue
-    missing="$missing $module"
-  done
-
+  local missing
+  missing=$(missing_kernel_modules | tr '\n' ' ')
   [[ -z $missing ]] && return 0
 
-  report_or_die "$severity" \
-    "Kernel[\"$(uname -r)\"] can not load module[$missing ]. The container runtime and kube-proxy write their rules with these, and this installer does not carry kernel modules. On rhel 10 they are in kernel-modules-extra, so install the one of the running kernel and run this again:\n  dnf install kernel-modules-extra-$(uname -r)"
+  local kernel_dir="$ki_opt_bundle_path/linux-packages/rhel10/kernel"
+  local bundle_version=""
+  [[ $(get_os_distribution) = "rhel" && $(get_os_major_version) = "10" ]] &&
+    bundle_version=$(bundle_kernel_version "$kernel_dir")
+
+  if [[ -z $bundle_version ]]; then
+    report_or_die "$severity" \
+      "Kernel[\"$(uname -r)\"] can not load module[ $missing]. The container runtime and kube-proxy write their rules with these, and the bundle carries no kernel for this operating system. On rhel 10 they are in kernel-modules-extra, so install the one of the running kernel and run this again:\n  dnf install kernel-modules-extra-$(uname -r)"
+    return 0
+  fi
+
+  local order
+  order=$(compare_kernel_versions "$(running_kernel_version)" "$bundle_version")
+  if [[ $order -gt 0 ]]; then
+    report_or_die "$severity" \
+      "Kernel[\"$(uname -r)\"] can not load module[ $missing] and is newer than kernel[\"$bundle_version\"] of the bundle, which this installer will not move a node back to. Install kernel-modules-extra of the running kernel and run this again:\n  dnf install kernel-modules-extra-$(uname -r)"
+    return 0
+  fi
+
+  if [[ $order -eq 0 ]]; then
+    msg "[INFO] Kernel[\"$(uname -r)\"] can not load module[ $missing]. It is the kernel of the bundle, so the modules are installed from the bundle before anything is built on this node"
+    return 0
+  fi
+
+  if [[ $provision_reboot != "true" ]]; then
+    report_or_die "$severity" \
+      "Kernel[\"$(uname -r)\"] can not load module[ $missing]. The bundle carries kernel[\"$bundle_version\"], but putting it on this node needs a reboot and provision_reboot is off. Set provision_reboot: true to let this run install it and reboot the node while it is still empty, or install kernel-modules-extra of the running kernel yourself and run this again:\n  dnf install kernel-modules-extra-$(uname -r)"
+    return 0
+  fi
+
+  if [[ $inventory_hostname = "$ki_control_node_ih" ]]; then
+    # setup-control-node.yml is what puts the kernel of the bundle on the
+    # control node and reboots it. A control node that holds that kernel and is
+    # not running it was given it and not rebooted, which happens when
+    # provision_reboot was off
+    if rpm -q "kernel-core-$bundle_version" &>/dev/null; then
+      report_or_die "$severity" \
+        "Kernel[\"$(uname -r)\"] can not load module[ $missing]. Kernel[\"$bundle_version\"] of the bundle is installed on this node and it has not been rebooted onto it. This is the control node, which this run is being made from and can not reboot, so reboot it and run this again"
+      return 0
+    fi
+    report_or_die "$severity" \
+      "Kernel[\"$(uname -r)\"] can not load module[ $missing]. The bundle carries kernel[\"$bundle_version\"], but this node is the control node, which this run is being made from and can not reboot. Run setup-control-node.yml first, which installs that kernel and reboots this node, then run this again"
+    return 0
+  fi
+
+  msg "[INFO] Kernel[\"$(uname -r)\"] can not load module[ $missing]. Kernel[\"$bundle_version\"] of the bundle is installed and this node is rebooted before anything is built on it"
+
+  return 0
+}
+
+get_os_distribution() {
+  grep -oP '^ID="?\K\w+(?="?$)' /etc/os-release
+
+  return 0
+}
+
+get_os_major_version() {
+  grep -oP '^VERSION_ID="?\K[0-9]+' /etc/os-release
 
   return 0
 }

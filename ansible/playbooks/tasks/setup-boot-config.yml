@@ -1,11 +1,12 @@
-# Writes what a node has to boot with - its vfio-pci configuration and its kernel
-# command line arguments - and, where the site allows it, reboots the node so that
-# all of it is in force before anything else is put on the machine.
+# Writes what a node has to boot with - a kernel that loads the modules of the
+# cluster where the one it runs does not, its vfio-pci configuration and its
+# kernel command line arguments - and, where the site allows it, reboots the node
+# so that all of it is in force before anything else is put on the machine.
 #
-# The two components write different files and neither reads the other, but they
-# share this reboot. A node that needed one for its devices and another for its
-# hugepages would be rebooted twice while being built, and the second one would
-# be for a node that is no longer empty.
+# The components write different files and none reads another, but they share
+# this reboot. A node that needed one for its kernel, another for its devices and
+# another for its hugepages would be rebooted three times while being built, and
+# all but the first would be for a node that is no longer empty.
 #
 # This used to sit inside add-k8s-node.yml and init-k8s-cluster.yml, which is
 # too late to reboot from. By the time those run, a ki cp node is already serving
@@ -20,6 +21,31 @@
 # temporary directory is /tmp/k8s-installer and the only thing in it yet is the
 # vars file, which setup-vars-file.yml below writes again. The pki, the ca
 # certificate and the join credentials all land there after this
+#
+# Every node, not only the k8s ones: the ki cp nodes run docker, which writes
+# its rules through the same modules. check-node-state.yml has already refused
+# the nodes this can do nothing for, so what the script says here is only
+# whether this node has to be rebooted for the kernel it was just given
+- hosts: all:!localhost:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - when: target_node is none or inventory_hostname == target_node
+      block:
+        - name: Execute setup-kernel.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/all-node/kernel/setup-kernel.sh {{ vars_path_arg }}"
+          register: shell_result
+
+        - name: "Set_fact variable[\"node_reboot_for_kernel\"]"
+          set_fact:
+            node_reboot_for_kernel: "{{ shell_result.stdout | from_yaml | community.general.json_query('reboot_required') }}"
+
+        - name: "Remove temporary variable[\"shell_result\"]"
+          set_fact:
+            shell_result: null
+
 - hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
@@ -40,8 +66,13 @@
 # would never reach its end and nothing would be recorded. That node falls back
 # to what every node does when the reboot is off: it is told, and
 # check-vfio-pci.yml goes on telling it at the end of every run until someone
-# reboots it
-- hosts: k8s_node:!broken_node
+# reboots it.
+#
+# A kernel that was installed is the one case where the control node is not
+# merely told: check-node-state.yml refused it before anything was installed,
+# since a control node that cannot load the modules cannot build the cluster
+# either
+- hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
@@ -49,7 +80,7 @@
   tasks:
     - when:
         - target_node is none or inventory_hostname == target_node
-        - (vfio_pci_device_ids | length > 0) or (kernel_cmdline_extra_args | length > 0)
+        - (vfio_pci_device_ids | length > 0) or (kernel_cmdline_extra_args | length > 0) or (node_reboot_for_kernel | default(false) | bool)
       block:
         - name: Report that the control node has to be rebooted by hand
           debug:
@@ -89,13 +120,29 @@
         # Having rebooted on purpose, a node that comes back without its devices
         # bound is a failure rather than a notice: the run was asked to deliver a
         # working node and has not. Nothing has been built on it yet, so stopping
-        # here costs the least it ever will
+        # here costs the least it ever will. The same for a node that was given a
+        # kernel and still cannot load the modules
+        - name: Execute check-kernel.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/all-node/kernel/check-kernel.sh --node {{ inventory_hostname }}"
+          register: shell_result
+          when:
+            - provision_reboot | bool
+            - inventory_hostname != ki_control_node_ih
+
+        - name: Refuse a node that was rebooted and still can not load the modules of the cluster
+          fail:
+            msg: "{{ shell_result.stdout_lines }}"
+          when:
+            - shell_result.stdout is defined
+            - shell_result.stdout | trim | length > 0
+
         - name: Execute check-vfio-pci.sh
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/vfio-pci/check-vfio-pci.sh --node {{ inventory_hostname }} {{ vfio_pci_device_ids | join(' ') }}"
           register: shell_result
           when:
             - provision_reboot | bool
             - inventory_hostname != ki_control_node_ih
+            - inventory_hostname in groups['k8s_node']
 
         - name: Refuse a node that was rebooted and did not take its vfio-pci configuration
           fail:
@@ -110,6 +157,7 @@
           when:
             - provision_reboot | bool
             - inventory_hostname != ki_control_node_ih
+            - inventory_hostname in groups['k8s_node']
 
         - name: Refuse a node that was rebooted and did not take its kernel command line
           fail:

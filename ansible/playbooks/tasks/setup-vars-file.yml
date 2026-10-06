@@ -18,8 +18,15 @@
     - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
       shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
 
+    # ki_control_node_ih is written in as its value rather than left to the
+    # template it is defined as. That template reaches into the hostvars of
+    # localhost, and rendering a node's hostvars as a whole does not resolve it:
+    # the file ends up saying null, and a node script that asks whether it is
+    # on the control node is told it never is. Evaluated here, in a task, it is
+    # the name the playbooks themselves see. The round trip through yaml is
+    # what makes the hostvars a plain mapping that combine accepts
     - name: Create vars file
       copy:
-        content: "{{ hostvars[inventory_hostname] | to_yaml }}"
+        content: "{{ hostvars[inventory_hostname] | to_yaml | from_yaml | combine({'ki_control_node_ih': ki_control_node_ih}) | to_yaml }}"
         dest: "{{ ki_tmp_vars_path }}"
       become: yes

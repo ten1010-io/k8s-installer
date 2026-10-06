@@ -269,11 +269,14 @@ print_next_steps() {
   msg "$KI_OPT_ANSIBLE_PATH/inventory.yml"
   msg "$KI_OPT_ANSIBLE_PATH/group_vars/all/vars.yml"
   msg ""
-  msg "[INFO] Then deploy the installer to the managed nodes and set up the cluster"
+  msg "[INFO] Then deploy the installer to the managed nodes, give the control node what it"
+  msg "[INFO] has to boot with - which may reboot it, so log in again if it does - and set"
+  msg "[INFO] up the cluster"
   msg ""
   msg "source $KI_OPT_VENV_PATH/bin/activate"
   msg "cd $KI_OPT_ANSIBLE_PATH"
   msg "ansible-playbook -i inventory.yml playbooks/setup-k8s-installer.yml"
+  msg "ansible-playbook -i inventory.yml playbooks/setup-control-node.yml"
   msg "ansible-playbook -i inventory.yml playbooks/setup-cluster.yml"
 
   return 0

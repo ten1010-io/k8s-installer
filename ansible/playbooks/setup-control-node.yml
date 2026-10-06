@@ -1,0 +1,31 @@
+# Gives the control node what it has to boot with before a cluster is built from
+# it, and reboots it when that takes a reboot.
+#
+# setup.sh and setup-k8s-installer.yml put the installer in place; this is about
+# the machine underneath. The control node is the one node setup-boot-config.yml
+# can not finish: it writes the vfio-pci configuration and the kernel command
+# line of every node and reboots each one while it is still empty, but the
+# control node is the machine the playbooks run on, so there it only writes and
+# tells. The same goes for the kernel a rhel 10 node needs in order to load the
+# modules of the cluster. This playbook is where the control node gets the same
+# treatment: everything is written, and if any of it is not in force the node
+# is rebooted - scheduled a few seconds out, so that this run ends normally
+# first and the reboot is the last thing that happens.
+#
+# Run after setup-k8s-installer.yml and before setup-cluster.yml. On a node that
+# already boots with everything it needs, which is every node but a rhel 10 one
+# installed minimally or one given devices or arguments, it changes nothing and
+# reboots nothing, so it is safe to run every time. Left out when it was
+# needed, check-node-state.sh refuses setup-cluster.yml and names it.
+#
+# provision_reboot decides whether the reboot happens, the same as for every
+# other node. With it off, what has to boot is written and the operator is told
+- import_playbook: tasks/begin-playbook.yml
+  vars:
+    playbook: "setup-control-node"
+
+- import_playbook: tasks/prepare-vars.yml
+
+- import_playbook: tasks/setup-control-node.yml
+
+- import_playbook: tasks/reset-vars-file.yml

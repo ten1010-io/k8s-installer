@@ -144,6 +144,9 @@ release_meta_path="$SCRIPT_DIR_PATH"/../release.yml
 # rpm or deb, after the os
 family=""
 
+# Set by harvest_kernel for the one directory that is allowed to hold a kernel
+take_kernel="false"
+
 # What every dnf or apt call below is given: nothing, or the root to resolve
 # against. The repositories stay those of this machine
 pm_opts=()
@@ -204,6 +207,12 @@ harvest_rpm_all() {
   harvest libibverbs libibverbs
 
   dedupe "${RPM_INSTALL_ORDER[@]}"
+
+  # The kernel of rhel 10, resolved on its own and outside the dedupe. It is
+  # not a dependency of anything above and must not be: it is installed by a
+  # different script, beside the running kernel rather than over it, and only
+  # on a node that cannot load the modules
+  [[ $os = "rhel10" ]] && harvest_kernel kernel kernel-core kernel-modules kernel-modules-core kernel-modules-extra
 
   # setup-venv.sh installs python3.12 before install-packages.sh has laid down
   # anything, so it is resolved after the dedupe and keeps its whole closure -
@@ -367,6 +376,14 @@ harvest() {
   "harvest_$family" "$@"
 }
 
+harvest_kernel() {
+  take_kernel="true"
+  harvest_rpm "$@"
+  take_kernel="false"
+
+  return 0
+}
+
 # A closure that downgrades anything is refused and resolved again without the
 # package it wanted to downgrade to. The solver is allowed to move a dependency
 # down when that is the smallest change that satisfies a requirement, and it did:
@@ -378,15 +395,21 @@ harvest() {
 # leaves the solver only the way up, which is the state a node of the newest
 # minor is in, and what every node is being brought to
 #
-# The kernel is never taken. iptables-nft of some rhel 10 builds asks for
-# kernel-modules-extra, which pulls a whole new kernel after it, and a kernel is
-# something the node decides for itself. check-node-state.sh is what says when a
-# node lacks the modules that package holds
+# The kernel is never taken along with anything else. iptables-nft of some rhel
+# 10 builds asks for kernel-modules-extra, which pulls a whole new kernel after
+# it, and a dependency closure is not where a node's kernel gets decided. It is
+# taken once, on purpose, into a directory of its own for rhel 10, through
+# harvest_kernel: the modules that iptables-nft wants live in kernel-modules-extra
+# there, which is built for one kernel, so the bundle carries the newest kernel
+# of the newest minor with them and kernel/setup-kernel.sh moves a node that
+# lacks the modules onto it. rhel 9 keeps those modules in kernel-modules-core
+# and needs none of this
 harvest_rpm() {
   local dir=$1
   shift
 
-  local excludes=(--exclude "kernel*")
+  local excludes=()
+  [[ $take_kernel = "true" ]] || excludes=(--exclude "kernel*")
   local attempt
   for attempt in 1 2 3 4 5; do
     local plan

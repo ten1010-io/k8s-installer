@@ -1,0 +1,101 @@
+# The control node's half of setup-boot-config.yml: what the control node has
+# to boot with is written here and, where the site allows it, the node is
+# rebooted - by itself, a few seconds after this run has ended. See
+# playbooks/setup-control-node.yml for why this is a playbook of its own.
+#
+# The node is reached as the inventory host it is rather than as localhost, so
+# that the scripts run the way they run on every other node, with the vars file
+# prepare-vars.yml wrote for it
+- hosts: all:!localhost:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - when: inventory_hostname == ki_control_node_ih
+      block:
+        # --control-node, because on its own the script refuses the control node:
+        # under setup-boot-config.yml nothing could reboot it. Here something can
+        - name: Execute setup-kernel.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/all-node/kernel/setup-kernel.sh {{ vars_path_arg }} --control-node"
+          register: shell_result
+
+        - name: "Set_fact variable[\"node_reboot_for_kernel\"]"
+          set_fact:
+            node_reboot_for_kernel: "{{ shell_result.stdout | from_yaml | community.general.json_query('reboot_required') }}"
+
+        - name: Execute setup-vfio-pci.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/vfio-pci/setup-vfio-pci.sh {{ vars_path_arg }}"
+          when: inventory_hostname in groups['k8s_node']
+
+        - name: Execute setup-kernel-args.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/kernel-args/setup-kernel-args.sh {{ vars_path_arg }}"
+          when: inventory_hostname in groups['k8s_node']
+
+        # Whether what was written is what the node booted with. The check
+        # scripts say nothing when it is, and a line each when it is not, which
+        # is what decides the reboot below: a node whose devices and arguments
+        # were in force before this run has nothing to reboot for
+        - name: Execute check-vfio-pci.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/vfio-pci/check-vfio-pci.sh --node {{ inventory_hostname }} {{ vfio_pci_device_ids | join(' ') }}"
+          register: vfio_check
+          when:
+            - inventory_hostname in groups['k8s_node']
+            - vfio_pci_device_ids | length > 0
+
+        - name: Execute check-kernel-args.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/kernel-args/check-kernel-args.sh --node {{ inventory_hostname }}"
+          register: kernel_args_check
+          when:
+            - inventory_hostname in groups['k8s_node']
+            - kernel_cmdline_extra_args | length > 0
+
+        - name: "Set_fact variable[\"node_reboot_required\"]"
+          set_fact:
+            node_reboot_required: >-
+              {{ (node_reboot_for_kernel | bool)
+                 or ((vfio_check.stdout | default('')) | trim | length > 0)
+                 or ((kernel_args_check.stdout | default('')) | trim | length > 0) }}
+
+        - name: Report that the control node boots with everything it needs
+          debug:
+            msg: >-
+              Node["{{ inventory_hostname }}"] already boots with everything it needs. Nothing
+              was changed and it is not rebooted
+          when: not (node_reboot_required | bool)
+
+        - name: Report that the control node has to be rebooted by hand
+          debug:
+            msg: >-
+              Node["{{ inventory_hostname }}"] has to be rebooted for what was just written to
+              be in force, and provision_reboot is off, so it is not rebooted here. Reboot it
+              yourself before running setup-cluster.yml
+          when:
+            - node_reboot_required | bool
+            - not (provision_reboot | bool)
+
+        # Scheduled rather than done, because this is the machine the run is on.
+        # The unit fires once the playbook has ended, which is also what lets the
+        # recap be printed and reset-vars-file.yml run first. The delay is for
+        # that and for the operator reading this
+        - name: Schedule the reboot of the control node
+          shell: "sudo systemd-run --on-active=15 --unit=k8s-installer-reboot --description='Reboot scheduled by setup-control-node.yml' systemctl reboot"
+          when:
+            - node_reboot_required | bool
+            - provision_reboot | bool
+
+        - name: Report that the control node reboots when this run has ended
+          debug:
+            msg: >-
+              Node["{{ inventory_hostname }}"] reboots in 15 seconds so that it comes up with
+              what it was configured to boot with. Log in again once it is back and run
+              setup-cluster.yml
+          when:
+            - node_reboot_required | bool
+            - provision_reboot | bool
+
+        - name: "Remove temporary variables"
+          set_fact:
+            shell_result: null
+            vfio_check: null
+            kernel_args_check: null
