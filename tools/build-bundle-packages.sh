@@ -10,7 +10,9 @@ Available options:
 -v, --verbose   Print script debug info
 --os            ubuntu22.04, ubuntu24.04, rhel9 or rhel10, which must be what this machine runs
 --out-path      Directory to fill, laid out as bundle/linux-packages/<os> is
---root          Resolve against the package database under this directory instead of this machine's
+--root          Resolve against the package database under this directory instead of this
+                machine's. Given more than once, every root is resolved and the directories hold
+                the union, which is how a closure covers both the oldest image and a minimal install
 EOF
   exit
 }
@@ -18,7 +20,7 @@ EOF
 parse_params() {
   os=""
   out_path=""
-  root=""
+  roots=()
 
   while :; do
     case "${1-}" in
@@ -37,7 +39,7 @@ parse_params() {
       ;;
     --root)
       [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
-      root="${2-}"
+      roots+=("${2-}")
       shift
       ;;
     -?*) die "[ERROR] Unknown option: $1" ;;
@@ -125,6 +127,34 @@ parse_params "$@"
 # cloud-images.ubuntu.com/releases/<codename>/release-<serial>/ carries, so no
 # machine of the GA image is needed at all.
 #
+# Which roots, then. A closure is "what this baseline lacks", and no one image
+# is the right baseline. An image that holds more than a minimal install has
+# packages pinned to the versions of what the closure raises - the openssl
+# command to openssl-libs, sssd-common to sssd-nfs-idmap - and rpm refuses to
+# raise one without the other, so the closure has to carry those too, and only
+# a baseline that has them installed asks for them. A smaller image lacks
+# packages the bigger one has - a cloud image has no libtirpc, the guest image
+# of the customer portal does - and only a baseline without them asks for them.
+# So --root is given several times and the directories hold the union: the
+# first root decides the version of every name it produces, since what it chose
+# was chosen against the most constraints, and each later root only adds names
+# none before it produced. The order is the image with the most installed
+# first, the other images of the supported range after it, and last the oldest
+# image stripped to what a minimal install holds, which is made like so:
+#
+#   dnf -y --installroot=/root/min --releasever=<major> --setopt=reposdir=/etc/yum.repos.d #     --setopt=install_weak_deps=False --exclude 'kernel*' install @core
+#   rpm --root /root/min -qa --queryformat '%{NAME}\n' | sort -u > /root/core.names
+#   # /root/old holds var/lib/rpm and etc/os-release copied from the oldest image; on rhel 10
+#   # the database lives in usr/lib/sysimage/rpm and var/lib/rpm is a link to it, so copy both
+#   for p in $(rpm --root /root/old -qa --queryformat '%{NAME}\n' | sort -u | grep -vxF -f /root/core.names); do
+#     rpm --root /root/old -e --nodeps --justdb --allmatches "$p"
+#   done
+#
+# --justdb takes the entries out of the database and touches nothing else. The
+# machine this runs on is one of the images, named as "--root /". A single
+# root was tried twice and each time a fresh image of another kind refused the
+# bundle at the first playbook, which is what the fresh image is for.
+#
 # The docker repository is added for containerd.io and docker, at the versions
 # release.yml declares. The python packages are one set for every os of a
 # python and are not taken here. The kubernetes packages and the nvidia toolkit
@@ -147,6 +177,14 @@ family=""
 # Set by harvest_kernel for the one directory that is allowed to hold a kernel
 take_kernel="false"
 
+# Where the harvest functions write: one directory per baseline while the
+# baselines are being resolved, and the union of them is what --out-path ends
+# up holding
+harvest_out=""
+
+# The baseline being resolved, one of roots, set by main for each in turn
+root=""
+
 # What every dnf or apt call below is given: nothing, or the root to resolve
 # against. The repositories stay those of this machine
 pm_opts=()
@@ -157,16 +195,29 @@ main() {
   ubuntu*) family=deb ;;
   esac
 
-  require_this_os
-  setup_pm_opts
   [[ -f $release_meta_path ]] || die "[ERROR] No such file or directory of which path is \"$release_meta_path\""
 
-  rm -rf "$out_path"
+  rm -rf "$out_path" "$out_path.baselines"
   mkdir -p "$out_path"
 
   add_docker_repo
 
-  "harvest_${family}_all"
+  # "" is this machine, and so is /
+  [[ ${#roots[@]} = 0 ]] && roots=("")
+  local i=0
+  for root in "${roots[@]}"; do
+    [[ $root = "/" ]] && root=""
+    pm_opts=()
+    require_this_os
+    setup_pm_opts
+
+    harvest_out="$out_path.baselines/$i"
+    mkdir -p "$harvest_out"
+    "harvest_${family}_all"
+    i=$((i + 1))
+  done
+
+  union_baselines
 
   report
 
@@ -452,8 +503,8 @@ harvest_rpm() {
   # a package fetched for a run that installed nothing is a temporary file to it,
   # wherever it was told to put it, and a "dnf install" of anything afterwards
   # leaves the directory empty
-  mkdir -p "$out_path/$dir"
-  dnf "${pm_opts[@]}" -y -q install --downloadonly --downloaddir "$out_path/$dir" "${excludes[@]}" \
+  mkdir -p "$harvest_out/$dir"
+  dnf "${pm_opts[@]}" -y -q install --downloadonly --downloaddir "$harvest_out/$dir" "${excludes[@]}" \
     --setopt=install_weak_deps=False --setopt=keepcache=True "$@" >/dev/null ||
     die "[ERROR] Fail to download the packages of directory[\"$dir\"]"
 
@@ -482,11 +533,11 @@ harvest_deb() {
   # its partial directory behind in there, and neither is a package. Fetched as
   # root rather than as _apt, which can not write under a directory of root's
   # and says so for every file before falling back to root anyway
-  mkdir -p "$out_path/$dir"
+  mkdir -p "$harvest_out/$dir"
   apt-get -y -q install --download-only --no-install-recommends "${pm_opts[@]}" \
-    -o "Dir::Cache::archives=$out_path/$dir" -o APT::Sandbox::User=root "$@" >/dev/null ||
+    -o "Dir::Cache::archives=$harvest_out/$dir" -o APT::Sandbox::User=root "$@" >/dev/null ||
     die "[ERROR] Fail to download the packages of directory[\"$dir\"]"
-  rm -rf "$out_path/$dir/lock" "$out_path/$dir/partial"
+  rm -rf "$harvest_out/$dir/lock" "$harvest_out/$dir/partial"
 
   return 0
 }
@@ -504,7 +555,7 @@ dedupe() {
   declare -A seen
   local dir file name
   for dir in "$@"; do
-    for file in "$out_path/$dir"/*."$family"; do
+    for file in "$harvest_out/$dir"/*."$family"; do
       [[ -e $file ]] || continue
       name=$(package_name_of "$file")
       if [[ -n ${seen[$name]-} ]]; then
@@ -514,6 +565,42 @@ dedupe() {
       fi
     done
   done
+
+  return 0
+}
+
+# One directory of --out-path per directory any baseline produced, holding one
+# file per package name: the first baseline to produce a name decides its
+# version, and later baselines only add names none before them produced. The
+# first root is therefore the image with the most installed, since what it
+# chose was chosen against the most constraints, and the minimal install comes
+# last, to add what the images already had.
+#
+# A name is counted once across the directories of the install order, which
+# the node script installs one after another, and once within any other
+# directory. The others - python3.12, the venv directories of ubuntu, the
+# kernel - are installed on their own by other scripts and have to hold their
+# whole closure, the same reason the dedupe within a baseline leaves them out
+union_baselines() {
+  declare -A seen
+  local baseline dir name file pkg scope
+  for baseline in "$out_path.baselines"/*/; do
+    for dir in "$baseline"*/; do
+      [[ -d $dir ]] || continue
+      name=$(basename "$dir")
+      scope=$name
+      [[ " ${RPM_INSTALL_ORDER[*]} ${DEB_INSTALL_ORDER[*]} " == *" $name "* ]] && scope="install-order"
+      for file in "$dir"*; do
+        [[ -f $file ]] || continue
+        pkg=$(package_name_of "$file")
+        [[ -n ${seen[$scope:$pkg]-} ]] && continue
+        seen[$scope:$pkg]=$name
+        mkdir -p "$out_path/$name"
+        cp "$file" "$out_path/$name/"
+      done
+    done
+  done
+  rm -rf "$out_path.baselines"
 
   return 0
 }
