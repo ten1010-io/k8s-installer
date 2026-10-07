@@ -211,8 +211,15 @@ harvest_rpm_all() {
   # The kernel of rhel 10, resolved on its own and outside the dedupe. It is
   # not a dependency of anything above and must not be: it is installed by a
   # different script, beside the running kernel rather than over it, and only
-  # on a node that cannot load the modules
-  [[ $os = "rhel10" ]] && harvest_kernel kernel kernel-core kernel-modules kernel-modules-core kernel-modules-extra
+  # on a node that cannot load the modules.
+  #
+  # Pinned to the newest kernel-core the repository holds rather than asked for
+  # by name. The four packages of a kernel are one build, and a mirror in the
+  # middle of taking in a new one serves the modules of that build before its
+  # kernel-core: asked by name, dnf picks the newest modules and finds no kernel
+  # that provides what they want, and the whole directory fails. Measured on
+  # the day 211.63.1 arrived
+  [[ $os = "rhel10" ]] && harvest_kernel kernel "kernel-core-$(newest_kernel_version)"     "kernel-modules-$(newest_kernel_version)" "kernel-modules-core-$(newest_kernel_version)"     "kernel-modules-extra-$(newest_kernel_version)"
 
   # setup-venv.sh installs python3.12 before install-packages.sh has laid down
   # anything, so it is resolved after the dedupe and keeps its whole closure -
@@ -380,6 +387,18 @@ harvest_kernel() {
   take_kernel="true"
   harvest_rpm "$@"
   take_kernel="false"
+
+  return 0
+}
+
+# The newest kernel-core the repository serves, as version-release, in the
+# order rpm keeps rather than the one sort would guess at
+newest_kernel_version() {
+  local version
+  version=$(dnf "${pm_opts[@]}" -q repoquery --latest-limit 1 --queryformat '%{version}-%{release}' kernel-core 2>/dev/null | tail -1)
+  [[ -z $version ]] && die "[ERROR] The repository serves no kernel-core, so the kernel of rhel 10 can not be taken"
+
+  echo "$version"
 
   return 0
 }
