@@ -198,77 +198,7 @@ ubuntu2404_install() {
 }
 
 rhel8_install() {
-  require_packages_installable
-  set_k8s_packages_path rhel8
-  require_declared_packages rhel8 rpm
-
-  [[ $(getenforce) != "Disabled" ]] && setenforce 0
-
-  yum erase -y --disableplugin subscription-manager \
-    systemd-timesyncd \
-    ntp \
-    chrony
-
-  yum erase -y --disableplugin subscription-manager \
-    podman \
-    runc \
-    systemd-container
-
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nfs-utils
-
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/p11-kit
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/autogen-libopts
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/gmp
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libidn2
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libtasn1
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nettle
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/gnutls
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/chrony
-
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/audit
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libsepol
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/pcre2
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libselinux
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libsemanage
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/python3-setools
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/checkpolicy
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/mcstrans
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/policycoreutils
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/selinux-policy
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/container-selinux
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libseccomp
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/containerd
-
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/systemd
-  kill -TERM 1
-  wait_systemd_ready 300
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libaio
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/device-mapper
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/fuse3
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/fuse-overlayfs
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libcgroup
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/slirp
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/conntrack
-  if [[ $(rhel_is_installed "^libibverbs\.") = "false" ]]; then
-    rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libibverbs
-  fi
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/ebtables
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nftables
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/docker
-
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/nvidia-container-toolkit
-
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/ethtool
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/libbpf
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/iproute
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/rhel8/socat
-  rhel_install_rpms "$k8s_packages_path"
-
-  "$ki_opt_scripts_path/systemctl.sh" reload
-
-  settle_units
-
-  return 0
+  rhel_install rhel8
 }
 
 rhel9_install() {
@@ -279,16 +209,18 @@ rhel10_install() {
   rhel_install rhel10
 }
 
-# rhel 9 and 10 are one path over two directories. The closure of each was
+# rhel 8, 9 and 10 are one path over three directories. The closure of each was
 # resolved on the oldest minor the release supports against what that minor
-# already has, so a directory holds the principal package and whatever an old
-# minor lacks for it, and the two directories hold the same names in the same
-# order. rhel 8 keeps a path of its own above: its closure was gathered
-# differently and carries things 9 dropped altogether, such as libcgroup and the
-# legacy ebtables.
+# already has (tools/build-bundle-packages.sh), so a directory holds the
+# principal package and whatever an old minor lacks for it, and the three
+# directories hold the same names in the same order. What one rhel needs and
+# another does not, such as the libcgroup of 8 or the devel headers only its
+# bundle carries, is inside the directory that asked for it or is a directory
+# the other two leave empty.
 #
-# iptables-nft stands where ebtables stood. kubelet and docker both ask for
-# iptables, and on 9 and 10 the only thing that provides it is the nft backed one
+# iptables is the one principal whose package differs: on 8 it is iptables
+# itself with the ebtables shim beside it, and from 9 on the only thing that
+# provides what kubelet and docker ask for is iptables-nft
 rhel_install() {
   local os_dir=$1
 
@@ -328,7 +260,7 @@ rhel_install() {
   if [[ $(rhel_is_installed "^libibverbs\.") = "false" ]]; then
     rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/libibverbs
   fi
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/iptables-nft
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/iptables
   rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/nftables
   rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/docker
 
@@ -337,6 +269,9 @@ rhel_install() {
   rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/ethtool
   rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/iproute
   rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/socat
+  # The headers of what came before, which only the rhel 8 bundle carries. A
+  # directory holding no rpm is nothing to do, so the other rhels pass here
+  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/devel
   rhel_install_rpms "$k8s_packages_path"
 
   "$ki_opt_scripts_path/systemctl.sh" reload
