@@ -129,27 +129,33 @@ main() {
 }
 
 ubuntu2204_reset() {
-  disable_resolved
-  create_resolv_conf_file
+  reset_resolv_conf
 }
 
 ubuntu2404_reset() {
-  disable_resolved
-  create_resolv_conf_file
+  reset_resolv_conf
 }
 
 rhel8_reset() {
-  disable_nm_dns
-  create_resolv_conf_file
+  reset_resolv_conf
 }
 
 rhel9_reset() {
-  disable_nm_dns
-  create_resolv_conf_file
+  reset_resolv_conf
 }
 
 rhel10_reset() {
-  disable_nm_dns
+  reset_resolv_conf
+}
+
+# A reset does not give the node its old resolver back: it points the file at
+# the upstream servers instead of the cluster dns, and the file only holds if
+# nothing else owns it. So resolved is stopped wherever it exists, the same as
+# setup-resolv-conf.sh does and for the same reason, and rhel keeps NetworkManager
+# off the file with the drop in
+reset_resolv_conf() {
+  disable_resolved
+  [[ $os_distribution = "rhel" ]] && disable_nm_dns
   create_resolv_conf_file
 }
 

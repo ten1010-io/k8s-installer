@@ -137,27 +137,39 @@ main() {
 }
 
 ubuntu2204_setup() {
-  disable_resolved
-  create_resolv_conf_file
+  setup_resolv_conf
 }
 
 ubuntu2404_setup() {
-  disable_resolved
-  create_resolv_conf_file
+  setup_resolv_conf
 }
 
 rhel8_setup() {
-  disable_nm_dns
-  create_resolv_conf_file
+  setup_resolv_conf
 }
 
 rhel9_setup() {
-  disable_nm_dns
-  create_resolv_conf_file
+  setup_resolv_conf
 }
 
 rhel10_setup() {
-  disable_nm_dns
+  setup_resolv_conf
+}
+
+# One body for every os. systemd-resolved used to be turned off only where it
+# ships enabled, on ubuntu, and rhel got the NetworkManager drop in alone - but
+# what the file written below is for is kubelet, and kubeadm decides where
+# kubelet reads its nameservers from by asking whether resolved is active on
+# the node it runs on: active, and it points kubelet at the stub file under
+# /run/systemd/resolve instead of /etc/resolv.conf. That answer is taken once,
+# on the node that initialises the cluster, and uploaded for every node to
+# download, so a rhel node that happened to have resolved running handed the
+# stub path to nodes that have no such file. The service is stopped wherever it
+# exists, then, and only the drop in is a rhel matter: NetworkManager would
+# otherwise write the file back on the next lease
+setup_resolv_conf() {
+  disable_resolved
+  [[ $os_distribution = "rhel" ]] && disable_nm_dns
   create_resolv_conf_file
 }
 
