@@ -28,9 +28,12 @@ UPLOAD_SCRIPT = K8S_NODE / "upload-k8s-kubelet-config.sh"
 # What the template writes for every node, whatever that node asked for.
 # serverTLSBootstrap is here rather than behind the gate on purpose: it is
 # decided for the cluster, so the baseline carries it and a node that wanted it
-# off could not take it back out of a merge
+# off could not take it back out of a merge. resolvConf is here so that kubeadm
+# never gets to fill it in: left empty, kubeadm points kubelet at the
+# systemd-resolved stub file whenever resolved is active on the node uploading
+# the baseline, and every other node inherits that path
 ALWAYS_PRESENT = {"apiVersion", "kind", "systemReserved", "kubeReserved", "evictionHard",
-                  "serverTLSBootstrap"}
+                  "serverTLSBootstrap", "resolvConf"}
 
 # The -D the upload script hands jinja2 to render the baseline, and the variable
 # the template asks about before it writes anything that belongs to one node
@@ -164,3 +167,13 @@ def test_the_reserved_cpus_and_the_pod_ceiling_are_rendered_when_named(hostvars)
 
     assert document["reservedSystemCPUs"] == "0-3,64-67"
     assert document["maxPods"] == 250
+
+
+def test_the_resolver_file_is_the_one_the_installer_writes(hostvars):
+    """Given no value kubeadm picks one by looking at the node it runs on, and
+    the node that uploads the baseline would be picking for every node."""
+    patch = render(hostvars)
+    baseline = render(hostvars, **{baseline_flag_gated_on(): True})
+
+    assert patch["resolvConf"] == "/etc/resolv.conf"
+    assert baseline["resolvConf"] == "/etc/resolv.conf"

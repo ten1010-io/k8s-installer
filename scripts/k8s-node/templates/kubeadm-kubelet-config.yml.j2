@@ -29,6 +29,15 @@ evictionHard:
   nodefs.available: "{{ kubelet_reservations['eviction_hard']['nodefs.available'] }}"
   imagefs.available: "{{ kubelet_reservations['eviction_hard']['imagefs.available'] }}"
   nodefs.inodesFree: "{{ kubelet_reservations['eviction_hard']['nodefs.inodesFree'] }}"
+# The file kubelet hands to pods as their nameservers is the one the installer
+# writes on every node, setup-resolv-conf.sh. Said so rather than left for
+# kubeadm to fill in: given no value, kubeadm looks at whether systemd-resolved
+# is active on the node it is running on and, if so, points kubelet at the stub
+# file under /run/systemd/resolve instead - a decision taken on one node and
+# carried to every other node by the baseline, including nodes that have no such
+# file. The installer stops resolved before kubeadm ever runs, and this line is
+# what holds if that did not happen
+resolvConf: /etc/resolv.conf
 {#- Above the line below on purpose: this one is cluster wide, so the baseline
     carries it and every node renders the same value. Written whether it is on or
     off, unlike the keys under kubelet_baseline. A node patches the baseline and
