@@ -247,6 +247,13 @@ kubelet_reserved_system_cpus: null
 kubelet_max_pods: null
 kubelet_server_tls_bootstrap: false
 
+# The fallback for k8s_kube_proxy_enabled, for the same reason. The subnets have
+# none on purpose - there is no value that is right everywhere, so a missing
+# line has to be an error - but a vars.yml with no line for this one is a
+# cluster that was built with kube-proxy, since that is all a cluster could be
+# before the line existed, and true is what keeps it that way
+k8s_kube_proxy_enabled: true
+
 k8s_ca_certificate_validity_period: "87600h" # 87600h = 10 year
 k8s_cp: false
 
@@ -635,11 +642,14 @@ ki_var_classes:
   # address of every node, which the etcd peers and the apiserver of each one are
   # published under; the pod and service subnets decide the addresses kubernetes
   # hands out inside the cluster, which the cni was installed around and which
-  # every kubelet was told the cluster dns sits in; and turning ha mode on or off
-  # changes which services run at all. update-cluster.yml refuses rather than
-  # applying half of it
+  # every kubelet was told the cluster dns sits in; turning ha mode on or off
+  # changes which services run at all; and kube-proxy is a DaemonSet kubeadm
+  # makes once, at init, so taking it out is that DaemonSet deleted and its
+  # rules cleaned off every node, and putting it in is an addon phase run again.
+  # update-cluster.yml refuses rather than applying half of it
   immutable:
     - internal_network_subnets
+    - k8s_kube_proxy_enabled
     - k8s_pod_subnet
     - k8s_service_subnet
     - ki_cp_ha_mode

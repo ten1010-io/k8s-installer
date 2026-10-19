@@ -510,6 +510,34 @@ k8s_service_subnet: "10.96.0.0/12"
 
 두 줄 다 있어야 합니다. 지우면 기본값으로 떨어지지 않고 플레이북이 시작 전에 멈춥니다.
 
+=== kube-proxy 없이 세우기
+
+kubeadm 은 기본으로 kube-proxy 를 DaemonSet 으로 올립니다. cilium 의 kubeProxyReplacement 나
+calico 의 eBPF 모드처럼 서비스 라우팅을 CNI 가 맡는 사이트는 `vars.yml` 에서 끄고 세웁니다.
+끄면 kubeadm 이 처음 세울 때도, 그 뒤 업그레이드할 때도 kube-proxy 를 만들지 않습니다.
+
+[source,yaml]
+----
+k8s_kube_proxy_enabled: false
+----
+
+[IMPORTANT]
+====
+* *서 있는 클러스터에서는 바꿀 수 없습니다.* kube-proxy 를 빼는 것은 DaemonSet 을 지우고 그것이
+  쓴 규칙을 모든 노드에서 걷어 내는 일이고, 넣는 것은 kubeadm 의 addon 단계를 다시 돌리는
+  일입니다. `update-cluster.yml` 이 거부합니다
+* *CNI 에 apiserver 주소를 직접 줘야 합니다.* kube-proxy 가 없으면 `kubernetes` 서비스의
+  ClusterIP 는 그 CNI 가 뜨기 전까지 아무 데로도 가지 않는데, CNI 가 바로 그 주소로 apiserver 를
+  찾으면 영영 뜨지 못합니다. 줄 주소는 모든 kubelet 이 쓰는 것과 같은 `ki-cp.ki.local` 과
+  `16443` 입니다. cilium 이면 `k8sServiceHost` 와 `k8sServicePort` 가 그 자리입니다
+* 노드별로는 못 씁니다. 클러스터 하나에 하나인 값이라 `inventory.yml` 에 적으면 플레이북이 시작
+  전에 멈춥니다
+====
+
+줄이 없으면 `true` 입니다. 이 줄이 생기기 전에 세운 클러스터는 전부 kube-proxy 가 있는
+클러스터이고, 설치본을 올려도 그대로입니다. 설계 판단은 link:docs/impl-notes.adoc[구현 노트]에
+있습니다.
+
 === 노드 라벨과 테인트
 
 노드 오브젝트에 붙일 라벨과 테인트를 `inventory.yml` 에 노드별로 적습니다.

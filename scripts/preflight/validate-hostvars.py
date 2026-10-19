@@ -112,7 +112,7 @@ POSITIONAL_KERNEL_ARGS = frozenset({"hugepagesz", "hugepages"})
 # in vars.yml. ki_var_classes covers both files, so a name in it is a name the
 # inventory may carry too, and these are the ones where that would be accepted
 # and then not mean anything
-CLUSTER_WIDE_VARS = frozenset({"kubelet_server_tls_bootstrap"})
+CLUSTER_WIDE_VARS = frozenset({"k8s_kube_proxy_enabled", "kubelet_server_tls_bootstrap"})
 
 
 def main():
@@ -1214,6 +1214,10 @@ class VarsModel(BaseModel):
 
     k8s_pod_subnet: IPv4Network
     k8s_service_subnet: IPv4Network
+    # Cluster wide: the ClusterConfiguration it is rendered into is the one of
+    # the node that ran kubeadm init. validate_cluster_wide_vars keeps it out of
+    # inventory.yml
+    k8s_kube_proxy_enabled: bool
     k8s_minor_version: Annotated[str, StringConstraints(pattern=K8S_MINOR_VERSION_PATTERN)]
     k8s_certificate_validity_period: Annotated[str, StringConstraints(pattern=VALIDITY_PERIOD_PATTERN)]
 

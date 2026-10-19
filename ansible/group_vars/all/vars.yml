@@ -118,6 +118,24 @@ ki_cp_ntp_server_upstream_servers:
 k8s_pod_subnet: "10.244.0.0/16"
 k8s_service_subnet: "10.96.0.0/12"
 
+# Whether kubeadm installs kube-proxy. Set to false for a cni that routes the
+# services itself - cilium with kubeProxyReplacement, calico in ebpf mode - and
+# kubeadm makes no kube-proxy DaemonSet, now or at any upgrade after. Nothing
+# else here changes: the cni is still what brings the pod network up, and until
+# it does no service address is reachable, kube-proxy or not.
+#
+# A cni that replaces kube-proxy has to be told where the apiserver is, since
+# the kubernetes service address it would otherwise use is one of the addresses
+# it is now in charge of routing. The address to give it is the one every
+# kubelet already uses, ki-cp.<internal_network_zone>:<ki_cp_k8s_cp_lb_port>,
+# which is ki-cp.ki.local:16443 unless constant-vars.yml says otherwise.
+#
+# Fixed while a cluster exists, like the subnets: taking kube-proxy out of a
+# running cluster is a DaemonSet deleted and the rules it wrote cleaned off
+# every node, and putting it back is an addon phase run again, and neither is
+# what update-cluster.yml does. It refuses the change instead
+k8s_kube_proxy_enabled: true
+
 # The kubernetes minor this cluster runs. It has to be one the release carries:
 # release.yml lists them under k8s_versions, and the patch of that minor is the
 # release to pin rather than this file to choose.

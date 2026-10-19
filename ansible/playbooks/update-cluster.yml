@@ -6,6 +6,11 @@
 
 - import_playbook: tasks/diff-applied-vars.yml
 
+# After the diff, which answers for every variable a node recorded, and before
+# anything is applied or recorded: this is for the one immutable variable a
+# record from before it existed does not hold, which the diff takes as a baseline
+- import_playbook: tasks/check-kube-proxy-as-declared.yml
+
 - import_playbook: tasks/apply-service-var-changes.yml
 
 # Before class["kubelet"], not after. Both write the same file on a node, and

@@ -1990,6 +1990,69 @@ hostvars 에서 읽습니다.
 `k8s_node_labels` 에 적을 수 없게 거부되기 때문입니다. 안전하긴 하지만 우연히 안전한 것이었고,
 이제는 읽을 옛 기록 자체가 없습니다.
 
+== kube-proxy 를 끄는 변수
+
+kubeadm 은 `kubeadm init` 의 addon 단계에서 kube-proxy DaemonSet 을 만들고, 설치본은 그 단계를
+그대로 돌렸습니다. 서비스 라우팅을 CNI 가 맡는 사이트(cilium 의 kubeProxyReplacement, calico 의
+eBPF 모드)는 그것을 끌 길이 없었습니다. `k8s_kube_proxy_enabled` 가 그 스위치입니다.
+
+=== skipPhases 가 아니라 proxy.disabled 인 이유
+
+kubeadm 에는 끄는 길이 둘 있습니다. `InitConfiguration.skipPhases` 에 `addon/kube-proxy` 를 적는 것과,
+v1beta4 부터 생긴 `ClusterConfiguration.proxy.disabled` 입니다. init 에서는 둘이 같습니다 — kubeadm
+의 `manageSkippedAddons` 가 한쪽을 다른 쪽으로 맞춥니다. 갈리는 것은 그 뒤입니다. `kubeadm upgrade
+apply` 와 `upgrade node` 는 `kubeadm-config` ConfigMap 에서 ClusterConfiguration 을 읽어 `proxy.disabled`
+면 addon/kube-proxy 단계를 건너뛰는데(`[upgrade/addon] Skipping the addon/kube-proxy phase. The addon
+is disabled.`), skipPhases 는 init 이 한 번 읽고 어디에도 남기지 않는 목록입니다. 업그레이드 쪽의
+`skipPhases` 는 문서가 "currently ignored" 라고 적어 두었습니다.
+
+그래서 값은 `kubeadm-cluster-config.yml.j2` 에 있고, 켜든 끄든 항상 씁니다. 그 템플릿은
+`init-k8s-cluster.sh` 와 `upload-k8s-cluster-config.sh` 가 같이 렌더하므로 렌더된 파일이 `vars.yml`
+이 말하는 바를 그대로 들고 있게 되고, 업그레이드가 읽는 값과 사용자가 적은 값이 한 군데서 갈리지
+않습니다. kubeadm 은 `disabled: false` 를 `proxy: {}` 로 저장하는데(EC2 에서 확인), 이 줄이 생기기
+전의 클러스터가 들고 있는 것이 바로 그것이라 그런 클러스터의 ConfigMap 은 움직이지 않습니다. `upgrade-k8s-node.sh` 는 손대지 않았습니다 —
+`--config` 없이 돌고, 읽는 것은 클러스터입니다.
+
+=== 서브넷과 달리 폴백이 있는 이유
+
+파드와 서비스 서브넷은 `constant-vars.yml` 에 폴백을 두지 않았습니다. 어디서나 맞는 값이 없어서
+줄이 없으면 `Field required` 로 걸려야 했습니다. 이 변수는 반대입니다. 설치본 업그레이드는 사용자의
+`vars.yml` 을 그대로 두므로 이 줄이 없는 파일은 이 줄이 생기기 전에 세운 클러스터이고, 그런
+클러스터는 전부 kube-proxy 가 있습니다. `true` 가 그것을 그대로 두는 값이라 폴백입니다.
+
+=== immutable 인 이유
+
+kube-proxy 는 kubeadm 이 init 에 한 번 만드는 DaemonSet 입니다. 서 있는 클러스터에서 빼는 것은
+DaemonSet 을 지우고 그것이 쓴 iptables/ipvs 규칙을 모든 노드에서 걷어 내는 일이고(`kube-proxy
+--cleanup`), 넣는 것은 `kubeadm init phase addon kube-proxy` 를 다시 돌리는 일입니다. 둘 다 할 수는
+있지만 `update-cluster.yml` 이 하는 일이 아니고, 절반만 되면 — ConfigMap 은 꺼졌다는데 DaemonSet
+은 돌고 있는 — 다음 업그레이드가 그 DaemonSet 을 영영 건너뜁니다. 서브넷과 같은 이유로 거부합니다.
+
+=== 기록 전 공백과 클러스터에 묻는 체크
+
+immutable 을 지키는 것은 `diff-applied-vars.py` 인데, 기록에 없는 변수는 변경이 아니라 baseline 으로
+받습니다. 그래서 이 줄이 생긴 설치본을 올린 뒤 첫 `update-cluster.yml` 전에 `false` 로 고치면 검사를
+지나고, 그 값이 기록됩니다. EC2 에서 재현해 보니 그 자리에서 ConfigMap 이 바뀌는 것은 아닙니다 —
+업로드는 `cluster_config` 클래스의 변경이 있을 때만 돌고 baseline 은 변경이 아니라서요. 대신 기록이
+틀린 채로 남습니다. kube-proxy 가 도는 클러스터의 기록이 `false` 라서, `true` 로 되돌리는 것은
+이제 immutable 변경으로 거부되고, 다음에 `cluster_config` 변수 하나라도 바뀌면 그때 `proxy.disabled:
+true` 가 올라가 업그레이드가 돌고 있는 kube-proxy 를 영영 건너뜁니다.
+
+그래서 `check-kube-proxy-as-declared.yml` 이 `update-cluster.yml` 에서 diff 다음, 무엇을 적용하거나
+기록하기 전에 클러스터에 묻습니다. 컨트롤 플레인 노드 하나에서 kube-proxy DaemonSet 이 있는지 보고
+변수와 다르면 멈춥니다. 기록은 그 뒤에 쓰이므로 틀린 값이 남을 길이 없고, 사용자는 값을 되돌려
+다시 돌리면 됩니다. 양쪽 다입니다 — kube-proxy 없이 세운 클러스터에서 `true` 로 하는 것도 DaemonSet
+이 생기지 않는 채로 설정만 바뀌는 일이기 때문입니다. apiserver 가 답하지 않은 것은 "DaemonSet 이
+없다" 가 아니므로 따로 멈춥니다. 노드 스크립트가 아니라 플레이북에 둔 것은
+`check-kubelet-serving-cert.yml` 과 같은 이유입니다 — 변수가 클러스터 하나에 하나이니 답도 플레이에
+하나이고, 체크가 사는 곳이 기록을 쓰는 곳과 같은 파일이어야 순서가 보입니다.
+
+=== 노드별로 못 씁니다
+
+ClusterConfiguration 은 init 을 돌린 노드 하나의 변수로 렌더됩니다. 노드에 적힌 값은 받아들여지고도
+아무 뜻이 없으므로 `kubelet_server_tls_bootstrap` 과 같이 `CLUSTER_WIDE_VARS` 에 넣어
+`validate_cluster_wide_vars` 가 거절합니다.
+
 == 노드 라벨과 테인트
 
 노드를 배치에 쓰려면 라벨이 필요하고, 비워 두려면 테인트가 필요합니다. 둘 다 설치본 밖에서

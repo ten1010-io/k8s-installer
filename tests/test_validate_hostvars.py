@@ -61,6 +61,15 @@ def test_the_pod_subnet_overlapping_the_internal_network_is_refused(hostvars):
     assert_refused(hostvars, naming="k8s_pod_subnet")
 
 
+def test_kube_proxy_enabled_that_is_not_a_boolean_is_refused(hostvars):
+    """The template writes proxy.disabled from it either way, so a value that is
+    neither would render a cluster the user did not ask for."""
+    for node in hostvars.values():
+        node["k8s_kube_proxy_enabled"] = "maybe"
+
+    assert_refused(hostvars, naming="k8s_kube_proxy_enabled")
+
+
 def test_an_apiserver_argument_carrying_its_dashes_is_refused(hostvars):
     for node in hostvars.values():
         node["k8s_apiserver_extra_args"] = [

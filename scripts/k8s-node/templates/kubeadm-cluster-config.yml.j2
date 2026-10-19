@@ -32,6 +32,17 @@ imageRepository: {{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_por
 networking:
   serviceSubnet: {{ k8s_service_subnet }}
   podSubnet: {{ k8s_pod_subnet }}
+{#
+  Here rather than in skipPhases of the InitConfiguration because this is what
+  kubeadm upgrade reads: it takes the ClusterConfiguration out of the
+  kubeadm-config ConfigMap and skips the addon/kube-proxy phase when this says
+  disabled, while skipPhases is a list kubeadm init reads once and keeps nowhere.
+  Written out both ways so the file says what vars.yml says. kubeadm stores
+  false as an empty proxy, which is what every cluster from before this line
+  holds too, so the ConfigMap of such a cluster does not move
+-#}
+proxy:
+  disabled: {{ 'false' if k8s_kube_proxy_enabled else 'true' }}
 kubernetesVersion: {{ k8s_version }}
 {%- for component in ki_k8s_cp_components %}
 {%- if component.args or component.volumes %}

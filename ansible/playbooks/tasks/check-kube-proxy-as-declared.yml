@@ -1,0 +1,70 @@
+# Refuses a k8s_kube_proxy_enabled that disagrees with the cluster.
+#
+# The variable is immutable, and diff-applied-vars.yml is what holds that: it
+# refuses a value that differs from the one a node recorded. A variable the
+# record does not have yet is taken as the baseline rather than a change, though,
+# so on a cluster built before the variable existed the first update-cluster.yml
+# would accept whatever vars.yml says and then record it. Said there to disable
+# kube-proxy on a cluster that has it, the record would hold false against a
+# cluster running kube-proxy; from then on putting true back is refused as an
+# immutable change, and the next upload of the cluster configuration - the one
+# that follows any class["cluster_config"] change - would tell kubeadm the addon
+# is disabled, so every upgrade after it skips the kube-proxy DaemonSet that is
+# still running. Both halves of that are avoided by asking the cluster, here,
+# before anything is applied or recorded.
+#
+# Asked of one control plane node, since what answers is the cluster. The
+# variable is cluster wide - validate-hostvars.py refuses it on a node - so it is
+# one answer for the whole play
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - when: inventory_hostname == k8s_cp_nodes[0]
+      block:
+        # Three answers rather than two: the DaemonSet is there, the cluster
+        # says it is not, or the cluster could not be asked. An apiserver that
+        # did not answer is not a cluster without kube-proxy
+        - name: Ask the cluster whether it has a kube-proxy DaemonSet
+          shell: |
+            if output=$(sudo kubectl -n kube-system get daemonset kube-proxy -o name 2>&1); then
+              echo present
+            else
+              case "$output" in
+                *NotFound*) echo absent ;;
+                *) echo unknown ;;
+              esac
+            fi
+          register: kube_proxy_result
+
+        - name: "Set_fact variable[\"cluster_kube_proxy\"]"
+          set_fact:
+            cluster_kube_proxy: "{{ kube_proxy_result.stdout_lines | last | trim }}"
+
+        - name: "Remove temporary variable[\"kube_proxy_result\"]"
+          set_fact:
+            kube_proxy_result: null
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    cluster_kube_proxy: "{{ hostvars[k8s_cp_nodes[0]]['cluster_kube_proxy'] | default('unknown') }}"
+    declared_kube_proxy: "{{ 'present' if k8s_kube_proxy_enabled | bool else 'absent' }}"
+  tasks:
+    - name: Check the cluster said whether it has kube-proxy
+      fail:
+        msg: >-
+          Node["{{ k8s_cp_nodes[0] }}"] could not say whether the cluster has a kube-proxy
+          DaemonSet. Check that the control plane is up and run this playbook again
+      when: cluster_kube_proxy == 'unknown'
+
+    - name: Check the cluster has the kube-proxy that variable["k8s_kube_proxy_enabled"] declares
+      fail:
+        msg: >-
+          Variable["k8s_kube_proxy_enabled"] is {{ k8s_kube_proxy_enabled | bool | lower }} but
+          the cluster {{ 'has a' if cluster_kube_proxy == 'present' else 'has no' }} kube-proxy
+          DaemonSet. It can not be changed on a cluster that already exists. Put
+          {{ 'true' if cluster_kube_proxy == 'present' else 'false' }} back, or build the
+          cluster again with the new value
+      when: cluster_kube_proxy != declared_kube_proxy
