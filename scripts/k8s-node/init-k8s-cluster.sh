@@ -116,10 +116,33 @@ main() {
   kubeadm init --upload-certs --config "$ki_tmp_root_path/kubeadm-config.yml"
   rm -f "$ki_tmp_root_path/kubeadm-config.yml"
 
-  mkdir -p "$HOME/.kube"
-  cp -f /etc/kubernetes/admin.conf "$HOME/.kube/config"
-  chown "$(id -u):$(id -g)" "$HOME/.kube/config"
+  install_kubeconfig
 
+  return 0
+}
+
+# admin.conf is what kubectl on a control plane node reads, through a copy under
+# the home directory of whoever runs it. This script runs through sudo, so $HOME
+# is root's; the operator who invoked it is SUDO_USER, and a copy is put under
+# their home too, owned by them, so that kubectl works for them without sudo.
+# Renewal and reset go through the same two places
+each_kubeconfig_home() {
+  echo "$HOME $(id -u) $(id -g)"
+  if [[ -n ${SUDO_USER-} && $SUDO_USER != "root" ]]; then
+    local home
+    home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+    [[ -n $home && $home != "$HOME" ]] && echo "$home $SUDO_UID $SUDO_GID"
+  fi
+  return 0
+}
+
+install_kubeconfig() {
+  local home uid gid
+  while read -r home uid gid; do
+    mkdir -p "$home/.kube"
+    cp -f /etc/kubernetes/admin.conf "$home/.kube/config"
+    chown "$uid:$gid" "$home/.kube" "$home/.kube/config"
+  done < <(each_kubeconfig_home)
   return 0
 }
 

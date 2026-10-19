@@ -177,14 +177,30 @@ get_apiserver_readyz() {
 }
 
 # admin.conf carries a certificate of its own and has just been renewed, and the
-# copy under the home directory is what kubectl reads. Left alone it keeps the
-# old certificate until it expires
+# copies under the home directories are what kubectl reads. Left alone they keep
+# the old certificate until it expires. Only a copy that is there is refreshed:
+# a home that never had one is not given one here
 refresh_kubeconfig() {
-  [[ ! -f "$HOME"/.kube/config ]] && return 0
+  local home uid gid
+  while read -r home uid gid; do
+    [[ ! -f "$home"/.kube/config ]] && continue
 
-  cp -f /etc/kubernetes/admin.conf "$HOME"/.kube/config
-  chown "$(id -u)":"$(id -g)" "$HOME"/.kube/config
+    cp -f /etc/kubernetes/admin.conf "$home"/.kube/config
+    chown "$uid:$gid" "$home"/.kube/config
+  done < <(each_kubeconfig_home)
 
+  return 0
+}
+
+# The homes a kubeconfig is kept under: root's, since this runs through sudo,
+# and the one of the operator who invoked it, as init-k8s-cluster.sh lays it down
+each_kubeconfig_home() {
+  echo "$HOME $(id -u) $(id -g)"
+  if [[ -n ${SUDO_USER-} && $SUDO_USER != "root" ]]; then
+    local home
+    home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+    [[ -n $home && $home != "$HOME" ]] && echo "$home $SUDO_UID $SUDO_GID"
+  fi
   return 0
 }
 

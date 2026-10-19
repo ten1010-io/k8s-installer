@@ -94,7 +94,7 @@ main() {
     kubeadm reset -f
     "$ki_opt_scripts_path"/systemctl.sh disable kubelet
   fi
-  rm -rf ~/.kube
+  remove_kubeconfig
   rm -rf "$ki_etc_kubeadm_path"
   clear_pod_logs
 
@@ -152,6 +152,18 @@ require_directory_exists() {
   [[ ! -e $path ]] && die "[ERROR] No such file or directory of which path is \"$path\""
   [[ ! -d $path ]] && die "[ERROR] File[\"$path\"] is not a directory"
 
+  return 0
+}
+
+# The copies init-k8s-cluster.sh laid down: under root's home, and under the home
+# of the operator who ran the playbook through sudo
+remove_kubeconfig() {
+  rm -rf "$HOME"/.kube
+  if [[ -n ${SUDO_USER-} && $SUDO_USER != "root" ]]; then
+    local home
+    home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+    [[ -n $home && $home != "$HOME" ]] && rm -rf "$home"/.kube
+  fi
   return 0
 }
 
