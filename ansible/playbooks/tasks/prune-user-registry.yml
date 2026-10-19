@@ -35,7 +35,7 @@
     delete_arg: "{{ '--delete' if delete is defined else '' }}"
   tasks:
     - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
-      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+      shell: "{{ ki_create_tmp_root_cmd }}"
 
     - name: Copy the keep file to the node
       copy:

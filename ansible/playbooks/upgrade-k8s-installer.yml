@@ -56,7 +56,7 @@
       with_items: "{{ groups['all'] | community.general.lists_difference(['localhost']) | difference(ki_broken_nodes) }}"
 
     - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
-      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+      shell: "{{ ki_create_tmp_root_cmd }}"
 
     - name: Create payload archive
       shell: "sudo tar cf {{ ki_tmp_payload_src_path }} -C {{ ki_opt_root_path }} bundle scripts"
@@ -73,16 +73,16 @@
           raw: "sudo rm -f {{ ki_opt_release_path }}"
 
         - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
-          raw: "sudo mkdir -p {{ ki_tmp_root_path }}"
+          raw: "{{ ki_create_tmp_root_cmd }}"
 
         - name: Copy payload to the node
           delegate_to: localhost
-          shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
+          shell: "scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
           vars:
             ssh_opt: "-o StrictHostKeyChecking=no"
             port_opt: "-P {{ ansible_port }}"
             src_arg: "{{ ki_tmp_payload_src_path }}"
-            dst_arg: "{{ ansible_ssh_user }}@{{ ansible_host }}:{{ ki_tmp_payload_path }}"
+            dst_arg: "{{ ki_ssh_user }}@{{ ansible_host }}:{{ ki_tmp_payload_path }}"
 
         - name: Extract payload
           raw: "sudo rm -rf {{ ki_opt_bundle_path }} {{ ki_opt_scripts_path }} && sudo tar xf {{ ki_tmp_payload_path }} -C {{ ki_opt_root_path }}"

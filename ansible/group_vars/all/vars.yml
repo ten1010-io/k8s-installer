@@ -1,3 +1,13 @@
+# The user ansible logs in to every node as, the control node included. root
+# works as it always has. Any other user has to exist on every node under this
+# one name, hold the public key configure-control-node-ssh.sh prints, and be
+# allowed sudo without a password - the playbooks run every script through sudo
+# and nothing is there to type one. The user ends up with what root has, so this
+# is for sites whose policy forbids logging in as root rather than for giving the
+# installer less. To log in to one node as someone else, set it on that node in
+# inventory.yml
+ansible_user: root
+
 ki_var_root_path: "/var/lib/k8s-installer"
 docker_root_path: "/var/lib/docker"
 

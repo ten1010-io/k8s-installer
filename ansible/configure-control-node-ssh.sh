@@ -61,12 +61,18 @@ parse_params "$@"
 
 public_key=""
 
+# Run as the user the playbooks will log in to the nodes as, which is the user
+# that runs ansible-playbook. The key pair lands in that user's home and the
+# control node's own authorized_keys takes it, since the control node is a
+# managed node too. Nothing here needs root: sshd is left as the distribution
+# shipped it, because a key in a user's authorized_keys is all a login by key
+# takes. When that user is root, PermitRootLogin has to allow a key, and the
+# instructions printed say so
 main() {
   configure_id_rsa_pub
   configure_authorized_keys
-  configure_sshd_config
 
-  msg "[INFO] SSH of control node configured successfully"
+  msg "[INFO] SSH of control node configured successfully for user[\"$(id -un)\"]"
   msg ""
   print_how_to_configure_managed_node_ssh
 
@@ -99,19 +105,9 @@ configure_authorized_keys() {
   sed -i -z 's/\n\{2,\}/\n/g' ~/.ssh/authorized_keys
 }
 
-configure_sshd_config() {
-  [[ ! $(whoami) = "root" ]] && return 0
-
-  sudo sed -i '/^PermitRootLogin/ d' /etc/ssh/sshd_config
-  sudo sed -i '$ a\\nPermitRootLogin prohibit-password' /etc/ssh/sshd_config
-  sudo sed -i -z 's/\n\{3,\}/\n\n/g' /etc/ssh/sshd_config
-  [[ $(get_os_id) = "ubuntu" ]] && sudo systemctl restart ssh
-  [[ $(get_os_id) = "rhel" ]] && sudo systemctl restart sshd
-  return 0
-}
-
 print_how_to_configure_managed_node_ssh() {
-  echo "[INFO] To configure SSH of managed node, run the following on the managed node"
+  echo "[INFO] To configure SSH of managed node, run the following on every managed node as user[\"$(id -un)\"]"
+  echo "[INFO] That user has to exist on every node and be allowed sudo without a password"
   echo ""
   echo 'key="'"$public_key"'"'
   cat << "EOF"
@@ -122,15 +118,17 @@ sed -i '1 i\'"$key" ~/.ssh/authorized_keys
 sed -i -z 's/\n\{2,\}/\n/g' ~/.ssh/authorized_keys
 EOF
   echo ""
-  echo "[INFO] If using root user, run the following on the managed node"
-  echo ""
-  cat << "EOF"
+  if [[ $(id -un) = "root" ]]; then
+    echo "[INFO] root logs in by key only where sshd allows it. If it does not, run the following on the managed node as well"
+    echo ""
+    cat << "EOF"
 sudo sed -i '/^PermitRootLogin/ d' /etc/ssh/sshd_config
 sudo sed -i '$ a\\nPermitRootLogin prohibit-password' /etc/ssh/sshd_config
 sudo sed -i -z 's/\n\{3,\}/\n\n/g' /etc/ssh/sshd_config
 EOF
-  [[ $(get_os_id) = "ubuntu" ]] && echo "sudo systemctl restart ssh"
-  [[ $(get_os_id) = "rhel" ]] && echo "sudo systemctl restart sshd"
+    [[ $(get_os_id) = "ubuntu" ]] && echo "sudo systemctl restart ssh"
+    [[ $(get_os_id) = "rhel" ]] && echo "sudo systemctl restart sshd"
+  fi
   return 0
 }
 

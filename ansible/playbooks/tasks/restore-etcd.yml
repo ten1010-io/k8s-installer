@@ -61,7 +61,7 @@
     - when: inventory_hostname in k8s_cp_nodes
       block:
         - name: "Create output directory[\"{{ ki_tmp_root_path }}\"]"
-          shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+          shell: "{{ ki_create_tmp_root_cmd }}"
 
         - name: "Copy the snapshot to file[\"{{ node_snapshot_path }}\"]"
           copy:

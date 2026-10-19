@@ -118,7 +118,7 @@
         # than conditioned on whether this node keeps /tmp across a boot, which
         # is a fact about the machine that nothing here asks
         - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
-          shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+          shell: "{{ ki_create_tmp_root_cmd }}"
 
         - name: Create vars file
           copy:

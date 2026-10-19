@@ -63,16 +63,17 @@ public_key=""
 
 # The inverse of configure-control-node-ssh.sh, limited to what that script added
 # on purpose. The key pair is left in place because it may predate the installer
-# and be used for other things, and PermitRootLogin is left alone because
-# tightening it from here could lock the operator out of a node they still need
+# and be used for other things, and sshd is left alone because tightening it from
+# here could lock the operator out of a node they still need. Run as the same
+# user that script was run as, since that is whose authorized_keys it edited
 main() {
   require_id_rsa_pub
   reset_authorized_keys
 
   msg "[INFO] SSH of control node reset successfully"
   msg ""
-  msg "[INFO] The key pair[\"~/.ssh/id_rsa\"] and the sshd configuration were left"
-  msg "[INFO] untouched. Remove them by hand if they are no longer needed"
+  msg "[INFO] The key pair[\"~/.ssh/id_rsa\"] of user[\"$(id -un)\"] and the sshd configuration"
+  msg "[INFO] were left untouched. Remove them by hand if they are no longer needed"
   msg ""
   print_how_to_reset_managed_node_ssh
 
@@ -100,7 +101,7 @@ reset_authorized_keys() {
 }
 
 print_how_to_reset_managed_node_ssh() {
-  echo "[INFO] To reset SSH of managed node, run the following on the managed node"
+  echo "[INFO] To reset SSH of managed node, run the following on every managed node as user[\"$(id -un)\"]"
   echo ""
   echo 'key="'"$public_key"'"'
   cat << "EOF"

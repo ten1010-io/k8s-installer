@@ -24,6 +24,12 @@
           so only one of them can be the control node
       when: ki_control_node_ih not in groups['ki_cp_node']
 
+    # Imported by every playbook, so this is where the user running ansible is
+    # found out to be one that can not sudo without a password
+    - name: Check passwordless sudo
+      shell: "sudo -n true"
+      changed_when: false
+
     - name: Execute hostname
       shell: "sudo hostname"
       register: shell_result

@@ -124,3 +124,16 @@ def test_a_variable_no_class_covers_is_refused(hostvars, tmp_path):
     hostvars["localhost"]["ki_opt_ansible_path"] = str(ansible)
 
     assert_refused(hostvars, naming="a_variable_nothing_knows_how_to_apply")
+
+
+def test_the_connection_user_of_vars_yml_needs_no_class(hostvars, tmp_path):
+    """ansible_user says who to log in as, which no class applies and the
+    inventory may already carry per node, so vars.yml may carry it too."""
+    ansible = tmp_path / "ansible"
+    (ansible / "group_vars" / "all").mkdir(parents=True)
+    (ansible / "group_vars" / "all" / "vars.yml").write_text(
+        "ansible_user: operator\n", encoding="utf-8")
+    (ansible / "inventory.yml").write_text("all:\n  hosts: {}\n", encoding="utf-8")
+    hostvars["localhost"]["ki_opt_ansible_path"] = str(ansible)
+
+    assert_accepted(hostvars)

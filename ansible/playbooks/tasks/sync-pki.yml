@@ -5,16 +5,20 @@
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
     - name: "Create directory[\"{{ ki_tmp_pki_path }}\"]"
-      shell: "sudo mkdir -p {{ ki_tmp_pki_path }}"
+      shell: "{{ ki_create_tmp_root_cmd }} && mkdir -p {{ ki_tmp_pki_path }}"
 
+    # Read on the source node as root, since the keys are readable by root alone
+    # there, and written on the control node as the user ansible runs as
     - name: Copy pki to ansible control node
-      shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
+      fetch:
+        src: "{{ ki_etc_pki_path }}/{{ item.name }}"
+        dest: "{{ ki_tmp_pki_path }}/{{ item.name }}"
+        flat: yes
+      become: yes
+      delegate_to: "{{ src_ih }}"
       vars:
         src_ih: "{{ groups['ki_cp_node'] | community.general.lists_difference([target_node]) | difference(ki_broken_nodes) | first }}"
-        ssh_opt: "-o StrictHostKeyChecking=no"
-        port_opt: "-P {{ hostvars[src_ih]['ansible_port'] }}"
-        src_arg: "{{ hostvars[src_ih]['ansible_ssh_user'] }}@{{ hostvars[src_ih]['ansible_host'] }}:{{ ki_etc_pki_path }}/*"
-        dst_arg: "{{ ki_tmp_pki_path }}/"
+      loop: "{{ ki_pki_files }}"
 
 - hosts: ki_cp_node:!broken_node
   gather_facts: false
@@ -27,19 +31,13 @@
         - name: Create pki directory
           shell: "sudo mkdir -p {{ ki_etc_pki_path }}"
 
-- hosts: localhost
-  gather_facts: false
-  any_errors_fatal: true
-  vars:
-    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
-  tasks:
-    - name: "Copy pki to the node[\"{{ target_node }}\"]"
-      shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
-      vars:
-        ssh_opt: "-o StrictHostKeyChecking=no"
-        port_opt: "-P {{ hostvars[target_node]['ansible_port'] }}"
-        src_arg: "{{ ki_tmp_pki_path }}/*"
-        dst_arg: "{{ hostvars[target_node]['ansible_ssh_user'] }}@{{ hostvars[target_node]['ansible_host'] }}:{{ ki_etc_pki_path }}/"
+        - name: "Copy pki to the node[\"{{ target_node }}\"]"
+          copy:
+            src: "{{ ki_tmp_pki_path }}/{{ item.name }}"
+            dest: "{{ ki_etc_pki_path }}/{{ item.name }}"
+            mode: "{{ item.mode }}"
+          become: yes
+          loop: "{{ ki_pki_files }}"
 
 - hosts: all:!broken_node
   gather_facts: false

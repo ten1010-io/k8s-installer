@@ -103,6 +103,9 @@ KUBEADM_CONTROL_PLANE_VOLUME_NAMES = frozenset({
 VFIO_PCI_OWNED_KERNEL_ARGS = frozenset({"intel_iommu", "amd_iommu", "iommu", "vfio-pci.ids"})
 
 
+# A user name as useradd accepts one, with the trailing $ of a machine account
+USER_NAME_PATTERN = r"^[a-z_]([a-z0-9_-]{0,31}|[a-z0-9_-]{0,30}\$)$"
+
 # The kernel reads a hugepages= as belonging to the hugepagesz= before it, so a
 # node asking for two page sizes repeats both names on purpose and the order of
 # the list is what carries the meaning. Every other argument is taken once
@@ -179,9 +182,12 @@ def validate_var_classes(hostvars_errors: List[HostvarsError], hostvars):
     classified = {name for names in var_classes.values() for name in names}
     removed = lo_hostvars.get("ki_removed_vars") or {}
 
+    # The ansible_ names configure the connection rather than the cluster, and
+    # nothing here applies them. vars.yml carries the user to log in as, and
+    # inventory.yml carries that and the address and port of each node
     user_vars_path = Path(ansible_path) / "group_vars" / "all" / "vars.yml"
     for var_name, value in sorted(read_yaml_mapping(user_vars_path).items()):
-        if var_name in classified:
+        if var_name in classified or var_name.startswith("ansible_"):
             continue
         if var_name in removed:
             hostvars_errors.append(
@@ -192,8 +198,7 @@ def validate_var_classes(hostvars_errors: List[HostvarsError], hostvars):
 
     # inventory.yml is read as a file too. hostvars carries hundreds of names
     # ansible itself defines, so what a node was actually given can only be seen
-    # in the file it was given in. The ansible_ ones configure the connection
-    # rather than the cluster, and nothing here applies them
+    # in the file it was given in
     inventory_path = Path(ansible_path) / "inventory.yml"
     for var_name, value in sorted(read_inventory_host_vars(inventory_path).items()):
         if var_name in classified or var_name.startswith("ansible_"):
@@ -1347,7 +1352,13 @@ class ConstantVarsModel(BaseModel):
 
     ansible_python_interpreter: Path
     ansible_port: int = Field(ge=0, le=65535)
-    ansible_ssh_user: Annotated[str, StringConstraints(pattern=r"^[a-z_]([a-z0-9_-]{0,31}|[a-z0-9_-]{0,30}\$)$")]
+    # The user to log in as may be left unset, in which case ansible logs in as
+    # the user running it; ki_ssh_user is that choice resolved, and is what the
+    # plays that spell a user@host pair use, so it is the one that has to be a
+    # user name
+    ansible_user: Optional[
+        Annotated[str, StringConstraints(pattern=USER_NAME_PATTERN)]] = None
+    ki_ssh_user: Annotated[str, StringConstraints(pattern=USER_NAME_PATTERN)]
 
     ki_opt_root_path: Path
     ki_opt_scripts_path: Path

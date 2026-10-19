@@ -1,6 +1,10 @@
 ansible_python_interpreter: "{{ ki_opt_venv_path }}/bin/python3"
 ansible_port: 22
-ansible_ssh_user: root
+# The user the two scp calls and the ssh probe of the playbooks address a node
+# as. ansible_user of vars.yml when it is set; otherwise the user ansible itself
+# runs as, which is who the ssh connection plugin logs in as when nothing names
+# another
+ki_ssh_user: "{{ ansible_user | default(lookup('env', 'USER')) }}"
 
 # The installer is deployed as a self contained package under /opt, following the
 # FHS convention for add-on software. Configuration lives in ki_etc_root_path and
@@ -69,6 +73,16 @@ ki_release_snapshot_suffix: "-SNAPSHOT"
 ki_broken_nodes: "{{ groups['broken_node'] | default([]) }}"
 
 ki_tmp_root_path: "/tmp/k8s-installer"
+# How every play creates that directory. It is made owned by the user ansible
+# connects as and closed to everyone else, because that user is who the copy
+# and fetch modules write there as and who scp lands the payload as, and none of
+# them can be made root on the far side. The scripts this installer runs as root
+# write there too, and a directory owned by someone else does not stop root.
+# Closing it also keeps what is staged there - join credentials, the private
+# keys of the pki - from the other users of the machine, which the 755 directory
+# mkdir made did not. install rather than mkdir, so that a directory left behind
+# by a release that made it as root is taken over rather than kept as it was
+ki_create_tmp_root_cmd: "sudo install -d -m 0700 -o $(id -un) -g $(id -gn) {{ ki_tmp_root_path }}"
 ki_tmp_localhost_vars_path: "{{ ki_tmp_root_path }}/localhost-vars.yml"
 ki_tmp_vars_path: "{{ ki_tmp_root_path }}/vars.yml"
 ki_tmp_pki_path: "{{ ki_tmp_root_path }}/pki"
@@ -84,6 +98,15 @@ ki_tmp_ansible_path: "{{ ki_tmp_root_path }}/ansible.tar"
 
 ki_etc_root_path: "/etc/k8s-installer"
 ki_etc_pki_path: "{{ ki_etc_root_path }}/pki"
+# The files of the pki, with the mode each is laid down with on a node. Named
+# here because init-pki.yml and sync-pki.yml carry them with the copy module,
+# which lays a file down with the umask of the far side unless told otherwise,
+# and a private key with the mode of a certificate is what that would give
+ki_pki_files:
+  - { name: "ki-ca.crt", mode: "0644" }
+  - { name: "ki-ca.key", mode: "0600" }
+  - { name: "ki-cp-tls.crt", mode: "0644" }
+  - { name: "ki-cp-tls.key", mode: "0600" }
 ki_etc_services_path: "{{ ki_etc_root_path }}/services"
 ki_etc_kubeadm_path: "{{ ki_etc_root_path }}/kubeadm"
 # What every node of the inventory reported the last time gather-facts reached

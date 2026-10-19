@@ -3,7 +3,7 @@
   any_errors_fatal: true
   tasks:
     - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
-      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+      shell: "{{ ki_create_tmp_root_cmd }}"
 
     - name: Create localhost vars file
       copy:
@@ -16,7 +16,7 @@
   any_errors_fatal: true
   tasks:
     - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
-      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+      shell: "{{ ki_create_tmp_root_cmd }}"
 
     # ki_control_node_ih is written in as its value rather than left to the
     # template it is defined as. That template reaches into the hostvars of

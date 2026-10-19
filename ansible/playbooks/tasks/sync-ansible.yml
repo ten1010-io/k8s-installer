@@ -9,7 +9,7 @@
   any_errors_fatal: true
   tasks:
     - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
-      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+      shell: "{{ ki_create_tmp_root_cmd }}"
 
     # Bundled so that the inventory, the variables and the playbooks land on the
     # other nodes as one unit rather than file by file
@@ -25,16 +25,13 @@
     - when: inventory_hostname != ki_control_node_ih
       block:
         - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
-          shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+          shell: "{{ ki_create_tmp_root_cmd }}"
 
         - name: Copy ansible archive to the node
-          delegate_to: localhost
-          shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
-          vars:
-            ssh_opt: "-o StrictHostKeyChecking=no"
-            port_opt: "-P {{ ansible_port }}"
-            src_arg: "{{ ki_tmp_ansible_src_path }}"
-            dst_arg: "{{ ansible_ssh_user }}@{{ ansible_host }}:{{ ki_tmp_ansible_path }}"
+          copy:
+            src: "{{ ki_tmp_ansible_src_path }}"
+            dest: "{{ ki_tmp_ansible_path }}"
+          become: yes
 
         # Replaced rather than merged, so that a playbook or a variable file the
         # release dropped does not survive on the node that may have to take over

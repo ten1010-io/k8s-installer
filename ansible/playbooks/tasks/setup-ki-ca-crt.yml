@@ -5,16 +5,17 @@
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
     - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
-      shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+      shell: "{{ ki_create_tmp_root_cmd }}"
 
     - name: Copy ki-ca.crt to ansible control node
-      shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
+      fetch:
+        src: "{{ ki_etc_pki_path }}/ki-ca.crt"
+        dest: "{{ ki_tmp_ki_ca_crt_path }}"
+        flat: yes
+      become: yes
+      delegate_to: "{{ src_ih }}"
       vars:
         src_ih: "{{ groups['ki_cp_node'] | difference(ki_broken_nodes) | first }}"
-        ssh_opt: "-o StrictHostKeyChecking=no"
-        port_opt: "-P {{ hostvars[src_ih]['ansible_port'] }}"
-        src_arg: "{{ hostvars[src_ih]['ansible_ssh_user'] }}@{{ hostvars[src_ih]['ansible_host'] }}:{{ ki_etc_pki_path }}/ki-ca.crt"
-        dst_arg: "{{ ki_tmp_ki_ca_crt_path }}"
 
 - hosts: all:!localhost:!broken_node
   gather_facts: false
@@ -25,31 +26,15 @@
     - when: target_node is none or inventory_hostname == target_node
       block:
         - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
-          shell: "sudo mkdir -p {{ ki_tmp_root_path }}"
+          shell: "{{ ki_create_tmp_root_cmd }}"
 
-- hosts: localhost
-  gather_facts: false
-  any_errors_fatal: true
-  vars:
-    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
-  tasks:
-    - name: Copy ki-ca.crt file to nodes of all group
-      shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
-      vars:
-        ssh_opt: "-o StrictHostKeyChecking=no"
-        port_opt: "-P {{ hostvars[item]['ansible_port'] }}"
-        src_arg: "{{ ki_tmp_ki_ca_crt_path }}"
-        dst_arg: "{{ hostvars[item]['ansible_ssh_user'] }}@{{ hostvars[item]['ansible_host'] }}:{{ ki_tmp_ki_ca_crt_path }}"
-      with_items: "{{ groups['all'] | community.general.lists_difference(['localhost']) | difference(ki_broken_nodes) }}"
+        - name: Copy ki-ca.crt file to the node
+          copy:
+            src: "{{ ki_tmp_ki_ca_crt_path }}"
+            dest: "{{ ki_tmp_ki_ca_crt_path }}"
+            mode: "0644"
+          become: yes
 
-- hosts: all:!localhost:!broken_node
-  gather_facts: false
-  any_errors_fatal: true
-  vars:
-    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
-  tasks:
-    - when: target_node is none or inventory_hostname == target_node
-      block:
         - name: Execute setup-ki-ca-crt.sh
           shell: "sudo {{ ki_opt_scripts_path }}/all-node/ki-ca-crt/setup-ki-ca-crt.sh {{ vars_path_arg }}"
 

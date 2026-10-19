@@ -11,17 +11,28 @@
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_localhost_vars_path }}"
   tasks:
+    # Run as the user ansible runs as rather than as root. It reads the
+    # installer directory and writes under the temporary directory that user
+    # owns, and the copy below reads what it wrote as that same user, which it
+    # could not do with the private keys openssl writes for root alone
     - name: Execute create-pki.sh
-      shell: "sudo {{ ki_opt_scripts_path }}/localhost-node/create-pki.sh {{ vars_path_arg }}"
+      shell: "{{ ki_opt_scripts_path }}/localhost-node/create-pki.sh {{ vars_path_arg }}"
 
-    - name: Copy pki to nodes of ki_cp_node group
-      shell: "sudo scp {{ ssh_opt }} {{ port_opt }} {{ src_arg }} {{ dst_arg }}"
-      vars:
-        ssh_opt: "-o StrictHostKeyChecking=no"
-        port_opt: "-P {{ hostvars[item]['ansible_port'] }}"
-        src_arg: "{{ ki_tmp_pki_path }}/*"
-        dst_arg: "{{ hostvars[item]['ansible_ssh_user'] }}@{{ hostvars[item]['ansible_host'] }}:{{ ki_etc_pki_path }}/"
-      with_items: "{{ groups['ki_cp_node'] | difference(ki_broken_nodes) }}"
+- hosts: ki_cp_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Copy pki to the node
+      copy:
+        src: "{{ ki_tmp_pki_path }}/{{ item.name }}"
+        dest: "{{ ki_etc_pki_path }}/{{ item.name }}"
+        mode: "{{ item.mode }}"
+      become: yes
+      loop: "{{ ki_pki_files }}"
 
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
     - name: Delete temporary pki directory
       shell: "sudo rm -rf {{ ki_tmp_pki_path }}"

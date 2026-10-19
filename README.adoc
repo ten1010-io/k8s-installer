@@ -188,6 +188,16 @@ control_node:
 
 === 클러스터 설치
 
+플레이북은 `ansible-playbook` 을 실행한 사용자로 모든 노드에 SSH 로 들어가고 (제어 노드 자신도
+포함합니다), 노드에서 하는 일은 전부 `sudo` 로 합니다. 어느 사용자로 들어갈지는 `vars.yml` 의
+`ansible_user` 가 정하고 기본값은 `root` 입니다. root 로그인을 금지하는 사이트는 다른 사용자를
+적으면 되는데, 그 사용자는 **모든 노드에 같은 이름으로 있고 비밀번호 없이 `sudo` 를 쓸 수 있어야**
+합니다 (`NOPASSWD`). 비밀번호를 받아 줄 자리가 없기 때문이고, 플레이북은 첫 태스크에서 `sudo -n true`
+로 이것을 확인한 뒤 안 되는 노드를 거부합니다. root 에 키를 만들거나 등록할 일은 없습니다. 다만 그
+사용자는 결국 root 가 하는 모든 일을 하므로, 이것은 설치본의 권한을 줄이는 것이 아니라 누가 들어왔는지를
+sudo 로그에 남기고 정책을 따르는 것입니다. SSH 설정 스크립트는 **그 사용자로** 실행합니다 — 키는 실행한
+사용자의 홈에 생기고, 출력되는 안내도 그 사용자의 `authorized_keys` 를 가리킵니다.
+
 [source,shell,subs="+attributes"]
 ----
 git clone {github}.git
@@ -196,10 +206,10 @@ git checkout v{version}
 ./download-bundle.sh
 sudo ./setup.sh
 
-sudo /opt/k8s-installer/ansible/configure-control-node-ssh.sh   # 출력된 안내에 따라 모든 관리 노드에 SSH 설정
+/opt/k8s-installer/ansible/configure-control-node-ssh.sh   # ansible 을 실행할 사용자로. 출력된 안내에 따라 모든 관리 노드에 SSH 설정
 
 # /opt/k8s-installer/ansible/inventory.yml 과
-# /opt/k8s-installer/ansible/group_vars/all/vars.yml 수정
+# /opt/k8s-installer/ansible/group_vars/all/vars.yml 수정 (setup.sh 가 root 로 놓은 파일이라 sudo 로 편집)
 
 source /opt/k8s-installer/venv/bin/activate
 cd /opt/k8s-installer/ansible
@@ -1162,8 +1172,8 @@ WARNING: 복구는 클러스터의 상태를 스냅샷 시점으로 되돌립니
 
 [source,shell]
 ----
-# 스냅샷을 제어 노드로 가져옵니다
-scp root@<노드>:/var/lib/k8s-installer/etcd-backups/etcd-<타임스탬프>.db /tmp/
+# 스냅샷을 제어 노드로 가져옵니다. 백업 디렉토리는 root 의 것이라 sudo 로 읽습니다
+ssh <노드> sudo cat /var/lib/k8s-installer/etcd-backups/etcd-<타임스탬프>.db > /tmp/etcd-<타임스탬프>.db
 
 source /opt/k8s-installer/venv/bin/activate
 cd /opt/k8s-installer/ansible
@@ -1410,14 +1420,15 @@ sha256sum bundle-1.36.1.tgz
 옮기는 것은 그 선언 한 줄과 SSH 키뿐입니다. `ki_cp_node` 는 모두 같은 `ansible` 디렉토리를
 들고 있으므로 옮겨 갈 노드에 이미 필요한 것이 다 있습니다.
 
-인계받을 `ki_cp_node`에서 `control_node_ih`를 그 노드로 바꾸고, 그 노드의 SSH 키를 관리 노드에 심으면 됩니다.
-SSH 설정 스크립트는 ansible 디렉토리에 함께 동기화되므로 소스 트리를 다시 받을 필요가 없습니다.
+인계받을 `ki_cp_node`에서 `control_node_ih`를 그 노드로 바꾸고, 그 노드에서 ansible 을 실행할 사용자의
+SSH 키를 관리 노드에 심으면 됩니다. SSH 설정 스크립트는 ansible 디렉토리에 함께 동기화되므로 소스
+트리를 다시 받을 필요가 없습니다.
 
 [source,shell]
 ----
 # 인계받을 ki_cp_node 에서
-vi /opt/k8s-installer/ansible/inventory.yml    # control_node_ih: node2
-sudo /opt/k8s-installer/ansible/configure-control-node-ssh.sh   # 출력된 안내에 따라 모든 관리 노드에 SSH 설정
+sudo vi /opt/k8s-installer/ansible/inventory.yml    # control_node_ih: node2
+/opt/k8s-installer/ansible/configure-control-node-ssh.sh   # ansible 을 실행할 사용자로. 출력된 안내에 따라 모든 관리 노드에 SSH 설정
 ----
 
 선언이 실제로 플레이북을 실행하는 노드를 가리키지 않으면 모든 플레이북이 시작 단계에서 중단됩니다.
@@ -1482,7 +1493,7 @@ ansible-playbook -i inventory.yml playbooks/reset-cluster.yml
 ansible-playbook -i inventory.yml playbooks/reset-k8s-installer.yml
 deactivate
 
-sudo /opt/k8s-installer/ansible/reset-control-node-ssh.sh   # 출력된 안내에 따라 모든 관리 노드의 SSH 설정 제거
+/opt/k8s-installer/ansible/reset-control-node-ssh.sh   # SSH 설정 스크립트를 실행한 사용자로. 출력된 안내에 따라 모든 관리 노드의 SSH 설정 제거
 sudo /opt/k8s-installer/reset.sh
 ----
 
@@ -1505,6 +1516,10 @@ ansible-playbook -i inventory.yml playbooks/reset-cluster.yml -e sdfc=
 apiserver 가 돌아온 뒤 `kubectl delete node` 로 직접 빼야 합니다.
 
 == 플레이북이 시작 전에 보는 것
+
+모든 플레이북은 제어 노드에서, `setup-k8s-installer` 는 모든 노드에서 `sudo -n true` 로 비밀번호 없는
+`sudo` 가 되는지를 가장 먼저 봅니다. 안 되는 사용자로 실행하면 첫 태스크에서 멈춥니다 — 어딘가의
+첫 `sudo` 가 비밀번호를 기다리며 매달려 있는 대신에요.
 
 클러스터에 무언가를 하는 플레이북은 시작하면서 각 노드에 세 가지를 묻습니다. 통과하면 아무 말도
 하지 않고, 걸리면 무엇이 문제이고 무엇을 해야 하는지 적은 뒤 **아무것도 건드리지 않고 멈춥니다.**

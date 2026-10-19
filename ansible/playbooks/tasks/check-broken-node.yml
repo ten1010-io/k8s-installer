@@ -25,11 +25,11 @@
       when: fenced is not defined
 
     - name: "Execute ssh on node[\"{{ target_node }}\"]"
-      shell: "sudo ssh {{ ssh_opt }} {{ port_opt }} {{ dst_arg }} true"
+      shell: "ssh {{ ssh_opt }} {{ port_opt }} {{ dst_arg }} true"
       vars:
         ssh_opt: "-o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5"
         port_opt: "-p {{ hostvars[target_node]['ansible_port'] }}"
-        dst_arg: "{{ hostvars[target_node]['ansible_ssh_user'] }}@{{ hostvars[target_node]['ansible_host'] }}"
+        dst_arg: "{{ hostvars[target_node]['ki_ssh_user'] }}@{{ hostvars[target_node]['ansible_host'] }}"
       register: shell_result
       failed_when: false
       changed_when: false

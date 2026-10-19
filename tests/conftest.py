@@ -20,6 +20,7 @@ refuses a path unless it is absolute, and "/var/lib/k8s-installer" is not
 absolute on windows.
 """
 import copy
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -41,12 +42,14 @@ INTERNAL_SUBNET = "192.168.0.0/24"
 KI_CP_VIP = "192.168.0.10"
 
 
-def _lookup_file(kind, path):
-    """The file lookup, which is the only kind group_vars asks for."""
-    if kind != "file":
-        raise ValueError(f"lookup(\"{kind}\") is not one these tests supply")
+def _lookup(kind, name):
+    """The file and env lookups, which are the kinds group_vars asks for."""
+    if kind == "file":
+        return Path(name).read_text(encoding="utf-8")
+    if kind == "env":
+        return os.environ.get(name, "")
 
-    return Path(path).read_text(encoding="utf-8")
+    raise ValueError(f"lookup(\"{kind}\") is not one these tests supply")
 
 
 def _render_group_vars():
@@ -63,7 +66,7 @@ def _render_group_vars():
 
     environment = Environment(undefined=ChainableUndefined)
     environment.filters["from_yaml"] = yaml.safe_load
-    environment.globals["lookup"] = _lookup_file
+    environment.globals["lookup"] = _lookup
 
     context = dict(merged)
     context["hostvars"] = {"localhost": {"control_node_ih": "node1"}}
