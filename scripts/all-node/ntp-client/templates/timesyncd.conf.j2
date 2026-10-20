@@ -1,2 +1,6 @@
 [Time]
 NTP={{ ntp_servers }}
+# Empty, or a node with nothing to follow follows ntp.ubuntu.com, which an
+# air-gapped node can not reach and an online ki cp node must not prefer to
+# the upstream of the site
+FallbackNTP=
