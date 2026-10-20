@@ -90,6 +90,8 @@ provision_reboot=""
 target_node=""
 target_node_op=""
 ki_cp_ha_mode=""
+ki_cp_ha_mode_vip=""
+ki_cp_ha_mode_vip_carrier=""
 
 ki_var_root_path=""
 docker_root_path=""
@@ -127,6 +129,8 @@ main() {
   target_node=$($yq_cmd '.target_node' < "$vars_path")
   target_node_op=$($yq_cmd '.target_node_op' < "$vars_path")
   ki_cp_ha_mode=$($yq_cmd '.ki_cp_ha_mode' < "$vars_path")
+  ki_cp_ha_mode_vip=$($yq_cmd '.ki_cp_ha_mode_vip' < "$vars_path")
+  ki_cp_ha_mode_vip_carrier=$($yq_cmd '.ki_cp_ha_mode_vip_carrier' < "$vars_path")
   hostname_to_ih_dict=$($yq_cmd -o json '.hostname_to_ih_dict' < "$vars_path")
 
   ki_var_root_path=$($yq_cmd '.ki_var_root_path' < "$vars_path")
@@ -148,6 +152,7 @@ main() {
   check_disk_space "$(get_node_check_severity)"
   check_clock "$(get_node_check_severity)"
   check_kernel_modules "$(get_node_check_severity)"
+  check_vip_carrier "$(get_node_check_severity)"
   require_no_etcd_alarm
 
   if [[ $playbook = "setup-cluster" ]]; then
@@ -368,6 +373,45 @@ check_kernel_modules() {
   fi
 
   msg "[INFO] Kernel[\"$(uname -r)\"] can not load module[ $missing]. Kernel[\"$bundle_version\"] of the bundle is installed and this node is rebooted before anything is built on it"
+
+  return 0
+}
+
+# Whether this node can carry the vip the way the site says it is carried.
+# Everything the carrier would need at a handover - on ec2 the instance
+# metadata, a network interface holding the address of this node, a subnet that
+# can hold the vip, an instance profile allowed to assign it, a route to the
+# api - is asked of it without moving anything, and what is missing comes back
+# in its words. Which carrier it is, and whether it has anything to ask, is the
+# carrier's to know: arp asks nothing, because a switch needs no permission.
+#
+# Asked of a ki cp node that is being built or kept, and not of one that is on
+# its way out: a node remove-node is taking away is never MASTER again, and a
+# cluster being reset or rescued has nothing to gain from an answer
+check_vip_carrier() {
+  local severity=$1
+
+  [[ $ki_cp_ha_mode = "true" ]] || return 0
+  [[ $(is_ki_cp_node "$inventory_hostname") = "true" ]] || return 0
+  [[ $inventory_hostname = "$target_node" && $target_node_op = "remove" ]] && return 0
+  case "$playbook" in
+    reset-cluster | remove-node | remove-broken-node) return 0 ;;
+  esac
+
+  # The address of this node and not the vip, which is on the same interface
+  # whenever this node holds it and would name the interface just as well
+  # until the moment it does not
+  local node_ip
+  node_ip=$($yq_cmd "[.internal_network_interfaces[] | select(.ip != \"$ki_cp_ha_mode_vip\")][0].ip" < "$vars_path")
+
+  local output
+  local exit_code=0
+  output=$("$ki_opt_venv_path"/bin/python3 "$ki_opt_scripts_path"/ki-cp-node/keepalived/carry-vip.py \
+    --carrier "$ki_cp_ha_mode_vip_carrier" preflight --vip "$ki_cp_ha_mode_vip" --node-ip "$node_ip" 2>&1) || exit_code=$?
+  [[ $exit_code = 0 ]] && return 0
+
+  report_or_die "$severity" \
+    "This node can not carry vip[\"$ki_cp_ha_mode_vip\"] with carrier[\"$ki_cp_ha_mode_vip_carrier\"], which ki_cp_ha_mode_vip_carrier says it has to:\n$output\nWhat the carrier needs from the site is in README.adoc"
 
   return 0
 }
