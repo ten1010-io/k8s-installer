@@ -70,6 +70,13 @@ parse_params "$@"
 # --- End of CLI template ---
 
 SVC_NAME=ki-cp-keepalived
+# The units setup-keepalived.sh puts down for a carrier other than arp, in the
+# one directory the removal of the service directory below does not reach
+CARRIER_NAME=ki-cp-vip-carrier
+UNIT_DIR_PATH=/etc/systemd/system
+CARRIER_SERVICE_PATH="$UNIT_DIR_PATH"/$CARRIER_NAME.service
+CARRIER_PATH_PATH="$UNIT_DIR_PATH"/$CARRIER_NAME.path
+CARRIER_TIMER_PATH="$UNIT_DIR_PATH"/$CARRIER_NAME.timer
 
 ki_opt_root_path=""
 ki_opt_scripts_path=""
@@ -90,6 +97,10 @@ main() {
   require_directory_exists "$ki_opt_root_path"
   validate_ki_opt_directory
 
+  # Before the docker check: the units are of the host and are there whether or
+  # not the daemon still is
+  remove_carrier_units
+
   [[ $("$ki_opt_scripts_path/systemctl.sh" is-enabled docker) = "false" ]] && exit 0
 
   ki_etc_services_path=$($yq_cmd '.ki_etc_services_path' < "$vars_path")
@@ -98,6 +109,26 @@ main() {
 
   [[ $(service_exists $SVC_NAME) = "true" ]] && docker compose --project-directory "$etc_svc_root_path" down
   rm -rf "$etc_svc_root_path"
+
+  return 0
+}
+
+# Keyed on the unit files so that a node that never had them is a no-op
+remove_carrier_units() {
+  [[ -f $CARRIER_PATH_PATH || -f $CARRIER_TIMER_PATH || -f $CARRIER_SERVICE_PATH ]] || return 0
+
+  local unit
+  for unit in $CARRIER_NAME.path $CARRIER_NAME.timer; do
+    if [[ -f $UNIT_DIR_PATH/$unit && $("$ki_opt_scripts_path"/systemctl.sh exists "$unit") = "true" ]]; then
+      "$ki_opt_scripts_path"/systemctl.sh disable "$unit"
+      "$ki_opt_scripts_path"/systemctl.sh stop "$unit"
+    fi
+  done
+  if [[ -f $CARRIER_SERVICE_PATH && $("$ki_opt_scripts_path"/systemctl.sh exists $CARRIER_NAME.service) = "true" ]]; then
+    "$ki_opt_scripts_path"/systemctl.sh stop $CARRIER_NAME.service
+  fi
+  rm -f "$CARRIER_PATH_PATH" "$CARRIER_TIMER_PATH" "$CARRIER_SERVICE_PATH"
+  "$ki_opt_scripts_path"/systemctl.sh reload
 
   return 0
 }

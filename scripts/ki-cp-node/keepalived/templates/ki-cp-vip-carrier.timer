@@ -1,0 +1,19 @@
+[Unit]
+Description=Ask every fifteen seconds whether the vip is still delivered to this node
+
+[Timer]
+# The path unit beside this wakes the service at a transition, and this is for
+# everything a transition does not announce: an api that was down at that
+# moment, an address moved from a console, a wake the path unit missed while the
+# service was already running. Fifteen seconds is how long a MASTER nobody
+# reaches goes unasked about; the work is a few metadata reads when nothing is
+# wrong, which is cheap enough to ask for that often
+OnBootSec=30s
+# Counted from the end of the previous run rather than its start, so that a run
+# still waiting on the network is not stacked on by the next
+OnUnitInactiveSec=15s
+AccuracySec=1s
+# Persistent is deliberately not set, for the reason the metrics timer gives:
+# every firing asks the same question - what is true now
+[Install]
+WantedBy=timers.target

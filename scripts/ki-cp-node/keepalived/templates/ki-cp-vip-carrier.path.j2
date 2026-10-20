@@ -1,0 +1,16 @@
+[Unit]
+Description=Watch the state keepalived writes, and carry the vip to this node when it is MASTER
+# Written by setup-keepalived.sh and left outside the directories a reset
+# removes, like the metrics timer, so the same condition is on the service
+# this starts: a watcher that outlived the installer wakes a unit that skips
+
+[Path]
+# Changed rather than modified: notify.sh writes a temporary file and moves it
+# into place, and a move into the directory is what this wakes on. What a
+# transition does not announce - an address that moved later, an api that was
+# down at that moment - the timer beside this asks about
+PathChanged={{ ki_etc_services_path }}/ki-cp-keepalived/state/vrrp
+Unit=ki-cp-vip-carrier.service
+
+[Install]
+WantedBy=multi-user.target

@@ -65,4 +65,13 @@ vrrp_instance VI_1 {
   track_script {
     check_node
   }
+{%- if ki_cp_ha_mode_vip_carrier != "arp" %}
+  # Called with the state keepalived has just moved this instance into. The
+  # script writes that one word to a file on the host and nothing else: what
+  # has to happen on MASTER is a call to the api of the cloud, and that is made
+  # by a unit of the host watching the file, with the credentials of the
+  # instance and the python of this installer, neither of which this container
+  # holds. See scripts/ki-cp-node/keepalived/carry-vip.py
+  notify /etc/keepalived/notify.sh
+{%- endif %}
 }

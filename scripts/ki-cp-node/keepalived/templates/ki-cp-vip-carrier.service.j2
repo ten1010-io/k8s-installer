@@ -1,0 +1,31 @@
+[Unit]
+Description=Carry the vip of the ki cp nodes to this node when keepalived has made it MASTER
+# Nothing about docker is asked, but the file this answers to is written by a
+# container, so a unit that came up before the daemon has nothing to read yet
+# and exits as a node that is not MASTER, which it is not
+After=docker.service
+# The reason is on ki-cp-metrics.service: units live in a directory no reset
+# clears, so a unit that outlived the installer skips rather than fails
+ConditionPathExists={{ ki_opt_scripts_path }}/ki-cp-node/keepalived/carry-vip.py
+
+[Service]
+# One reconcile and done, like the metrics. What asks for the next one is the
+# path unit at a transition and the timer in between, so there is no Restart=
+# here and nothing for the systemd of rhel 8 to refuse on a oneshot. A carry
+# that failed exits 1 and is seen in systemctl --failed until the next run
+# succeeds, with the reason in the journal
+Type=oneshot
+# The reconcile is bounded: a handful of metadata reads, one api call and up to
+# the confirm window of the script waiting for the network to agree. This is
+# the backstop for the piece none of those bound, so that a run held by
+# something unforeseen is abandoned before the timer asks for the next
+TimeoutStartSec=90
+# --node-ip is the address of the interface the cluster is reached through and
+# not the vip, which is on that same interface exactly when this node holds it
+ExecStart={{ ki_opt_venv_path }}/bin/python3 {{ ki_opt_scripts_path }}/ki-cp-node/keepalived/carry-vip.py \
+    --carrier {{ ki_cp_ha_mode_vip_carrier }} reconcile \
+    --state-path {{ ki_etc_services_path }}/ki-cp-keepalived/state/vrrp \
+    --carried-path {{ ki_etc_services_path }}/ki-cp-keepalived/state/carried \
+    --pending-path {{ ki_etc_services_path }}/ki-cp-keepalived/state/pending \
+    --vip {{ ki_cp_ha_mode_vip }} \
+    --node-ip {{ internal_network_interfaces | rejectattr("ip", "equalto", ki_cp_ha_mode_vip) | map(attribute="ip") | first }}

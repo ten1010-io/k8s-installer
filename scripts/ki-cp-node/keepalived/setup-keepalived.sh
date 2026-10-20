@@ -73,6 +73,15 @@ parse_params "$@"
 # --- End of CLI template ---
 
 SVC_NAME=ki-cp-keepalived
+# The units of the host that carry the vip through the api of the cloud when
+# the site says that is how it is carried. Beside the metrics timer in the one
+# directory a reset does not clear, and taken away by the same script that puts
+# them there
+CARRIER_NAME=ki-cp-vip-carrier
+UNIT_DIR_PATH=/etc/systemd/system
+CARRIER_SERVICE_PATH="$UNIT_DIR_PATH"/$CARRIER_NAME.service
+CARRIER_PATH_PATH="$UNIT_DIR_PATH"/$CARRIER_NAME.path
+CARRIER_TIMER_PATH="$UNIT_DIR_PATH"/$CARRIER_NAME.timer
 
 ki_opt_root_path=""
 ki_opt_scripts_path=""
@@ -89,6 +98,7 @@ target_node_op=""
 inventory_hostname=""
 ki_cp_ha_mode=""
 ki_cp_ha_mode_vip=""
+ki_cp_ha_mode_vip_carrier=""
 
 svc_root_path=""
 
@@ -106,6 +116,7 @@ main() {
   inventory_hostname=$($yq_cmd '.inventory_hostname' < "$vars_path")
   ki_cp_ha_mode=$($yq_cmd '.ki_cp_ha_mode' < "$vars_path")
   ki_cp_ha_mode_vip=$($yq_cmd '.ki_cp_ha_mode_vip' < "$vars_path")
+  ki_cp_ha_mode_vip_carrier=$($yq_cmd '.ki_cp_ha_mode_vip_carrier' < "$vars_path")
 
   [[ $ki_cp_ha_mode = "false" ]] && exit 0
   svc_root_path="$ki_etc_services_path"/$SVC_NAME
@@ -120,12 +131,81 @@ main() {
   chmod +x "$svc_root_path""/check_node.sh"
   $jinja2_cmd --format yaml -o "$svc_root_path""/compose.yml" "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$vars_path"
   create_keepalived_conf_file
+  create_carrier_hook_files
   local rendered_after
   rendered_after=$(checksum_of_directory "$svc_root_path")
 
   [[ $update = "true" && $(service_exists $SVC_NAME) = "true" && $rendered_after != "$rendered_before" ]] &&
     docker compose -f "$svc_root_path/compose.yml" down
   docker compose -f "$svc_root_path/compose.yml" up -d
+
+  # After the container, so that the first word keepalived writes lands in a
+  # directory the unit is already watching, or is read by the service started
+  # here: either way a node that comes up MASTER is carried
+  if [[ $ki_cp_ha_mode_vip_carrier != "arp" ]]; then
+    setup_carrier_units
+  else
+    remove_carrier_units
+  fi
+
+  return 0
+}
+
+# What the container calls on a transition and where it writes: the hook and
+# the directory the state file lives in. arp is the one carrier that has
+# nothing to be told, since the node announces the address itself, so it is the
+# one that gets no hook; every other carrier is a call to an api that has to
+# be made on the host. Taken away with arp so that a site that went back is
+# left with what it had. The state directory goes too - a file in it saying
+# MASTER would be the first thing the carrier read if the site came back, and
+# a transition is what should say that, not a file from before
+create_carrier_hook_files() {
+  if [[ $ki_cp_ha_mode_vip_carrier != "arp" ]]; then
+    mkdir -p "$svc_root_path"/state
+    cp -f "$SCRIPT_DIR_PATH"/templates/notify.sh "$svc_root_path"/notify.sh
+    chmod +x "$svc_root_path"/notify.sh
+  else
+    rm -rf "$svc_root_path"/state "$svc_root_path"/notify.sh
+  fi
+
+  return 0
+}
+
+# The path unit and the timer are what is enabled and the service is what they
+# start, like the timer and service of the metrics. The service is run once
+# here as well: the path unit only wakes on a write, and a keepalived that was
+# already MASTER when the carrier was switched on has written its word already
+setup_carrier_units() {
+  $jinja2_cmd --format yaml -o "$CARRIER_SERVICE_PATH" "$SCRIPT_DIR_PATH"/templates/$CARRIER_NAME.service.j2 "$vars_path"
+  $jinja2_cmd --format yaml -o "$CARRIER_PATH_PATH" "$SCRIPT_DIR_PATH"/templates/$CARRIER_NAME.path.j2 "$vars_path"
+  cp -f "$SCRIPT_DIR_PATH"/templates/$CARRIER_NAME.timer "$CARRIER_TIMER_PATH"
+  "$ki_opt_scripts_path"/systemctl.sh reload
+  "$ki_opt_scripts_path"/systemctl.sh enable $CARRIER_NAME.path
+  "$ki_opt_scripts_path"/systemctl.sh enable $CARRIER_NAME.timer
+  "$ki_opt_scripts_path"/systemctl.sh restart $CARRIER_NAME.path
+  "$ki_opt_scripts_path"/systemctl.sh restart $CARRIER_NAME.timer
+  "$ki_opt_scripts_path"/systemctl.sh restart $CARRIER_NAME.service
+
+  return 0
+}
+
+# Keyed on the unit files so that a node that never had them is a no-op, and
+# one that had them is left with neither a watcher nor a service mid-attempt
+remove_carrier_units() {
+  [[ -f $CARRIER_PATH_PATH || -f $CARRIER_TIMER_PATH || -f $CARRIER_SERVICE_PATH ]] || return 0
+
+  local unit
+  for unit in $CARRIER_NAME.path $CARRIER_NAME.timer; do
+    if [[ -f $UNIT_DIR_PATH/$unit && $("$ki_opt_scripts_path"/systemctl.sh exists "$unit") = "true" ]]; then
+      "$ki_opt_scripts_path"/systemctl.sh disable "$unit"
+      "$ki_opt_scripts_path"/systemctl.sh stop "$unit"
+    fi
+  done
+  if [[ -f $CARRIER_SERVICE_PATH && $("$ki_opt_scripts_path"/systemctl.sh exists $CARRIER_NAME.service) = "true" ]]; then
+    "$ki_opt_scripts_path"/systemctl.sh stop $CARRIER_NAME.service
+  fi
+  rm -f "$CARRIER_PATH_PATH" "$CARRIER_TIMER_PATH" "$CARRIER_SERVICE_PATH"
+  "$ki_opt_scripts_path"/systemctl.sh reload
 
   return 0
 }
@@ -150,6 +230,7 @@ create_keepalived_conf_file() {
   $yq_cmd -i ".priority = \"$priority\"" "$tmp_file_path"
   $yq_cmd -i ".unicast_peers = $unicast_peers" "$tmp_file_path"
   $yq_cmd -i ".ki_cp_ha_mode_vip = load(\"$vars_path\").ki_cp_ha_mode_vip" "$tmp_file_path"
+  $yq_cmd -i ".ki_cp_ha_mode_vip_carrier = load(\"$vars_path\").ki_cp_ha_mode_vip_carrier" "$tmp_file_path"
   $jinja2_cmd --strict --format yaml -o "$svc_root_path""/keepalived.conf" "$SCRIPT_DIR_PATH"/templates/keepalived.conf.j2 "$tmp_file_path"
   rm "$tmp_file_path"
 }
@@ -222,12 +303,15 @@ get_ki_cp_ih_list() {
 # container where it is. compose notices a change to compose.yml by itself, but
 # everything else here reaches the service as a bind mount and it has no way to
 # know, which is why the service was taken down on every run whether or not
-# there was anything new to read
+# there was anything new to read.
+#
+# The state directory is left out. keepalived writes it, not this script, and
+# a transition between the two sums would read as a render that changed
 checksum_of_directory() {
   local path=$1
 
   [[ ! -d $path ]] && { echo "absent"; return 0; }
-  find "$path" -type f -exec md5sum {} + | sort | md5sum
+  find "$path" -type f -not -path "$path/state/*" -exec md5sum {} + | sort | md5sum
 
   return 0
 }
