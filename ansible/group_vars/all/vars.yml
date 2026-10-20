@@ -127,14 +127,15 @@ ki_cp_ntp_server_upstream_servers:
   - "time1.google.com"
   - "time2.google.com"
 # Whether the ntp server of a ki cp node hands out its own clock when none of
-# the upstream servers above can be reached. Off, a ki cp whose upstream is gone
-# hands out nothing, the nodes stop synchronising and the clock check of
-# check-node-state.sh refuses every playbook. On, the nodes keep following the
-# ki cp, agreeing with one another on a time that is only as right as its clock,
-# which is what an air-gapped site with an upstream that is sometimes there
-# wants. An empty list above is the same as this switch on with nothing to
-# follow: the ki cp clock is the only time there is. See README.adoc
-ki_cp_ntp_server_local_fallback: false
+# the upstream servers above can be reached. On, the nodes keep following the
+# ki cp through an outage of its upstream, agreeing with one another on a time
+# that is only as right as its clock, and go back to the upstream when it
+# returns. Off, a ki cp whose upstream is gone hands out nothing, the nodes
+# stop synchronising and the clock check of check-node-state.sh refuses every
+# playbook, which is the choice of a site that would rather stop than run on a
+# clock nothing checks. An empty list above is the ki cp clock as the only time
+# there is, whatever this says. See README.adoc
+ki_cp_ntp_server_local_fallback: true
 
 # The addresses kubernetes hands out inside the cluster. Fixed while a cluster
 # exists: the service subnet decides the address of every service, including the
