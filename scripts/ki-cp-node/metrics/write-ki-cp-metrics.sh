@@ -255,6 +255,34 @@ write_vip_metric() {
   emit "# TYPE ki_cp_vip_held gauge"
   emit "ki_cp_vip_held{vip=\"$vip\"} $held"
 
+  write_vip_carried_metric
+
+  return 0
+}
+
+# On a cloud the address being on an interface is half of it: the network
+# delivers to the address only once the api of the cloud has been told, which
+# is what the carrier unit of the host does and what its probe reports. A node
+# that holds the vip and is not carrying it is a MASTER nobody reaches, and the
+# two series disagreeing is what says so. The answer is read from the file the
+# unit leaves after every reconcile rather than asked for here, so that this
+# script knows nothing about which cloud it is on; a cluster whose carrier is
+# arp has no unit and no file, and nothing is written. The file missing on a
+# node whose carrier has one is a unit that never ran, and the metric is 0
+# then, which is what a node nobody reaches should say
+write_vip_carried_metric() {
+  local carried_path
+  carried_path="$services_path"/ki-cp-keepalived/state/carried
+  [[ -d "$services_path"/ki-cp-keepalived/state ]] || return 0
+
+  local carried
+  carried=$(cat "$carried_path" 2>/dev/null) || carried=""
+  [[ $carried =~ ^[01]$ ]] || carried=0
+
+  emit "# HELP ki_cp_vip_carried Whether the network of the cloud delivers the ki cp virtual address to this node"
+  emit "# TYPE ki_cp_vip_carried gauge"
+  emit "ki_cp_vip_carried{vip=\"$vip\"} $carried"
+
   return 0
 }
 
