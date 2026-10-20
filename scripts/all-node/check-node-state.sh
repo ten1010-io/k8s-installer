@@ -143,7 +143,12 @@ main() {
 
   knn_to_ih_dict=$(get_knn_to_ih_dict)
 
-  [[ -n $target_node_op && $target_node_op != "null" ]] && exempt_ih_list="[\"$target_node\"]"
+  # The nodes the inventory declares that the cluster is not expected to hold:
+  # the one being added or removed, and the broken ones, which stay declared so
+  # that they can be rebuilt and added back but have left or are leaving
+  exempt_ih_list=$($yq_cmd -o json '.ki_broken_nodes' < "$vars_path")
+  [[ -n $target_node_op && $target_node_op != "null" ]] &&
+    exempt_ih_list=$($yq_cmd -o json --null-input "$exempt_ih_list + [\"$target_node\"]")
 
   # About this machine rather than about the cluster it is in, so they run for
   # every playbook and before the switch below. A node that has no room left or
@@ -899,8 +904,12 @@ get_inventory_k8s_node_ih_list() {
   $yq_cmd -o json ".groups.k8s_node" < "$vars_path"
 }
 
+# What the inventory declares, broken nodes included: this is asked whether the
+# cluster holds a control plane node the inventory does not know, and a broken
+# node still in the cluster is one it knows. k8s_cp_nodes, the list to act on,
+# leaves the broken ones out and would read them as strangers here
 get_inventory_k8s_cp_node_ih_list() {
-  $yq_cmd -o json ".k8s_cp_nodes" < "$vars_path"
+  $yq_cmd -o json ".k8s_cp_nodes_in_inventory" < "$vars_path"
 }
 
 get_k8s_cluster_all_node_list() {

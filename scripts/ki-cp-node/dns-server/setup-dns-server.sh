@@ -225,11 +225,14 @@ create_internal_network_extra_zone_db_file() {
   rm "$tmp_file_path"
 }
 
+# The first ki cp node that is not broken: a node of the broken_node group is
+# left out of every play, and the one chosen here is the one everything
+# resolves through, which must answer
 get_ki_cp_master_node_ih() {
   if [[ $target_node = "null" ]] || [[ $target_node != "null" && $target_node_op = "add" ]]; then
-    $yq_cmd '.groups.ki_cp_node[0]' < "$vars_path"
+    $yq_cmd '.groups.ki_cp_node - .ki_broken_nodes | .[0]' < "$vars_path"
   elif [[ $target_node != "null" && $target_node_op = "remove" ]]; then
-    $yq_cmd ".groups.ki_cp_node - [\"$target_node\"] | .[0]" < "$vars_path"
+    $yq_cmd ".groups.ki_cp_node - .ki_broken_nodes - [\"$target_node\"] | .[0]" < "$vars_path"
   else
     die "[ERROR] Invalid variable[\"\target_node\"] or Invalid variable[\"\target_node_op\"]"
   fi

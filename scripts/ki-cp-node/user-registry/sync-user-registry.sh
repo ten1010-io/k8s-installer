@@ -208,10 +208,12 @@ get_peer_ih_list() {
 # moment reset-user-registry.sh deletes it, so it is the one peer whose copy is
 # about to stop existing
 get_ki_cp_ih_list() {
+  # Without the nodes of the broken_node group either: a registry on a machine
+  # that does not answer is not one to sync with
   if [[ $target_node != "null" && $target_node_op = "remove" ]]; then
-    $yq_cmd -o json ".groups.ki_cp_node - [\"$target_node\"]" < "$vars_path"
+    $yq_cmd -o json ".groups.ki_cp_node - .ki_broken_nodes - [\"$target_node\"]" < "$vars_path"
   else
-    $yq_cmd -o json '.groups.ki_cp_node' < "$vars_path"
+    $yq_cmd -o json '.groups.ki_cp_node - .ki_broken_nodes' < "$vars_path"
   fi
 
   return 0

@@ -241,9 +241,13 @@
           shell: "sudo {{ ansible_python_interpreter }} {{ ki_opt_scripts_path }}/preflight/create-k8s-cp-nodes.py < {{ tmp_input_path }}"
           register: shell_result
 
+        # Two lists from one script: the control plane nodes to act on, with
+        # the broken ones left out, and the ones the inventory declares. See
+        # the script for who reads which
         - name: Set_fact variable[\"k8s_cp_nodes\"]
           set_fact:
             k8s_cp_nodes: "{{ shell_result.stdout | from_yaml | community.general.json_query('k8s_cp_nodes') }}"
+            k8s_cp_nodes_in_inventory: "{{ shell_result.stdout | from_yaml | community.general.json_query('k8s_cp_nodes_in_inventory') }}"
 
         - name: Remove temporary file for cli input
           shell: "sudo rm {{ tmp_input_path }}"
@@ -313,6 +317,7 @@
     - name: Set_fact variable[\"k8s_cp_nodes\"]
       set_fact:
         k8s_cp_nodes: "{{ hostvars['localhost']['k8s_cp_nodes'] }}"
+        k8s_cp_nodes_in_inventory: "{{ hostvars['localhost']['k8s_cp_nodes_in_inventory'] }}"
 
     - name: Set_fact variable[\"ki_cp_k8s_cp_lb_stats_admin_pw\"]
       set_fact:

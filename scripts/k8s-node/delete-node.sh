@@ -94,7 +94,11 @@ main() {
   playbook=$($yq_cmd '.playbook' < "$vars_path")
   target_node=$($yq_cmd '.target_node' < "$vars_path")
   target_node_op=$($yq_cmd '.target_node_op' < "$vars_path")
-  k8s_cp_nodes=$($yq_cmd -o json '.k8s_cp_nodes' < "$vars_path")
+  # The list the inventory declares rather than the one of the nodes still
+  # answering, because the node being removed may be a broken one, and whether
+  # its etcd member has to go is decided by what it was, not by whether it is
+  # still in the list of nodes to talk to
+  k8s_cp_nodes=$($yq_cmd -o json '.k8s_cp_nodes_in_inventory' < "$vars_path")
   ih_to_hostname_dict=$($yq_cmd -o json '.ih_to_hostname_dict' < "$vars_path")
 
   [[ -z $target_node ]] && exit 0
