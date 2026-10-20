@@ -90,6 +90,23 @@ internal_network_subnets:
 
 ki_cp_ha_mode: true
 ki_cp_ha_mode_vip: null
+# Who tells the network where the vip is.
+#
+# arp is a node announcing the address itself, with gratuitous arp, as soon as
+# keepalived puts it on an interface. That is what a switch listens to and what
+# a cloud ignores: a vpc delivers to the addresses it has on record for a
+# network interface and to nothing else, so on ec2 the vip goes up on a node and
+# no packet ever arrives.
+#
+# aws-eni is for ec2. The node keepalived makes MASTER takes the vip onto its
+# own network interface as a secondary private address, through the ec2 api,
+# and the node it was on loses it in the same call. Everything else - who is
+# elected, when the address moves, that a node which came back does not take
+# it back - is the keepalived above either way. What it needs from the site is
+# in README.adoc: an instance profile allowing ec2:AssignPrivateIpAddresses on
+# every ki cp node, a way to reach the ec2 api, and the vip kept free in the
+# subnet of the ki cp nodes
+ki_cp_ha_mode_vip_carrier: "arp"
 # The time zone the ki cp services render their timestamps in. Null takes the
 # zone of the node each one runs on, which is what makes the log of a container
 # read like the journal of the machine it is on.

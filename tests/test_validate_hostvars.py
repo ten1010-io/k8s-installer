@@ -25,6 +25,28 @@ def test_a_vip_outside_the_subnet_of_the_ki_cp_nodes_is_refused(hostvars):
     assert_refused(hostvars, naming="ki_cp_ha_mode_vip")
 
 
+def test_a_vip_carrier_without_ha_mode_is_refused(hostvars):
+    """aws-eni says the address is to be moved through the ec2 api, and a cluster
+    that is not in ha mode has no address to move."""
+    hostvars["localhost"]["ki_cp_ha_mode"] = False
+    hostvars["localhost"]["ki_cp_ha_mode_vip"] = None
+    hostvars["localhost"]["ki_cp_ha_mode_vip_carrier"] = "aws-eni"
+
+    assert_refused(hostvars, naming="ki_cp_ha_mode_vip_carrier")
+
+
+def test_a_vip_carrier_nobody_wrote_is_refused(hostvars):
+    hostvars["localhost"]["ki_cp_ha_mode_vip_carrier"] = "nlb"
+
+    assert_refused(hostvars, naming="ki_cp_ha_mode_vip_carrier")
+
+
+def test_the_ec2_vip_carrier_is_accepted_in_ha_mode(hostvars):
+    hostvars["localhost"]["ki_cp_ha_mode_vip_carrier"] = "aws-eni"
+
+    assert_accepted(hostvars)
+
+
 def test_a_control_node_outside_the_ki_cp_group_is_refused(hostvars):
     """The group is checked against the node the hostnames actually resolve to,
     which is what localhost_ih carries rather than what the inventory declares."""

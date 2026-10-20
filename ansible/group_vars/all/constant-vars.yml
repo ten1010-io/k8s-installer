@@ -369,6 +369,11 @@ ki_metrics_path: "{{ ki_var_root_path }}/metrics"
 # only useful if they are seen coming
 ki_cert_expiry_warning_days: 180
 
+# The fallback for the carrier of the vip, for the same reason as the three
+# below: a vars.yml written before the line existed has no line, and arp is what
+# every cluster was doing until then
+ki_cp_ha_mode_vip_carrier: "arp"
+
 # The fallbacks for the preflight thresholds vars.yml carries. An upgrade keeps
 # the vars.yml of the user, so a cluster taking the release that added them has a
 # file with no line for any of them, and validate-hostvars.py asks for all three:
@@ -525,6 +530,10 @@ ki_var_classes:
     # ki-cp.<zone>:<port>, so what a new vip needs is the dns server and
     # keepalived rendered again, not a cluster that knows a different endpoint
     - ki_cp_ha_mode_vip
+    # The same: keepalived rendered again, with or without the hook that
+    # carries the address through the api of the cloud, and the units on the host
+    # that answer the hook put down or taken away beside it
+    - ki_cp_ha_mode_vip_carrier
   # Goes into the kubelet configuration. Applied by writing it again and
   # restarting kubelet, which does not stop the containers already running:
   # containerd keeps them and kubelet picks them back up. The reservations only

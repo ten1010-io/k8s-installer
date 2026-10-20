@@ -396,6 +396,18 @@ def validate_ki_cp_ha_mode_vip(hostvars_errors: List[HostvarsError], hostvars):
                               "Variable[\"ki_cp_ha_mode_vip\"] must be set when value for variable[\"ki_cp_ha_mode\"] is true")
         hostvars_errors.append(error)
 
+    # A carrier is how a vip reaches the network, and a cluster without one has
+    # nothing for it to carry. Refused rather than ignored, because a site that
+    # wrote aws-eni expects the address to move and would find out that it does
+    # not the first time a ki cp node is lost
+    ki_cp_ha_mode_vip_carrier = lo_hostvars.get("ki_cp_ha_mode_vip_carrier", "arp")
+    if not ki_cp_ha_mode and ki_cp_ha_mode_vip_carrier != "arp":
+        error = HostvarsError("localhost",
+                              ("ki_cp_ha_mode_vip_carrier",),
+                              str(ki_cp_ha_mode_vip_carrier),
+                              "Variable[\"ki_cp_ha_mode_vip_carrier\"] can only be set when value for variable[\"ki_cp_ha_mode\"] is true. There is no vip to carry without it")
+        hostvars_errors.append(error)
+
 
 def validate_internal_network_subnets(hostvars_errors: List[HostvarsError], hostvars):
     lo_hostvars = hostvars["localhost"]
@@ -1202,6 +1214,11 @@ class VarsModel(BaseModel):
 
     ki_cp_ha_mode: bool
     ki_cp_ha_mode_vip: Optional[IPv4Address] = None
+    # Who tells the network where the vip is: the node itself with gratuitous
+    # arp, or the ec2 api moving it between network interfaces. Defaulted here
+    # as well as in constant-vars.yml, for the vars files of the tests that
+    # predate the line
+    ki_cp_ha_mode_vip_carrier: Literal["arp", "aws-eni"] = "arp"
     # None takes the zone of the node the service runs on
     ki_cp_service_timezone: Optional[
         Annotated[str, StringConstraints(pattern=TIMEZONE_PATTERN)]] = None
