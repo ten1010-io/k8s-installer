@@ -72,6 +72,11 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
+# shellcheck source=all-node/linux-package/rpm-common.sh
+source "$SCRIPT_DIR_PATH/all-node/linux-package/rpm-common.sh"
+# shellcheck source=all-node/linux-package/deb-common.sh
+source "$SCRIPT_DIR_PATH/all-node/linux-package/deb-common.sh"
+
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=5
 RHEL8_SUPPORTED_MINOR_VERSION=10
@@ -138,13 +143,17 @@ remove_venv_if_forced() {
 
 ubuntu2204_setup() {
   if [[ $(ubuntu2204_is_installed python3\.10-venv) = "false" ]]; then
+    local base="$KI_OPT_BUNDLE_PATH/linux-packages/ubuntu22.04"
     export DEBIAN_FRONTEND=noninteractive
-    dpkg -R -i "$KI_OPT_BUNDLE_PATH"/linux-packages/ubuntu22.04/python3.10
-    dpkg -i "$KI_OPT_BUNDLE_PATH"/linux-packages/ubuntu22.04/python3/python3-minimal*
-    dpkg -R -i "$KI_OPT_BUNDLE_PATH"/linux-packages/ubuntu22.04/python3
-    dpkg -R -i "$KI_OPT_BUNDLE_PATH"/linux-packages/ubuntu22.04/python3-distutils
-    dpkg -R -i "$KI_OPT_BUNDLE_PATH"/linux-packages/ubuntu22.04/python3.10-venv
+    ubuntu_plan_dirs "$base/python3.10" "$base/python3" "$base/python3-distutils" "$base/python3.10-venv"
+    ubuntu_install_dir "$base/python3.10"
+    # python3-minimal before the rest of python3, which the others pre-depend on
+    deb_install_planned python3-minimal -- "$base"/python3/python3-minimal*
+    ubuntu_install_dir "$base/python3"
+    ubuntu_install_dir "$base/python3-distutils"
+    ubuntu_install_dir "$base/python3.10-venv"
     export DEBIAN_FRONTEND=""
+    ubuntu_require_venv_package 22.04 python3.10
   fi
 
   if [[ -e $KI_OPT_VENV_PATH ]]; then
@@ -170,10 +179,13 @@ ubuntu2204_setup() {
 
 ubuntu2404_setup() {
   if [[ $(ubuntu2404_is_installed python3\.12-venv) = "false" ]]; then
+    local base="$KI_OPT_BUNDLE_PATH/linux-packages/ubuntu24.04"
     export DEBIAN_FRONTEND=noninteractive
-    dpkg -R -i "$KI_OPT_BUNDLE_PATH"/linux-packages/ubuntu24.04/python3.12
-    dpkg -R -i "$KI_OPT_BUNDLE_PATH"/linux-packages/ubuntu24.04/python3.12-venv
+    ubuntu_plan_dirs "$base/python3.12" "$base/python3.12-venv"
+    ubuntu_install_dir "$base/python3.12"
+    ubuntu_install_dir "$base/python3.12-venv"
     export DEBIAN_FRONTEND=""
+    ubuntu_require_venv_package 24.04 python3.12
   fi
 
   if [[ -e $KI_OPT_VENV_PATH ]]; then
@@ -199,7 +211,7 @@ ubuntu2404_setup() {
 
 rhel8_setup() {
   if [[ $(rhel_is_installed python3\.12) = "false" ]]; then
-    rpm --force -Uvh --oldpackage --replacepkgs "$KI_OPT_BUNDLE_PATH/linux-packages/rhel8/python3.12/*.rpm"
+    rhel_install_dir "$KI_OPT_BUNDLE_PATH/linux-packages/rhel8/python3.12"
   fi
 
   if [[ -e $KI_OPT_VENV_PATH ]]; then
@@ -234,11 +246,80 @@ rhel8_setup() {
 # can load the openssl it brings - and a node that got python3.12 some other
 # way, from AppStream by hand or from an earlier run of this, has none of that
 # and dies at ensurepip or loses its sshd. rpm leaves what is already at the
-# version the directory holds alone
+# version the directory holds alone.
+#
+# What the node holds at a newer version it keeps, by the source rpm it was
+# built from (plan-rpm-install.py). A newer minor already carries an expat and
+# an openssl at least as new as the ones the directory brings, and downgrading
+# them breaks the packages of the node pinned to them, openssl-devel among them
 rhel9_setup() {
-  rpm --force -Uvh --oldpackage --replacepkgs "$KI_OPT_BUNDLE_PATH/linux-packages/rhel9/python3.12/*.rpm"
+  rhel_install_dir "$KI_OPT_BUNDLE_PATH/linux-packages/rhel9/python3.12"
 
   rhel_create_venv
+
+  return 0
+}
+
+# Everything here is the dependency closure of python, so nothing is declared
+# by the release and every package is planned as a dependency.
+#
+# The directories are planned as one, before any of them is installed: the
+# venv package wants the python at exactly its own version, and the two sit in
+# different directories. A node whose python is newer than the bundle's keeps
+# it, and the venv package of the bundle is kept out with it rather than handed
+# to dpkg to refuse
+ubuntu_plan_dirs() {
+  local files=()
+  local dir
+  local file
+  for dir in "$@"; do
+    while read -r file; do
+      [[ -n $file ]] && files+=("$file")
+    done < <(deb_files_of "$dir")
+  done
+
+  deb_plan_install "${files[@]}"
+
+  return 0
+}
+
+ubuntu_install_dir() {
+  local dir=$1
+
+  local files=()
+  mapfile -t files < <(deb_files_of "$dir")
+  [[ ${#files[@]} = 0 ]] && return 0
+
+  deb_install_planned "$(basename "$dir")" -- "${files[@]}"
+
+  return 0
+}
+
+# What the plan kept out, said plainly: without the venv package there is no
+# environment to make, and "ensurepip is not available" would be the only word
+# of it otherwise
+ubuntu_require_venv_package() {
+  local os_version=$1
+  local python=$2
+
+  [[ $("ubuntu${os_version//./}_is_installed" "$python-venv") = "true" ]] && return 0
+
+  die "[ERROR] Package[\"$python-venv\"] is not installed, and the one of the bundle can not go in: it wants $python at exactly the version the bundle carries, and this node holds a newer one, which it keeps. Install $python-venv built for the $python of this node, or rebuild the bundle on a node this new (tools/build-bundle-packages.sh)"
+}
+
+# Everything here is the dependency closure of python3.12, so nothing is
+# declared by the release and every package is planned as a dependency
+rhel_install_dir() {
+  local dir=$1
+
+  local files=()
+  local rpm_file
+  for rpm_file in "$dir"/*.rpm; do
+    [[ -e $rpm_file ]] && files+=("$rpm_file")
+  done
+  [[ ${#files[@]} = 0 ]] && return 0
+
+  rpm_install_files "$(basename "$dir")" -- "${files[@]}"
 
   return 0
 }

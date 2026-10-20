@@ -72,6 +72,11 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
+# shellcheck source=rpm-common.sh
+source "$SCRIPT_DIR_PATH/rpm-common.sh"
+# shellcheck source=deb-common.sh
+source "$SCRIPT_DIR_PATH/deb-common.sh"
+
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=5
 RHEL8_SUPPORTED_MINOR_VERSION=10
@@ -87,6 +92,21 @@ yq_cmd=""
 
 k8s_minor_version=""
 k8s_packages_path=""
+
+# What a rhel install erases before it lays the bundle down: the time services
+# the bundled chrony replaces, and the container tools containerd.io conflicts
+# with
+RHEL_ERASED_PACKAGES=(systemd-timesyncd ntp chrony podman runc systemd-container)
+
+# What an ubuntu install removes before it lays the bundle down
+UBUNTU_REMOVED_PACKAGES=(systemd-timesyncd ntp chrony)
+
+# The directories of an ubuntu, in the order the dependencies between them want
+UBUNTU_DEB_DIRS=(nfs-common systemd dbus pigz slirp containerd iptables ebtables conntrack nftables docker nvidia-container-toolkit ethtool socat)
+
+# The arguments plan-rpm-install.py is given on this node: which packages are
+# the release's own and go in at their version whatever the node holds
+rpm_plan_args=()
 
 os_info=""
 os_distribution=""
@@ -135,6 +155,8 @@ ubuntu2204_install() {
   require_packages_installable
   set_k8s_packages_path ubuntu22.04
   require_declared_packages ubuntu22.04 deb
+  setup_deb_plan_args
+  ubuntu_require_installable ubuntu22.04
 
   begin_apt
 
@@ -168,6 +190,8 @@ ubuntu2404_install() {
   require_packages_installable
   set_k8s_packages_path ubuntu24.04
   require_declared_packages ubuntu24.04 deb
+  setup_deb_plan_args
+  ubuntu_require_installable ubuntu24.04
 
   begin_apt
 
@@ -227,6 +251,23 @@ rhel_install() {
   require_packages_installable
   set_k8s_packages_path "$os_dir"
   require_declared_packages "$os_dir" rpm
+  setup_rpm_plan_args
+
+  # The openssl systemd brings is one the sshd of an old minor refuses to load,
+  # so the openssh built against it follows at once. Its package restarts sshd;
+  # the connection this runs over survives that, and the next one is served by
+  # the new daemon. On a minor that already holds both at a newer version, the
+  # plan keeps the two of them
+  local dirs=(nfs-utils chrony container-selinux containerd systemd openssh fuse-overlayfs slirp conntrack)
+  if [[ $(rhel_is_installed "^libibverbs\.") = "false" ]]; then
+    dirs+=(libibverbs)
+  fi
+  # iptables: iptables itself on 8, iptables-nft from 9 on. devel: the headers of
+  # what came before, which only the rhel 8 bundle carries; empty on the others
+  dirs+=(iptables nftables docker nvidia-container-toolkit ethtool iproute socat devel)
+
+  local base="$ki_opt_bundle_path/linux-packages/$os_dir"
+  rhel_require_installable "$base" "${dirs[@]}"
 
   [[ $(getenforce) != "Disabled" ]] && setenforce 0
 
@@ -240,38 +281,18 @@ rhel_install() {
     runc \
     systemd-container
 
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/nfs-utils
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/chrony
+  # Planned once over every directory, now that the node is as the install
+  # leaves it: a source the node keeps is kept in the directory its devel
+  # package sits in as much as in the one its library does
+  rhel_plan_install "$base" "${dirs[@]}"
 
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/container-selinux
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/containerd
-
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/systemd
-  kill -TERM 1
-  wait_systemd_ready 300
-  # The openssl systemd brought is one the sshd of an old minor refuses to load,
-  # so the openssh built against it follows at once. Its package restarts sshd;
-  # the connection this runs over survives that, and the next one is served by
-  # the new daemon
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/openssh
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/fuse-overlayfs
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/slirp
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/conntrack
-  if [[ $(rhel_is_installed "^libibverbs\.") = "false" ]]; then
-    rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/libibverbs
-  fi
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/iptables
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/nftables
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/docker
-
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/nvidia-container-toolkit
-
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/ethtool
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/iproute
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/socat
-  # The headers of what came before, which only the rhel 8 bundle carries. A
-  # directory holding no rpm is nothing to do, so the other rhels pass here
-  rhel_install_rpms "$ki_opt_bundle_path"/linux-packages/"$os_dir"/devel
+  local dir
+  for dir in "${dirs[@]}"; do
+    rhel_install_rpms "$base/$dir"
+    if [[ $dir = "systemd" ]]; then
+      rhel_reexec_systemd_if_installed
+    fi
+  done
   rhel_install_rpms "$k8s_packages_path"
 
   "$ki_opt_scripts_path/systemctl.sh" reload
@@ -401,38 +422,45 @@ list_bundled_packages() {
 # is not written around that one name.
 #
 # Leaving what is already installed alone is also what an update is asking for. A
-# version the node does not have still goes in, downgrade and all
+# package release.yml declares that the node holds at another version still goes
+# in, downgrade and all. A dependency the node holds at a newer version does not:
+# plan-rpm-install.py says why, and rpm_install_planned of rpm-common.sh prints
+# it
+#
 # Hands dpkg the directories of an ubuntu, in the order the dependencies between
 # them want. One list for both: a directory is one principal and what the GA
 # image of that ubuntu lacks for it (tools/build-bundle-packages.sh fills them),
 # and a principal the GA image already holds at the newest version has no
 # directory at all. Such a one is skipped here, since dpkg refuses a directory
-# with no deb in it. What is already there at the version the bundle holds is
-# handed over anyway: reinstalling it is a no-op to dpkg, unlike to rpm
+# with no deb in it.
+#
+# The GA image is the oldest point release, so a node of a later one holds much
+# of a directory newer. A dependency it holds newer it keeps, with the rest of
+# its source package, and a package the release declares goes in at its version
+# all the same (deb-common.sh). What is installed at the version the bundle
+# holds is not handed over either.
+#
+# The plan is made once over every directory, now that the node is as the
+# install leaves it, and each directory is then installed from it: a source
+# the node keeps is kept wherever its debs sit
 ubuntu_install_debs() {
   local os_dir=$1
 
   local base="$ki_opt_bundle_path/linux-packages/$os_dir"
 
-  ubuntu_install_deb_dir "$base"/nfs-common
+  local files=()
+  mapfile -t files < <(ubuntu_deb_files "$os_dir")
+  deb_plan_install "${files[@]}"
 
-  ubuntu_install_deb_dir "$base"/systemd --force-confnew
-  ubuntu_install_deb_dir "$base"/dbus
-
-  ubuntu_install_deb_dir "$base"/pigz
-  ubuntu_install_deb_dir "$base"/slirp
-  ubuntu_install_deb_dir "$base"/containerd
-  ubuntu_install_deb_dir "$base"/iptables
-  ubuntu_install_deb_dir "$base"/ebtables
-  ubuntu_install_deb_dir "$base"/conntrack
-  ubuntu_install_deb_dir "$base"/nftables
-  ubuntu_install_deb_dir "$base"/docker
-
-  ubuntu_install_deb_dir "$base"/nvidia-container-toolkit
-
-  ubuntu_install_deb_dir "$base"/ethtool
-  ubuntu_install_deb_dir "$base"/socat
-  dpkg -R -i "$k8s_packages_path"
+  local dir
+  for dir in "${UBUNTU_DEB_DIRS[@]}"; do
+    if [[ $dir = "systemd" ]]; then
+      ubuntu_install_deb_dir "$base/$dir" --force-confnew
+    else
+      ubuntu_install_deb_dir "$base/$dir"
+    fi
+  done
+  ubuntu_install_deb_dir "$k8s_packages_path"
 
   return 0
 }
@@ -441,36 +469,151 @@ ubuntu_install_deb_dir() {
   local dir=$1
   shift
 
-  if ! compgen -G "$dir/*.deb" >/dev/null; then
+  local files=()
+  mapfile -t files < <(deb_files_of "$dir")
+  if [[ ${#files[@]} = 0 ]]; then
     msg "[INFO] Directory[\"$(basename "$dir")\"] holds no deb. nothing this os lacks for it"
     return 0
   fi
 
-  dpkg -R -i "$@" "$dir"
+  deb_install_planned "$(basename "$dir")" "$@" -- "${files[@]}"
 
   return 0
 }
 
+# Every deb an ubuntu install lays down, one path per line, in the order the
+# directories are installed
+ubuntu_deb_files() {
+  local os_dir=$1
+
+  local base="$ki_opt_bundle_path/linux-packages/$os_dir"
+  local dir
+  for dir in "${UBUNTU_DEB_DIRS[@]}"; do
+    deb_files_of "$base/$dir"
+  done
+  deb_files_of "$k8s_packages_path"
+
+  return 0
+}
+
+# The packages release.yml declares, and the packages of kubernetes, go in at
+# their version whatever the node holds
+setup_deb_plan_args() {
+  deb_principal_dirs=("$k8s_packages_path")
+  deb_principals=()
+
+  local name
+  while read -r name; do
+    [[ -n $name ]] && deb_principals+=("$name")
+  done < <($yq_cmd '.ki_release_packages // {} | keys | .[]' < "$vars_path")
+
+  return 0
+}
+
+# Refuses the node before anything is removed, if the plan would break or take
+# away a package of it
+ubuntu_require_installable() {
+  local os_dir=$1
+
+  local files=()
+  mapfile -t files < <(ubuntu_deb_files "$os_dir")
+
+  deb_require_installable "${UBUNTU_REMOVED_PACKAGES[@]}" -- "${files[@]}"
+
+  return 0
+}
+
+# Hands rpm the rpms of one directory the plan of rhel_plan_install says go in
 rhel_install_rpms() {
   local dir=$1
 
-  local to_install=()
+  local files=()
   local rpm_file
-  local nvr
   for rpm_file in "$dir"/*.rpm; do
     # An unmatched glob arrives as itself, which is a directory holding no rpm
-    [[ -e $rpm_file ]] || continue
-
-    # The epoch is left out, since that is the form "rpm -q" takes
-    nvr=$(rpm -qp --queryformat '%{NAME}-%{VERSION}-%{RELEASE}' "$rpm_file" 2>/dev/null)
-    [[ -n $nvr ]] && rpm -q "$nvr" &>/dev/null && continue
-
-    to_install+=("$rpm_file")
+    [[ -e $rpm_file ]] && files+=("$rpm_file")
   done
 
-  [[ ${#to_install[@]} = 0 ]] && return 0
+  rpm_installed_count=0
+  [[ ${#files[@]} = 0 ]] && return 0
 
-  rpm --force -Uvh --oldpackage --replacepkgs "${to_install[@]}"
+  rpm_install_planned "$(basename "$dir")" "${files[@]}"
+
+  return 0
+}
+
+# Every rpm under the directories given, one path per line, in the order the
+# directories are installed. A name is a directory of the bundle under base, a
+# path is itself; the packages of kubernetes come last, as they are installed
+rhel_rpm_files() {
+  local base=$1
+  shift
+
+  local dir
+  local rpm_file
+  for dir in "$@"; do
+    [[ $dir = /* ]] || dir="$base/$dir"
+    for rpm_file in "$dir"/*.rpm; do
+      [[ -e $rpm_file ]] && printf '%s\n' "$rpm_file"
+    done
+  done
+
+  return 0
+}
+
+# Plans the whole install at once, every directory and the packages of
+# kubernetes, so that each directory is then installed from one plan
+rhel_plan_install() {
+  local base=$1
+  shift
+
+  local files=()
+  mapfile -t files < <(rhel_rpm_files "$base" "$@" "$k8s_packages_path")
+
+  rpm_plan_install "${rpm_plan_args[@]}" -- "${files[@]}"
+
+  return 0
+}
+
+# The packages release.yml declares, and the packages of kubernetes, go in at
+# their version whatever the node holds. Every other rpm of the bundle is a
+# dependency, which the node keeps where it holds a newer one
+setup_rpm_plan_args() {
+  rpm_plan_args=(--principal-dir "$k8s_packages_path")
+
+  local name
+  while read -r name; do
+    [[ -n $name ]] && rpm_plan_args+=(--principal "$name")
+  done < <($yq_cmd '.ki_release_packages // {} | keys | .[]' < "$vars_path")
+
+  return 0
+}
+
+# Refuses the node before anything is erased, if rpm would refuse what the plan
+# lays down
+rhel_require_installable() {
+  local base=$1
+  shift
+
+  local files=()
+  mapfile -t files < <(rhel_rpm_files "$base" "$@" "$k8s_packages_path")
+
+  rpm_require_installable "${RHEL_ERASED_PACKAGES[@]}" -- "${rpm_plan_args[@]}" -- "${files[@]}"
+
+  return 0
+}
+
+# systemd re-executes on SIGTERM to pid 1, which is how the one just laid down
+# takes over without a reboot. Where the node kept its own, there is nothing to
+# take over
+rhel_reexec_systemd_if_installed() {
+  if [[ $rpm_installed_count = 0 ]]; then
+    msg "[INFO] systemd of the node is kept. not re-executing it"
+    return 0
+  fi
+
+  kill -TERM 1
+  wait_systemd_ready 300
 
   return 0
 }
