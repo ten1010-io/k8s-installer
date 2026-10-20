@@ -151,6 +151,7 @@ main() {
   # not name either of them
   check_disk_space "$(get_node_check_severity)"
   check_clock "$(get_node_check_severity)"
+  check_time_source "$(get_node_check_severity)"
   check_kernel_modules "$(get_node_check_severity)"
   check_vip_carrier "$(get_node_check_severity)"
   require_no_etcd_alarm
@@ -477,6 +478,74 @@ check_clock() {
 # above has already answered whether the clock is being disciplined at all. The
 # caller takes anything that is not a number as that same silence, which is what
 # a daemon that is installed but not running comes back as
+# A ki cp node must not follow its own ntp server. That server is a container
+# whose chronyd measures the clock of this very node against the upstream and
+# hands out the corrected time without being allowed to apply it, so a time
+# daemon on the node that steers the clock by what the container says closes a
+# loop in which each one's correction is the other's error: measured as the
+# container learning -471 ppm and timesyncd pinned at its +500 ppm limit while
+# the upstream answered, and 11 seconds off in 25 minutes once it did not.
+# setup-ntp-client.sh points a ki cp node at the upstream instead; this is
+# what says so when something else pointed it back, and it reads the symptom
+# as well as the cause, since a loop that was closed and opened again leaves
+# the frequency where it was until the daemon has relearned it
+check_time_source() {
+  local severity=$1
+
+  local is_ki_cp
+  is_ki_cp=$($yq_cmd '.group_names | contains(["ki_cp_node"])' < "$vars_path")
+  [[ $is_ki_cp = "true" ]] || return 0
+
+  local ki_cp_dns_name
+  ki_cp_dns_name=$($yq_cmd '.internal_network_ki_cp_dns_name' < "$vars_path")
+
+  local sources
+  sources=$(get_time_sources)
+  if grep -qxF "$ki_cp_dns_name" <<< "$sources"; then
+    report_or_die "$severity" \
+      "The time daemon of this node follows \"$ki_cp_dns_name\", the ntp server this node itself runs. That server measures this node's clock and hands out the correction without applying it, so following it steers the clock by its own correction and the two run away from each other. A ki cp node follows ki_cp_ntp_server_upstream_servers directly, which setup-ntp-client.sh writes; run it, or update-cluster.yml, before going on"
+    return 0
+  fi
+
+  local frequency_ppm
+  frequency_ppm=$(get_clock_frequency_ppm)
+  [[ $frequency_ppm =~ ^[-+]?[0-9]+(\.[0-9]+)?$ ]] || return 0
+  local pinned
+  pinned=$(awk -v f="$frequency_ppm" 'BEGIN { if (f < 0) f = -f; print (f >= 400) ? "true" : "false" }')
+  [[ $pinned = "true" ]] || return 0
+
+  report_or_die "$severity" \
+    "The time daemon of this node is correcting its clock by ${frequency_ppm} ppm, which is the limit a daemon sits at when it has been following a clock that follows it, not a rate a machine's clock is wrong by. Check what this node and the ntp server on it follow, and give the daemon time to relearn after it is put right"
+
+  return 0
+}
+
+# The servers the time daemon of this node is configured with, one per line
+get_time_sources() {
+  if [[ $(has_command chronyc) = "true" ]]; then
+    awk '$1 == "server" || $1 == "pool" || $1 == "peer" { print $2 }' /etc/chrony.conf /etc/chrony.d/*.conf 2>/dev/null
+    return 0
+  fi
+
+  awk -F= '$1 == "NTP" || $1 == "FallbackNTP" { n = split($2, s, " "); for (i = 1; i <= n; i++) print s[i] }' /etc/systemd/timesyncd.conf 2>/dev/null
+
+  return 0
+}
+
+# The frequency correction the time daemon applies, in ppm, signed
+get_clock_frequency_ppm() {
+  if [[ $(has_command chronyc) = "true" ]]; then
+    # Field 8 of the csv is the frequency in ppm, positive when the clock is
+    # fast
+    chronyc -c tracking 2>/dev/null | cut -d, -f8
+    return 0
+  fi
+
+  timedatectl timesync-status 2>/dev/null | grep -E "^ *Frequency: " | sed -E 's/^ *Frequency: *([-+]?[0-9.]+)ppm.*/\1/'
+
+  return 0
+}
+
 get_clock_offset_seconds() {
   if [[ $(has_command chronyc) = "true" ]]; then
     # Field 5 of the csv is the offset in seconds, signed, as chrony last
