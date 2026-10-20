@@ -452,6 +452,20 @@ check_clock() {
   synchronized=$(timedatectl show -p NTPSynchronized --value 2>/dev/null) || return 0
 
   if [[ $synchronized != "yes" ]]; then
+    # A ki cp node whose upstream has gone quiet is the one case this is said
+    # rather than refused on. The other nodes follow the ntp server this node
+    # runs, which with ki_cp_ntp_server_local_fallback hands out this node's
+    # clock when it has no upstream to measure it against, so they count as
+    # synchronised to the very clock this node is being refused for: the whole
+    # cluster is on one clock, and the flag the kernel carries is the only thing
+    # that tells this node apart. What is still true is that the clock is only
+    # as right as this node keeps it, and the conditions below are what make
+    # that the fault of the site's upstream rather than of this node
+    if [[ $(ki_cp_node_is_the_clock_of_the_cluster) = "true" ]]; then
+      msg "[WARN] The clock of this node is not synchronised: none of the upstream ntp servers it follows is answering. The ntp server this node runs is handing out this node's clock in the meantime, so the cluster is running on the clock of this node, and the certificates issued now are dated by it. The time daemon of this node is running and goes back to the upstream as soon as one answers; what to look at is why none does"
+      return 0
+    fi
+
     report_or_die "$severity" \
       "The clock of this node is not synchronised to a time source. Certificates are issued against it and etcd measures its peers by it, so a node that is wrong about the time produces failures that name neither. Check the time daemon of this node before going on"
     return 0
@@ -516,6 +530,22 @@ check_time_source() {
     return 0
   fi
 
+  # Not following its own ntp server is not yet following the upstream. A node
+  # that follows some other server, or the upstream of last month, is one whose
+  # clock the site has no say over any more, and a node that follows nothing
+  # is caught by the synchronised flag only once its daemon has been started
+  # since; both are the same thing setup-ntp-client.sh puts right. Not asked
+  # of a node being set up, where that script has not run yet and the daemon
+  # follows whatever the operating system shipped it with, which is what the
+  # run is about to replace
+  if [[ $upstream_len -gt 0 && $(node_is_being_set_up) != "true" && $(time_sources_are_the_upstream) != "true" ]]; then
+    local upstream
+    upstream=$($yq_cmd '.ki_cp_ntp_server_upstream_servers | join(" ")' < "$vars_path")
+    report_or_die "$severity" \
+      "The time daemon of this node follows [$(tr '\n' ' ' <<< "$sources" | sed -E 's/ $//')], which is not ki_cp_ntp_server_upstream_servers [$upstream]. A ki cp node follows the upstream of the site directly, which setup-ntp-client.sh writes; run it, or update-cluster.yml, before going on"
+    return 0
+  fi
+
   local frequency_ppm
   frequency_ppm=$(get_clock_frequency_ppm)
   [[ $frequency_ppm =~ ^[-+]?[0-9]+(\.[0-9]+)?$ ]] || return 0
@@ -525,6 +555,78 @@ check_time_source() {
 
   report_or_die "$severity" \
     "The time daemon of this node is correcting its clock by ${frequency_ppm} ppm, which is the limit a daemon sits at when it has been following a clock that follows it, not a rate a machine's clock is wrong by. Check what this node and the ntp server on it follow, and give the daemon time to relearn after it is put right"
+
+  return 0
+}
+
+# Whether this node is a ki cp node whose clock the cluster is running on, with
+# no upstream answering: the case in which check_clock says that the clock is
+# not synchronised rather than refusing the playbook over it. Every condition
+# is one that, missing, turns the same symptom back into a node that is wrong
+# on its own account.
+#
+# The node is a ki cp node, since only a ki cp runs the ntp server the others
+# follow; its upstream list is not empty, since with none the node follows its
+# own ntp server and is synchronised to it; the local fallback is on, since
+# without it the ntp server hands out nothing and the other nodes are not on
+# this clock either, they are on none; the time daemon is running, since a
+# daemon that is stopped is not waiting for the upstream to answer and will
+# not follow it when it does; and the daemon is configured with exactly the
+# upstream list, since a daemon pointed anywhere else is not kept from
+# synchronising by the upstream of the site being quiet.
+#
+# The last one is also what keeps this from applying to a node being set up:
+# setup-cluster asks this before setup-ntp-client.sh has written the daemon's
+# configuration, so the daemon still follows whatever the operating system
+# shipped it with, and a node that is not synchronised then is refused as it
+# always was
+ki_cp_node_is_the_clock_of_the_cluster() {
+  local is_ki_cp upstream_len local_fallback
+  is_ki_cp=$($yq_cmd '.group_names | contains(["ki_cp_node"])' < "$vars_path")
+  upstream_len=$($yq_cmd '.ki_cp_ntp_server_upstream_servers | length' < "$vars_path")
+  local_fallback=$($yq_cmd '.ki_cp_ntp_server_local_fallback' < "$vars_path")
+
+  if [[ $is_ki_cp = "true" && $upstream_len -gt 0 && $local_fallback = "true" && $(time_daemon_is_active) = "true" && $(time_sources_are_the_upstream) = "true" ]]; then
+    echo "true"
+  else
+    echo "false"
+  fi
+
+  return 0
+}
+
+# Whether this playbook is the one putting this node together, so that what the
+# node is set up with is not there to be asked about yet
+node_is_being_set_up() {
+  if [[ $playbook = "setup-cluster" || ($playbook = "add-node" && $inventory_hostname = "$target_node") ]]; then
+    echo "true"
+  else
+    echo "false"
+  fi
+
+  return 0
+}
+
+# Whether the time daemon of this node is running, asked of the daemon that is
+# there for the same reason the offset is
+time_daemon_is_active() {
+  local unit="systemd-timesyncd"
+  [[ $(has_command chronyc) = "true" ]] && unit="chronyd"
+
+  if systemctl is-active --quiet "$unit" 2>/dev/null; then echo "true"; else echo "false"; fi
+
+  return 0
+}
+
+# Whether the servers the time daemon of this node is configured with are
+# exactly ki_cp_ntp_server_upstream_servers, as sets: the order chronyd or
+# timesyncd is handed them in says nothing
+time_sources_are_the_upstream() {
+  local sources upstream
+  sources=$(get_time_sources | sort -u)
+  upstream=$($yq_cmd '.ki_cp_ntp_server_upstream_servers[]' < "$vars_path" | sort -u)
+
+  if [[ -n $sources && $sources = "$upstream" ]]; then echo "true"; else echo "false"; fi
 
   return 0
 }
