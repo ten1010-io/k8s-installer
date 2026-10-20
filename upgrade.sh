@@ -297,14 +297,11 @@ copy_ansible() {
   return 0
 }
 
-# Removing the installer is not something ansible does, so reset.sh sits at the
-# root of the deployment rather than in the ansible directory the ssh scripts
-# went to
 # The charts are not part of k8s-installer. They are laid into the source tree
-# from outside, by aipub-packager, so a tree without them is skipped rather than
-# refused, and the charts already in place are left as they are. A tree that
-# has them replaces them whole, so that a chart the new release dropped does
-# not survive. Only the control node holds them
+# from outside, by whatever packages it, so a tree without them is skipped
+# rather than refused, and the charts already in place are left as they are. A
+# tree that has them replaces them whole, so that a chart the new release
+# dropped does not survive. Only the control node holds them
 copy_charts() {
   [[ ! -d $SRC_CHARTS_PATH ]] && return 0
 
@@ -314,6 +311,9 @@ copy_charts() {
   return 0
 }
 
+# Removing the installer is not something ansible does, so reset.sh sits at the
+# root of the deployment rather than in the ansible directory the ssh scripts
+# went to
 copy_entrypoints() {
   cp -f "$SCRIPT_DIR_PATH"/reset.sh "$KI_OPT_ROOT_PATH"/
   chmod 755 "$KI_OPT_ROOT_PATH"/reset.sh

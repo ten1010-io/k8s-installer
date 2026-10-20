@@ -1960,7 +1960,7 @@ README 는 그래서 `control_node_ih` 한 줄만 바꾸면 인계가 된다고 
 === charts 는 인계되지 않습니다
 
 `setup.sh` 와 `upgrade.sh` 는 소스 트리의 `charts` 를 `/opt/k8s-installer/charts` 로 복사합니다.
-aipub-packager 처럼 바깥에서 넣는 helm 차트의 자리라 K8S Installer 의 소스 트리에는 없고, 없으면
+패키징 도구 등이 바깥에서 넣는 helm 차트의 자리라 K8S Installer 의 소스 트리에는 없고, 없으면
 건너뜁니다. `upgrade.sh` 는 소스 트리에 있을 때만 통째로 바꾸고, 없으면 놓여 있던 것을 그대로
 둡니다.
 

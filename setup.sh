@@ -241,8 +241,8 @@ copy_ansible() {
 }
 
 # The charts are not part of k8s-installer. They are laid into the source tree
-# from outside, by aipub-packager, so a tree without them is skipped rather than
-# refused. Only the control node holds them
+# from outside, by whatever packages it, so a tree without them is skipped
+# rather than refused. Only the control node holds them
 copy_charts() {
   [[ ! -d $SRC_CHARTS_PATH ]] && return 0
 
