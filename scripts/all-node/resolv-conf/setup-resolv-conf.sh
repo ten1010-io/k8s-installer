@@ -171,6 +171,62 @@ setup_resolv_conf() {
   disable_resolved
   [[ $os_distribution = "rhel" ]] && disable_nm_dns
   create_resolv_conf_file
+  keep_own_hostname_resolvable
+}
+
+# The file written above names the cluster dns and nothing else: no search
+# domain, because the one the node had came from its dhcp lease and names a
+# network this installer knows nothing about. What that takes away is the
+# node's own name. A cloud image is called ip-172-31-62-61, a name only the
+# resolver of that cloud answers for, through the search domain the lease
+# carried; with the cluster dns forwarding to a public upstream the name is
+# gone, and the first thing to say so is sudo, which looks its own host up on
+# every call and warns on every call when it can not. The warning is on stderr
+# and nothing here reads it as an answer, but a shell that sees it at every
+# sudo is one where every real message is lost among them, and kubeadm and
+# kubelet look the name up too.
+#
+# So the name goes into /etc/hosts, against the address of this node, which is
+# what the dhcp resolver would have answered and what kubelet is registered
+# under. In the hosts file rather than as a record of the cluster dns, because
+# a node has to know its own name while that dns is being handed over between
+# ki cp nodes, which is when sudo is being run on it most. Left alone when the
+# name is already mapped by a line this installer did not write: that is a
+# site that put it there on purpose, with an address of its choosing. Our own
+# line is replaced on every run, since the address can change with the
+# inventory and the name with the node, and the reset leaves it where it is -
+# the reset does not give the node its old resolver back either, and a node
+# resolving through an upstream still needs its own name
+HOSTS_PATH=/etc/hosts
+HOSTS_LINE_MARK="# k8s-installer-own-hostname"
+
+keep_own_hostname_resolvable() {
+  local name
+  name=$(hostname)
+  [[ -z $name ]] && die "[ERROR] This node has no hostname to keep resolvable"
+
+  local ip
+  ip=$($yq_cmd "[.internal_network_interfaces[] | select(.ip != \"$ki_cp_ha_mode_vip\")][0].ip" < "$vars_path")
+  [[ -z $ip || $ip = "null" ]] && die "[ERROR] Could not read the internal address of this node from file[\"$vars_path\"]"
+
+  # Ours from a previous run goes first, so that what is checked below is what
+  # somebody else wrote
+  sed -i "/ $HOSTS_LINE_MARK\$/d" "$HOSTS_PATH"
+  if grep -Eq "^[^#]*[[:space:]]$name([[:space:]]|\$)" "$HOSTS_PATH"; then
+    msg "[INFO] Hostname[\"$name\"] is already mapped in $HOSTS_PATH, leaving it as it is"
+    return 0
+  fi
+
+  # The short name beside the full one on a node whose hostname is qualified,
+  # so that the one as well as the other answers. Nothing to add when they are
+  # the same word
+  local short
+  short=${name%%.*}
+  [[ $short = "$name" ]] && short=""
+  printf '%s %s %s %s\n' "$ip" "$name" "$short" "$HOSTS_LINE_MARK" | tr -s ' ' >> "$HOSTS_PATH"
+  msg "[INFO] Hostname[\"$name\"] mapped to address[\"$ip\"] in $HOSTS_PATH"
+
+  return 0
 }
 
 create_resolv_conf_file() {
