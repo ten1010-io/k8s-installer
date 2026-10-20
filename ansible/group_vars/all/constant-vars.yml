@@ -277,6 +277,11 @@ kubelet_server_tls_bootstrap: false
 # before the line existed, and true is what keeps it that way
 k8s_kube_proxy_enabled: true
 
+# The fallback for ki_cp_ntp_server_local_fallback: a vars.yml with no line for
+# it is a cluster whose ki cp hands out nothing without its upstream, since
+# that is all it could do before the line existed, and false keeps it that way
+ki_cp_ntp_server_local_fallback: false
+
 k8s_ca_certificate_validity_period: "87600h" # 87600h = 10 year
 k8s_cp: false
 
@@ -525,6 +530,7 @@ ki_var_classes:
     - ki_cp_dns_dnssec_validation
     - ki_cp_dns_server_upstream_servers
     - ki_cp_ntp_server_upstream_servers
+    - ki_cp_ntp_server_local_fallback
     - ki_cp_service_timezone
     # The address moves, the name does not. controlPlaneEndpoint is
     # ki-cp.<zone>:<port>, so what a new vip needs is the dns server and

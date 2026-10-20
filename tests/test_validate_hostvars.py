@@ -159,3 +159,9 @@ def test_the_connection_user_of_vars_yml_needs_no_class(hostvars, tmp_path):
     hostvars["localhost"]["ki_opt_ansible_path"] = str(ansible)
 
     assert_accepted(hostvars)
+
+
+def test_a_local_ntp_fallback_that_is_not_a_bool_is_refused(hostvars):
+    hostvars["localhost"]["ki_cp_ntp_server_local_fallback"] = "sometimes"
+
+    assert_refused(hostvars, naming="ki_cp_ntp_server_local_fallback")

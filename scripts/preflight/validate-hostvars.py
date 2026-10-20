@@ -1233,6 +1233,7 @@ class VarsModel(BaseModel):
             Field(union_mode='left_to_right')
         ]
     ]
+    ki_cp_ntp_server_local_fallback: bool
 
     k8s_pod_subnet: IPv4Network
     k8s_service_subnet: IPv4Network

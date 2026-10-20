@@ -116,12 +116,23 @@ main() {
   return 0
 }
 
+# The image writes one "server" line per address of NTP_SERVERS, and for an
+# address in 127.0.0.0/8 it writes "local stratum 10" as well, which is what
+# makes chrony hand out its own clock when no other source is selectable. So
+# the local clock is asked for by naming 127.127.1.1 among the servers: alone
+# when there is no upstream at all, after the upstream when the site wants the
+# ki cp to keep handing out time through an outage of it, and not at all when
+# the site would rather the nodes stopped synchronising than followed a clock
+# that drifts. The address itself is never reached and never meant to be
 create_compose_yml_file() {
   local servers_len
   local ntp_servers
+  local local_fallback
   servers_len=$($yq_cmd '.ki_cp_ntp_server_upstream_servers | length' < "$vars_path")
+  local_fallback=$($yq_cmd '.ki_cp_ntp_server_local_fallback' < "$vars_path")
   if [[ $servers_len -gt 0 ]]; then
     ntp_servers=$($yq_cmd '.ki_cp_ntp_server_upstream_servers | join(",")' < "$vars_path")
+    [[ $local_fallback = "true" ]] && ntp_servers="$ntp_servers,127.127.1.1"
   else
     ntp_servers="127.127.1.1"
   fi
