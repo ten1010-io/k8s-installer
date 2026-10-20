@@ -548,6 +548,85 @@ k8s_kube_proxy_enabled: false
 클러스터이고, 설치본을 올려도 그대로입니다. 설계 판단은 link:docs/impl-notes.adoc[구현 노트]에
 있습니다.
 
+=== EC2 에서 HA 모드
+
+keepalived 는 VIP 를 인터페이스에 올리고 gratuitous ARP 로 이웃에게 알립니다. 스위치는 그것을
+듣지만 VPC 는 듣지 않습니다 — VPC 는 네트워크 인터페이스에 등록된 주소로만 패킷을 보냅니다.
+그래서 EC2 에서는 VIP 가 노드에 올라가도 아무것도 도착하지 않았고, `ki_cp_ha_mode: false` 로만
+쓸 수 있었습니다.
+
+`ki_cp_ha_mode_vip_carrier` 가 그 빈 자리를 채웁니다. 누가 VIP 를 망에 알리는가입니다.
+
+[source,yaml]
+----
+ki_cp_ha_mode: true
+ki_cp_ha_mode_vip: "172.31.50.10"
+ki_cp_ha_mode_vip_carrier: "aws-eni"   # 기본값 arp
+----
+
+`aws-eni` 이면 MASTER 가 된 노드가 EC2 API(`AssignPrivateIpAddresses`) 로 VIP 를 자기
+네트워크 인터페이스의 **보조 사설 IP** 로 가져옵니다. 전에 들고 있던 인터페이스에서는 같은 호출로
+떨어집니다. 선출·헬스체크·`nopreempt` 는 온프렘과 같은 keepalived 그대로이고, 달라지는 것은
+주소를 가져오는 손 하나입니다. 호출은 컨테이너가 아니라 호스트의 systemd 유닛(`ki-cp-vip-carrier`)
+이 인스턴스 프로파일의 자격증명으로 합니다. `arp` 는 지금까지와 같고, 줄을 안 적으면 `arp` 입니다.
+
+값은 클라우드가 아니라 **주소를 나르는 방식** 의 이름입니다. 한 클라우드에 방식이 둘일 수 있고, 어떤
+클라우드는 한 번 설정해 두면 `arp` 가 그대로 되기 때문입니다. 다른 클라우드를 붙이는 것은
+`scripts/ki-cp-node/keepalived/carriers/` 에 모듈 하나를 더하는 일이고, keepalived 와 유닛과
+메트릭은 어느 캐리어인지 모릅니다. 계약은 link:docs/impl-notes.adoc[구현 노트]에 있습니다.
+
+==== 사이트가 준비할 것
+
+. *인스턴스 프로파일.* ki cp 노드 전부에, `ec2:AssignPrivateIpAddresses` 를 허용하는 역할.
+  리소스는 그 서브넷의 네트워크 인터페이스로 좁힐 수 있습니다
+  (`"Condition": {"StringEquals": {"ec2:Subnet": "arn:aws:ec2:<region>:<account>:subnet/<subnet-id>"}}`).
+. *VIP.* ki cp 노드 서브넷의 비어 있는 주소. AWS 가 다른 인스턴스에 주지 못하게
+  `aws ec2 create-subnet-cidr-reservation --subnet-id <id> --reservation-type explicit --cidr <vip>/32`
+  로 잡아 두거나, 첫 ki cp 노드의 인터페이스에 미리 assign 해 둡니다(`/32` 예약을 거부하는
+  리전이면 이쪽). 서브넷의 처음 넷과 마지막 하나는 AWS 가 쓰므로 고를 수 없습니다
+. *보안 그룹.* ki cp 노드끼리 자기 보안 그룹을 소스로 all-traffic. VRRP(프로토콜 112)가 막히면
+  둘 다 MASTER 가 되어 주소를 번갈아 가져갑니다 — 아래 메트릭이 그것을 잡습니다
+. *EC2 API 가는 길.* NAT 게이트웨이, 또는 VPC 의 `com.amazonaws.<region>.ec2` 인터페이스
+  엔드포인트(Private DNS 켬). 엔드포인트의 이름은 VPC 리졸버만 풀므로 그때는
+  `ki_cp_dns_server_upstream_servers: ["169.254.169.253"]` 로 둡니다. S3 번들과 RHUI 저장소도
+  그 리졸버를 거쳐야 합니다
+. *시간.* 외부 NTP 가 막힌 VPC 에서는 `ki_cp_ntp_server_upstream_servers: ["169.254.169.123"]`
+  (Amazon Time Sync). 시계가 안 맞으면 플레이북이 시작 전에 멈춥니다
+. *한 서브넷.* ki cp 노드는 같은 서브넷(같은 AZ)이어야 합니다. 보조 사설 IP 는 그 인터페이스의
+  서브넷 안에서만 옮겨 다닙니다. k8s 워커는 다른 서브넷이어도 됩니다
+
+플레이북이 시작 전에 이 중 넷을 노드마다 묻습니다 — 인스턴스 메타데이터가 답하는가, VIP 가 이
+인터페이스의 서브넷 안인가, 인스턴스 프로파일이 있는가, 그리고 `DryRun` 으로
+`AssignPrivateIpAddresses` 를 불러 권한과 API 까지의 길이 있는가. 걸리면 무엇이 빠졌는지 적고
+아무것도 건드리지 않고 멈춥니다.
+
+==== 동작
+
+* 페일오버는 온프렘과 같이 30초(`fall 10` × 3초) 뒤에 시작하고, API 호출과 VPC 반영에 몇 초가
+  더 듭니다. 돌아온 노드는 VIP 를 되찾지 않습니다. EC2 에서 잰 값은 로드밸런서가 멈춘 뒤
+  apiserver 가 VIP 로 다시 답하기까지 **51초** 였습니다 — 전이까지 29초, API 호출과 메타데이터
+  반영 7초, 그리고 묻던 노드의 ARP 캐시가 옛 MAC 을 버리기까지 15초. 마지막 것은 VPC 가 GARP 를
+  버리기 때문에 keepalived 가 줄여 줄 수 없는 몫입니다
+* 호출이 실패하면 — API 에 못 닿거나, 권한이 없거나 — 그 실행은 실패로 끝나고(`systemctl --failed`
+  에 보이고 이유는 `journalctl -u ki-cp-vip-carrier` 에 있습니다), 15초 타이머가 노드가 MASTER 인
+  동안 다시 부릅니다. 그동안 VIP 는 인터페이스에는 있지만 VPC 가 보내지 않습니다
+* 전이 없이 어긋나면 — 콘솔에서 주소를 옮겼거나, 전이 순간에 API 가 죽어 있었으면 — 같은 타이머가
+  알아차립니다. 다만 **전이가 아닌데 남이 들고 있는 주소는 60초 동안 떨어져 있을 때만** 가져옵니다.
+  VRRP 가 막혀 둘 다 MASTER 라고 믿는 분리뇌에서 주소가 몇 초마다가 아니라 분 단위로 오가게 하려는
+  것이고, 그 사이 아래 메트릭이 그것을 말합니다
+* 주소를 **떼는 호출은 없습니다.** 다음 MASTER 가 가져가면서 떨어집니다. BACKUP 이 스스로
+  떼게 하면 MASTER 가 둘인 순간에 서로의 것을 떼는 꼴이 됩니다. 그래서 `ki_cp_ha_mode_vip` 를
+  바꾸면 옛 주소는 마지막으로 들고 있던 인터페이스에 보조 IP 로 남습니다 — 콘솔에서 떼면 됩니다
+
+[IMPORTANT]
+====
+`ki_cp_ha_mode` 처럼 서 있는 클러스터에서 끄고 켤 수 없는 값이 아닙니다. `arp` 와 `aws-eni`
+사이는 keepalived 를 다시 렌더하는 것뿐이라 `update-cluster.yml` 이 적용합니다. 다만 `aws-eni`
+는 `ki_cp_ha_mode: true` 와만 짝이 됩니다 — 옮길 VIP 가 없는 클러스터에서는 거부합니다.
+====
+
+설계 판단은 link:docs/impl-notes.adoc[구현 노트]에 있습니다.
+
 === 노드 라벨과 테인트
 
 노드 오브젝트에 붙일 라벨과 테인트를 `inventory.yml` 에 노드별로 적습니다.
@@ -1627,6 +1706,8 @@ ki_cp_service_up{service="ki-cp-keepalived"} 1
 ki_cp_service_restarts_total{service="ki-cp-dns-server"} 3
 # VIP - HA 모드일 때만 나옵니다
 ki_cp_vip_held{vip="192.168.0.10"} 0
+# 클라우드의 망이 VIP 를 이 노드로 보내는가 - arp 가 아닌 캐리어일 때만 나옵니다
+ki_cp_vip_carried{vip="172.31.50.10"} 0
 # 이름이 풀리는가 (포트 연결이 아니라 실제 질의)
 ki_cp_dns_answers{name="ki-cp.ki.local"} 1
 # 레지스트리 - 루프백으로 물으므로 이 노드의 것입니다
@@ -1642,6 +1723,11 @@ ki_cp_metrics_written_seconds 1790000000
 ----
 # 아무도 VIP 를 안 들고 있거나(0), 둘이 들고 있거나(2 이상). 둘 다 장애입니다
 sum(ki_cp_vip_held) != 1
+
+# arp 가 아닌 캐리어: keepalived 와 클라우드의 망이 다른 노드를 보고 있습니다. 2분 넘게 가면
+# 캐리어의 API 호출이 계속 실패하는 중이고, 이유는 그 노드의 journalctl -u ki-cp-vip-carrier 에
+# 있습니다. 1분 안에 돌아오는 것은 분리뇌나 콘솔에서 옮긴 주소를 되찾는 유예입니다
+ki_cp_vip_held != ki_cp_vip_carried
 
 # 무엇이 죽었는지까지 나옵니다. restart 가 오르는 중이면 크래시루프입니다
 ki_cp_service_up == 0
