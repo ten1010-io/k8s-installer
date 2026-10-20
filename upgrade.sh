@@ -63,12 +63,14 @@ KI_OPT_ROOT_PATH="/opt/k8s-installer"
 KI_OPT_SCRIPTS_PATH="$KI_OPT_ROOT_PATH"/scripts
 KI_OPT_BUNDLE_PATH="$KI_OPT_ROOT_PATH"/bundle
 KI_OPT_ANSIBLE_PATH="$KI_OPT_ROOT_PATH"/ansible
+KI_OPT_CHARTS_PATH="$KI_OPT_ROOT_PATH"/charts
 KI_OPT_VENV_PATH="$KI_OPT_ROOT_PATH"/venv
 KI_OPT_RELEASE_PATH="$KI_OPT_ROOT_PATH"/release
 KI_OPT_RELEASE_META_PATH="$KI_OPT_ROOT_PATH"/release.yml
 
 SRC_SCRIPTS_PATH="$SCRIPT_DIR_PATH"/scripts
 SRC_ANSIBLE_PATH="$SCRIPT_DIR_PATH"/ansible
+SRC_CHARTS_PATH="$SCRIPT_DIR_PATH"/charts
 SRC_RELEASE_META_PATH="$SCRIPT_DIR_PATH"/release.yml
 
 # The bundle of the release being installed is still an archive at this point, so
@@ -111,6 +113,7 @@ main() {
 
   copy_installer
   copy_ansible
+  copy_charts
   copy_entrypoints
   setup_venv
   write_release
@@ -297,6 +300,20 @@ copy_ansible() {
 # Removing the installer is not something ansible does, so reset.sh sits at the
 # root of the deployment rather than in the ansible directory the ssh scripts
 # went to
+# The charts are not part of k8s-installer. They are laid into the source tree
+# from outside, by aipub-packager, so a tree without them is skipped rather than
+# refused, and the charts already in place are left as they are. A tree that
+# has them replaces them whole, so that a chart the new release dropped does
+# not survive. Only the control node holds them
+copy_charts() {
+  [[ ! -d $SRC_CHARTS_PATH ]] && return 0
+
+  rm -rf "$KI_OPT_CHARTS_PATH"
+  cp -r "$SRC_CHARTS_PATH" "$KI_OPT_CHARTS_PATH"
+
+  return 0
+}
+
 copy_entrypoints() {
   cp -f "$SCRIPT_DIR_PATH"/reset.sh "$KI_OPT_ROOT_PATH"/
   chmod 755 "$KI_OPT_ROOT_PATH"/reset.sh
