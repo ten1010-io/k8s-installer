@@ -3,7 +3,15 @@
 # Keeps the ansible directory of every ki cp node the same as the one of the
 # control node. Losing the control node then costs nothing more than pointing
 # control_node_ih at another ki cp node and running the ssh script this directory
-# carries, which is why the control node is required to be a member of that group
+# carries, which is why the control node is required to be a member of that group.
+#
+# Two files beside that directory go with it, because a node that takes over
+# needs them and setup.sh put them on the control node alone: release.yml, which
+# group_vars reads for everything the release pins and so is the first thing a
+# playbook on the new control node asks for, and reset.sh, which is how a cluster
+# is taken down from whichever node is in control. The release file is not among
+# them: every node writes its own when it is set up, and that is the record the
+# release check compares, not a copy of the control node's
 - hosts: localhost
   gather_facts: false
   any_errors_fatal: true
@@ -14,7 +22,7 @@
     # Bundled so that the inventory, the variables and the playbooks land on the
     # other nodes as one unit rather than file by file
     - name: Create ansible archive
-      shell: "sudo tar cf {{ ki_tmp_ansible_src_path }} -C {{ ki_opt_root_path }} ansible"
+      shell: "sudo tar cf {{ ki_tmp_ansible_src_path }} -C {{ ki_opt_root_path }} ansible release.yml reset.sh"
 
 - hosts: ki_cp_node:!broken_node
   gather_facts: false
