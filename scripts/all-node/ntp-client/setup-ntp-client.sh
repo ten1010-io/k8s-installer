@@ -173,11 +173,18 @@ rhel10_setup() {
 # closes a loop in which each one's correction is the other's error. Measured
 # on a single node: the container learned a frequency of -471 ppm and timesyncd
 # pinned itself at +500 ppm, which held while the upstream answered and ran the
-# clock 11 seconds off in 25 minutes once it did not. With no upstream at all
-# a ki cp node follows nothing and keeps its own time, which is then the time
-# its ntp server hands out
+# clock 11 seconds off in 25 minutes once it did not.
+#
+# With no upstream at all the ki cp node follows its own ntp server after all.
+# The loop needs the container to have measured something, and with nothing
+# to measure against it hands out the clock of this node as it is, so the node
+# steers by zero: this is the one case in which following it is harmless, and
+# the case in which a node that followed nothing would never count as
+# synchronised, which the clock check of check-node-state.sh asks about
 ntp_servers_of_this_node() {
-  if [[ $node_is_ki_cp = "true" ]]; then
+  local upstream_len
+  upstream_len=$($yq_cmd --null-input "$ki_cp_ntp_server_upstream_servers | length")
+  if [[ $node_is_ki_cp = "true" && $upstream_len -gt 0 ]]; then
     echo "$ki_cp_ntp_server_upstream_servers"
   else
     echo "[\"$internal_network_ki_cp_dns_name\"]"

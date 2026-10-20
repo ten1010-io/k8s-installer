@@ -496,12 +496,16 @@ check_time_source() {
   is_ki_cp=$($yq_cmd '.group_names | contains(["ki_cp_node"])' < "$vars_path")
   [[ $is_ki_cp = "true" ]] || return 0
 
-  local ki_cp_dns_name
+  local ki_cp_dns_name upstream_len
   ki_cp_dns_name=$($yq_cmd '.internal_network_ki_cp_dns_name' < "$vars_path")
+  upstream_len=$($yq_cmd '.ki_cp_ntp_server_upstream_servers | length' < "$vars_path")
 
+  # With no upstream the ntp server measures nothing and hands out this node's
+  # clock as it is, which is the one case following it does not loop, and the
+  # case setup-ntp-client.sh does point the node at it
   local sources
   sources=$(get_time_sources)
-  if grep -qxF "$ki_cp_dns_name" <<< "$sources"; then
+  if [[ $upstream_len -gt 0 ]] && grep -qxF "$ki_cp_dns_name" <<< "$sources"; then
     report_or_die "$severity" \
       "The time daemon of this node follows \"$ki_cp_dns_name\", the ntp server this node itself runs. That server measures this node's clock and hands out the correction without applying it, so following it steers the clock by its own correction and the two run away from each other. A ki cp node follows ki_cp_ntp_server_upstream_servers directly, which setup-ntp-client.sh writes; run it, or update-cluster.yml, before going on"
     return 0
