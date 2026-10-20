@@ -606,7 +606,8 @@ ki_cp_ha_mode_vip_carrier: "aws-eni"   # 기본값 arp
   더 듭니다. 돌아온 노드는 VIP 를 되찾지 않습니다. EC2 에서 잰 값은 로드밸런서가 멈춘 뒤
   apiserver 가 VIP 로 다시 답하기까지 **51초** 였습니다 — 전이까지 29초, API 호출과 메타데이터
   반영 7초, 그리고 묻던 노드의 ARP 캐시가 옛 MAC 을 버리기까지 15초. 마지막 것은 VPC 가 GARP 를
-  버리기 때문에 keepalived 가 줄여 줄 수 없는 몫입니다
+  버리기 때문에 keepalived 가 줄여 줄 수 없는 몫이고, VIP 를 캐시에 들고 있던 노드에서만 생깁니다.
+  Ubuntu 22.04 4노드와 RHEL 8.10·9.8·10.2 를 섞은 3노드에서 같은 경로를 돌려 확인했습니다
 * 호출이 실패하면 — API 에 못 닿거나, 권한이 없거나 — 그 실행은 실패로 끝나고(`systemctl --failed`
   에 보이고 이유는 `journalctl -u ki-cp-vip-carrier` 에 있습니다), 15초 타이머가 노드가 MASTER 인
   동안 다시 부릅니다. 그동안 VIP 는 인터페이스에는 있지만 VPC 가 보내지 않습니다
