@@ -2831,7 +2831,8 @@ apt 라서 rhel 쪽 함정 넷 중 둘만 남습니다. **버전**은 `apt-cache
 `systemd-dev` 는 apt 가 systemd 를 올리며 같이 올리는 것이라 남습니다.
 
 검수는 2026-10-06 에 저장소가 닫힌 박스(보안그룹 egress 를 VPC 로 제한)로 포인트 릴리스
-전부에서 했습니다 — 22.04 GA 부터 22.04.5 까지 여섯, 24.04 GA 부터 24.04.4 까지 다섯. 각각
+전부에서 했습니다 — 22.04 GA 부터 22.04.5 까지 여섯, 24.04 GA 부터 24.04.4 까지 다섯, 그리고
+2026-10-20 에 24.04.5 (당시의 최신 AMI; 번들은 dpkg 로만 깔리므로 저장소가 열린 박스로 충분했습니다). 각각
 `setup.sh` → `setup-cluster.yml` 완주, `reset-cluster.yml` 뒤 재완주이고, 22.04 GA 에서는
 `install-packages.sh --update` 도 통과했습니다. 포인트별 AMI 는 이름에 포인트가 없어서
 cloud-images 의 manifest 에 적힌 `base-files` 버전을 그 패키지의 changelog("bump version to
