@@ -61,7 +61,9 @@ printf '%s\\n' "$*" >> "$STUB_LOG"
 """
 
 # A deb is a file beside a .fields file holding what dpkg-deb -W would say of
-# it: package, version, architecture and source, tab separated
+# it: package, version, architecture and the Source field, tab separated. The
+# Source field carries a version in parentheses where the source was built at
+# another one than the binary, which is why one of the fixtures below has one
 DPKG_DEB_STUB = """#!/usr/bin/env bash
 cat "${@: -1}.fields"
 """
@@ -244,7 +246,7 @@ deb_install_planned python3.10-venv -- python3.10-venv/python3.10-venv.deb
 
 def lay_python_down(host):
     host.deb("python3.10/python3.10.deb", "python3.10", "3.10.12-2")
-    host.deb("python3/python3-minimal.deb", "python3-minimal", "3.10.6-1", source="python3-defaults")
+    host.deb("python3/python3-minimal.deb", "python3-minimal", "3.10.6-1", source="python3-defaults (3.10.6-1)")
     host.deb("python3/python3.deb", "python3", "3.10.6-1", source="python3-defaults")
     host.deb("python3.10-venv/python3.10-venv.deb", "python3.10-venv", "3.10.12-2", source="python3.10")
 
@@ -319,6 +321,20 @@ def test_a_source_is_kept_for_a_deb_of_the_node_that_pins_the_upgrade(host):
     assert deb_actions(result) == {"nftables/nftables.deb": "skip"}
     assert "source nftables is kept" in result.stdout
     assert "python3-nftables" in result.stdout
+
+
+def test_a_source_whose_siblings_are_all_in_the_bundle_is_not_kept_for_them(host):
+    # The systemd directory of the 22.04 bundle: every deb of the node's systemd
+    # family is in it, so nothing is stranded and the whole of it moves. This is
+    # what the dpkg-deb of 22.04 got wrong through source:Package
+    for name in ("systemd", "systemd-sysv", "libnss-systemd", "libpam-systemd", "libsystemd0", "libudev1", "udev"):
+        host.deb(f"systemd/{name}.deb", name, "249.11-0ubuntu3.22", source="systemd")
+        host.installed(name, "249.11-0ubuntu3", source="systemd",
+                       depends="systemd (= 249.11-0ubuntu3)" if name != "systemd" else "libsystemd0 (= 249.11-0ubuntu3)")
+
+    result = host.run("deb-common.sh", "deb_plan systemd/*.deb")
+
+    assert set(deb_actions(result).values()) == {"install"}
 
 
 def test_a_deb_of_the_node_that_does_not_pin_the_upgrade_does_not_hold_it_back(host):

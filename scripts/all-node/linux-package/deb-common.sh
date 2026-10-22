@@ -148,10 +148,17 @@ deb_plan() {
   local source
   local installed
   local state
+  # The Source field as the deb carries it, "python3-defaults (3.10.6-1)" where
+  # the source was built at another version, cut down to the name. Not the
+  # source:Package virtual field: dpkg-query fills it on every ubuntu here, but
+  # the dpkg-deb of 22.04 (1.21) leaves it empty, and a deb read that way looked
+  # like a source of its own, so a systemd whose siblings were all in the bundle
+  # was kept for the sake of those very siblings
   for path in "$@"; do
-    fields=$(dpkg-deb -W --showformat='${Package}\t${Version}\t${Architecture}\t${source:Package}\n' "$path") ||
+    fields=$(dpkg-deb -W --showformat='${Package}\t${Version}\t${Architecture}\t${Source}\n' "$path") ||
       die "[ERROR] Failed to read deb[\"$path\"]"
     IFS=$'\t' read -r name version arch source <<< "$fields"
+    source=${source%% (*}
     [[ -z $source ]] && source=$name
 
     if [[ -n ${seen["$name|$version|$arch"]+x} ]]; then
