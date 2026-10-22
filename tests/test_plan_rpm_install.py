@@ -31,7 +31,9 @@ def plan(tmp_path, packages, paths=()):
     return {path: action for action, path, _ in lines}
 
 
-def pkg(name, srpm, installed=None, principal=False, evr="0:1.0-1.el9", node_family=(), file=None):
+def pkg(name, srpm, installed=None, principal=False, evr="0:1.0-1.el9", node_family=(), node_pins=None, file=None):
+    """node_family: what the node holds from the same source. node_pins: which
+    of those require which names at exactly one version."""
     return {
         "file": file or f"{name}.rpm",
         "name": name,
@@ -41,6 +43,7 @@ def pkg(name, srpm, installed=None, principal=False, evr="0:1.0-1.el9", node_fam
         "installed": installed,
         "installed_evr": None if installed is None else "0:9.9-9.el9",
         "node_family": list(node_family),
+        "node_pins": dict(node_pins or {}),
     }
 
 
@@ -50,10 +53,43 @@ def test_an_upgrade_that_strands_a_package_of_the_node_is_not_made(tmp_path):
     # which the bundle does not carry
     actions = plan(tmp_path, [
         pkg("nftables", "nftables-1.0.9-6.el9.src.rpm", installed="older",
-            node_family=["nftables", "python3-nftables"]),
+            node_family=["nftables", "python3-nftables"],
+            node_pins={"python3-nftables": ["nftables"]}),
     ])
 
     assert actions == {"nftables.rpm": "skip"}
+
+
+def test_a_package_of_the_node_that_does_not_pin_the_upgrade_does_not_hold_it_back(tmp_path):
+    # systemd-rpm-macros is built from systemd and requires nothing of it at a
+    # version, so a newer systemd leaves it as it is. Kept for it, the source
+    # would stay on the old build for nothing. openssh-askpass does pin
+    # openssh-clients, so that source is kept
+    actions = plan(tmp_path, [
+        pkg("systemd", "systemd-252-46.el9.src.rpm", installed="older",
+            node_family=["systemd", "systemd-libs", "systemd-rpm-macros"],
+            node_pins={"systemd-rpm-macros": []}),
+        pkg("systemd-libs", "systemd-252-46.el9.src.rpm", installed="older",
+            node_family=["systemd", "systemd-libs", "systemd-rpm-macros"]),
+        pkg("openssh-clients", "openssh-8.7p1-38.el9.src.rpm", installed="older",
+            node_family=["openssh", "openssh-clients", "openssh-server", "openssh-askpass"],
+            node_pins={"openssh-askpass": ["openssh-clients"]}),
+    ])
+
+    assert actions == {"systemd.rpm": "install", "systemd-libs.rpm": "install",
+                       "openssh-clients.rpm": "skip"}
+
+
+def test_a_pin_on_something_the_bundle_does_not_carry_is_not_a_strand(tmp_path):
+    # The pin has to be on a name the bundle would move. One on a sibling the
+    # bundle leaves alone stays satisfied
+    actions = plan(tmp_path, [
+        pkg("device-mapper", "lvm2-2.03.28-6.el9.src.rpm", installed="older",
+            node_family=["device-mapper", "device-mapper-event", "device-mapper-event-libs"],
+            node_pins={"device-mapper-event": ["device-mapper-event-libs"]}),
+    ])
+
+    assert actions == {"device-mapper.rpm": "install"}
 
 
 def test_an_upgrade_is_made_when_the_bundle_carries_the_whole_source(tmp_path):
@@ -72,9 +108,11 @@ def test_the_source_is_matched_by_name_whatever_version_it_was_built_at(tmp_path
     # lvm2 at different versions; they are one source all the same
     actions = plan(tmp_path, [
         pkg("device-mapper", "lvm2-2.03.28-6.el9.src.rpm", installed="older",
-            node_family=["device-mapper", "device-mapper-event"]),
+            node_family=["device-mapper", "device-mapper-event"],
+            node_pins={"device-mapper-event": ["device-mapper"]}),
         pkg("device-mapper-libs", "lvm2-2.03.28-6.el9.src.rpm",
-            node_family=["device-mapper", "device-mapper-event"]),
+            node_family=["device-mapper", "device-mapper-event"],
+            node_pins={"device-mapper-event": ["device-mapper"]}),
     ])
 
     assert actions == {"device-mapper.rpm": "skip", "device-mapper-libs.rpm": "skip"}

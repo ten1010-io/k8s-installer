@@ -153,7 +153,6 @@ ubuntu2204_setup() {
     ubuntu_install_dir "$base/python3-distutils"
     ubuntu_install_dir "$base/python3.10-venv"
     export DEBIAN_FRONTEND=""
-    ubuntu_require_venv_package 22.04 python3.10
   fi
 
   if [[ -e $KI_OPT_VENV_PATH ]]; then
@@ -185,7 +184,6 @@ ubuntu2404_setup() {
     ubuntu_install_dir "$base/python3.12"
     ubuntu_install_dir "$base/python3.12-venv"
     export DEBIAN_FRONTEND=""
-    ubuntu_require_venv_package 24.04 python3.12
   fi
 
   if [[ -e $KI_OPT_VENV_PATH ]]; then
@@ -260,15 +258,26 @@ rhel9_setup() {
   return 0
 }
 
-# Everything here is the dependency closure of python, so nothing is declared
-# by the release and every package is planned as a dependency.
+# Everything here goes in at the version the bundle carries, whatever the node
+# holds, the way it did before there was a plan: every directory is a
+# principal one.
 #
-# The directories are planned as one, before any of them is installed: the
-# venv package wants the python at exactly its own version, and the two sit in
-# different directories. A node whose python is newer than the bundle's keeps
-# it, and the venv package of the bundle is kept out with it rather than handed
-# to dpkg to refuse
+# These are the closure of python rather than anything the release declares,
+# and a node of a later point release often holds the interpreter newer. But
+# the venv package wants the python at exactly its own version, and it is not
+# on an ubuntu image: a node whose python is newer than the bundle's and that
+# has no venv package of its own would have nothing to make the environment
+# with, and no repository to get one from. So the interpreter follows the
+# bundle, downgrade and all, which is the python of the newest point release
+# the bundle was built against. dpkg refuses it only where the node pins that
+# python from outside the directories (a libpython3.X-dev, say), and then it
+# refuses before anything of the node has moved.
+#
+# Planned as one all the same: what the node already holds at the bundled
+# version is not handed over, and python3-minimal is named by two directories
 ubuntu_plan_dirs() {
+  deb_principal_dirs=("$@")
+
   local files=()
   local dir
   local file
@@ -293,18 +302,6 @@ ubuntu_install_dir() {
   deb_install_planned "$(basename "$dir")" -- "${files[@]}"
 
   return 0
-}
-
-# What the plan kept out, said plainly: without the venv package there is no
-# environment to make, and "ensurepip is not available" would be the only word
-# of it otherwise
-ubuntu_require_venv_package() {
-  local os_version=$1
-  local python=$2
-
-  [[ $("ubuntu${os_version//./}_is_installed" "$python-venv") = "true" ]] && return 0
-
-  die "[ERROR] Package[\"$python-venv\"] is not installed, and the one of the bundle can not go in: it wants $python at exactly the version the bundle carries, and this node holds a newer one, which it keeps. Install $python-venv built for the $python of this node, or rebuild the bundle on a node this new (tools/build-bundle-packages.sh)"
 }
 
 # Everything here is the dependency closure of python3.12, so nothing is

@@ -98,8 +98,12 @@ k8s_packages_path=""
 # with
 RHEL_ERASED_PACKAGES=(systemd-timesyncd ntp chrony podman runc systemd-container)
 
-# What an ubuntu install removes before it lays the bundle down
-UBUNTU_REMOVED_PACKAGES=(systemd-timesyncd ntp chrony)
+# What an ubuntu install removes before it lays the bundle down: the time
+# services that are not systemd-timesyncd, which is the one setup-ntp-client.sh
+# runs on an ubuntu. systemd-timesyncd itself is left where it is: the systemd
+# directory carries it and goes in at its version (setup_deb_plan_args), so
+# there is nothing a removal would do that the install does not
+UBUNTU_REMOVED_PACKAGES=(ntp chrony)
 
 # The directories of an ubuntu, in the order the dependencies between them want
 UBUNTU_DEB_DIRS=(nfs-common systemd dbus pigz slirp containerd iptables ebtables conntrack nftables docker nvidia-container-toolkit ethtool socat)
@@ -155,15 +159,10 @@ ubuntu2204_install() {
   require_packages_installable
   set_k8s_packages_path ubuntu22.04
   require_declared_packages ubuntu22.04 deb
-  setup_deb_plan_args
+  setup_deb_plan_args ubuntu22.04
   ubuntu_require_installable ubuntu22.04
 
   begin_apt
-
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists systemd-timesyncd) = "true" ]]; then
-    apt remove -y --purge --allow-change-held-packages \
-      systemd-timesyncd
-  fi
 
   if [[ $("$ki_opt_scripts_path/systemctl.sh" exists ntp) = "true" ]]; then
     apt remove -y --purge --allow-change-held-packages \
@@ -190,15 +189,10 @@ ubuntu2404_install() {
   require_packages_installable
   set_k8s_packages_path ubuntu24.04
   require_declared_packages ubuntu24.04 deb
-  setup_deb_plan_args
+  setup_deb_plan_args ubuntu24.04
   ubuntu_require_installable ubuntu24.04
 
   begin_apt
-
-  if [[ $("$ki_opt_scripts_path/systemctl.sh" exists systemd-timesyncd) = "true" ]]; then
-    apt remove -y --purge --allow-change-held-packages \
-      systemd-timesyncd
-  fi
 
   if [[ $("$ki_opt_scripts_path/systemctl.sh" exists ntp) = "true" ]]; then
     apt remove -y --purge --allow-change-held-packages \
@@ -497,9 +491,26 @@ ubuntu_deb_files() {
 }
 
 # The packages release.yml declares, and the packages of kubernetes, go in at
-# their version whatever the node holds
+# their version whatever the node holds.
+#
+# So does the systemd directory, alone among the dependencies. The bundle names
+# systemd as a principal rather than taking what something else requires
+# (tools/build-bundle-packages.sh), and setup-ntp-client.sh runs the time of an
+# ubuntu on the systemd-timesyncd built with it, which wants systemd at exactly
+# its version. A node whose systemd is one build newer than the bundle's, an
+# image released after the bundle or a node patched since, would otherwise keep
+# its own and leave the bundle's timesyncd out; where the image ships chrony
+# instead, as the ubuntu images of ec2 do, that node would end the install with
+# no time service and no way to get one offline. The bundle's systemd is the
+# newest build of the same version the repository had when the bundle was made,
+# one build behind such a node at most, and going down to it is what every
+# install did before there was a plan. What it would break on the node is
+# found by the apt simulation of ubuntu_require_installable before anything is
+# removed
 setup_deb_plan_args() {
-  deb_principal_dirs=("$k8s_packages_path")
+  local os_dir=$1
+
+  deb_principal_dirs=("$k8s_packages_path" "$ki_opt_bundle_path/linux-packages/$os_dir/systemd")
   deb_principals=()
 
   local name

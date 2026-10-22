@@ -11,6 +11,10 @@
 #     node keeps those, together with every deb built from the same source
 #     package, since those depend on each other at one exact version
 #     (libssl-dev on libssl3, for one)
+#   - a source is kept the other way round too, where the bundle would upgrade
+#     one of its debs and the node holds another of the same source that the
+#     bundle does not carry and that depends on a bundled one at exactly its
+#     version. One that does not pin it that way holds nothing back
 #   - what is installed at the version the bundle holds is not handed over
 #
 # Written in bash rather than reusing the python planner: an ubuntu node is not
@@ -68,6 +72,32 @@ deb_is_assumed_absent() {
   done
 
   return 1
+}
+
+# The package names a Depends or Pre-Depends field pins at exactly one version,
+# "python3.10 (= 3.10.12-1~22.04.11)" among "libc6 (>= 2.34), python3.10 (=
+# 3.10.12-1~22.04.11) | python3.10-full". Those are what an upgrade of the
+# named package breaks; a loose bound survives it
+deb_exact_depends() {
+  local depends=$1
+
+  local clauses=()
+  IFS=',|' read -ra clauses <<< "$depends"
+
+  # The name, an optional :arch, and "(=" after it. A regex in a variable, since
+  # bash reads the parentheses of one written in place as its own
+  local pin_re='^[[:space:]]*([^[:space:](:]+)(:[^[:space:](]+)?[[:space:]]*\(='
+  local clause
+  local pinned=""
+  for clause in "${clauses[@]}"; do
+    if [[ $clause =~ $pin_re ]]; then
+      pinned+=" ${BASH_REMATCH[1]}"
+    fi
+  done
+
+  echo "$pinned"
+
+  return 0
 }
 
 # The version of a package the node has installed, or nothing. A package that
@@ -156,8 +186,9 @@ deb_plan() {
 
   # The other way a source is kept: the bundle would upgrade one of its debs
   # while the node holds another one of the same source that the bundle does
-  # not carry, which depends on the old version exactly and which nothing
-  # would move along
+  # not carry, which depends on one of the bundled names at exactly its old
+  # version and which nothing would move along. One that depends on it loosely,
+  # or not at all, is not broken by the upgrade and holds nothing back
   local -A in_bundle=()
   local i
   for i in "${!paths[@]}"; do
@@ -165,23 +196,33 @@ deb_plan() {
   done
 
   local -A node_by_source=()
+  local -A node_pins=()
   local node_source
   local node_name
   local node_status
-  while IFS=$'\t' read -r node_source node_name node_status; do
+  local node_depends
+  while IFS=$'\t' read -r node_source node_name node_status node_depends; do
     [[ $node_status = ii* ]] || continue
     [[ -z $node_source ]] && node_source=$node_name
     deb_is_assumed_absent "$node_name" && continue
     node_by_source["$node_source"]+=" $node_name"
-  done < <(dpkg-query -W -f='${source:Package}\t${Package}\t${db:Status-Abbrev}\n' 2>/dev/null || true)
+    node_pins["$node_name"]=$(deb_exact_depends "$node_depends")
+  done < <(dpkg-query -W -f='${source:Package}\t${Package}\t${db:Status-Abbrev}\t${Pre-Depends}, ${Depends}\n' 2>/dev/null || true)
 
   local stranded
+  local pinned
   for i in "${!paths[@]}"; do
     [[ ${principals[$i]} = "true" || ${states[$i]} != "older" ]] && continue
     [[ -n ${kept_sources["${sources[$i]}"]+x} ]] && continue
     stranded=""
     for node_name in ${node_by_source["${sources[$i]}"]-}; do
-      [[ -z ${in_bundle["${sources[$i]}|$node_name"]+x} ]] && stranded+=" $node_name"
+      [[ -n ${in_bundle["${sources[$i]}|$node_name"]+x} ]] && continue
+      for pinned in ${node_pins["$node_name"]-}; do
+        if [[ -n ${in_bundle["${sources[$i]}|$pinned"]+x} ]]; then
+          stranded+=" $node_name"
+          break
+        fi
+      done
     done
     if [[ -n $stranded ]]; then
       kept_sources["${sources[$i]}"]="upgrading ${names[$i]} past ${installed_versions[$i]} would leave${stranded} of the node, which the bundle does not carry, pinned to the old version"

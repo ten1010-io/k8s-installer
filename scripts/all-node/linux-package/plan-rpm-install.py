@@ -29,6 +29,14 @@ has it too. rhel 8 nodes with python3-nftables and rhel 9.7 nodes with
 device-mapper-event met this one. Sources are matched by name, not by the
 version they were built at.
 
+Only an exact pin holds a source back that way. A package of the node that
+comes from the same source and requires nothing of it at one version, or
+requires it loosely, is not broken by the upgrade: systemd-rpm-macros beside
+systemd, openssh-askpass beside openssh-clients. Keeping the source for those
+would leave the node on the old build for nothing, and where the bundle raises
+two sources together on purpose, openssh with the openssl its old sshd refuses
+to load, it would raise one without the other.
+
 A newer library satisfies what was built against an older one of the same major
 version: the soname is the same and every older symbol version is still there,
 and rpm checks both, since what a binary links against is written into its
@@ -90,9 +98,11 @@ def kept_sources(packages):
     - the node holds one of them newer than the bundle, so handing rpm the rest
       at the bundled version is a downgrade of the one or a broken pin on it
     - the bundle would upgrade one of them, and the node holds another one of
-      the same source that the bundle does not carry: python3-nftables beside
+      the same source that the bundle does not carry and that requires one of
+      the bundled names at exactly its version: python3-nftables beside
       nftables, device-mapper-event beside device-mapper. Nothing would move
-      that one along, and it pins the old version of what was upgraded
+      that one along, and it pins the old version of what was upgraded. One
+      that does not pin is left where it is and the source moves
 
     A package the release declares never keeps its source back"""
     in_bundle = {}
@@ -107,7 +117,9 @@ def kept_sources(packages):
             kept[p["source"]] = (f"the node holds {p['name']} {p['installed_evr']}, "
                                  f"newer than the bundle")
         elif p["installed"] == OLDER:
-            stranded = sorted(set(p.get("node_family") or []) - in_bundle[p["source"]])
+            pins = p.get("node_pins") or {}
+            stranded = sorted(name for name in set(p.get("node_family") or []) - in_bundle[p["source"]]
+                              if set(pins.get(name) or []) & in_bundle[p["source"]])
             if stranded:
                 kept[p["source"]] = (f"upgrading {p['name']} past {p['installed_evr']} would leave "
                                      f"{', '.join(stranded)} of the node, which the bundle does not "
@@ -117,8 +129,9 @@ def kept_sources(packages):
 
 def decide(packages):
     """packages: dicts with file, name, evr, srpm, principal, installed (None,
-    SAME, NEWER or OLDER) with installed_evr, and node_family, the names the node
-    has installed from the same source package. Returns (action, file, reason) in
+    SAME, NEWER or OLDER) with installed_evr, node_family, the names the node
+    has installed from the same source package, and node_pins, the names each
+    of those requires at exactly one version. Returns (action, file, reason) in
     the order given, one per distinct file."""
     for p in packages:
         p.setdefault("source", source_name(p["srpm"]) or p["name"])
@@ -157,6 +170,25 @@ def text(value):
     return value
 
 
+# RPMSENSE_LESS, RPMSENSE_GREATER and RPMSENSE_EQUAL, which rpm sets on a
+# requirement for <, > and =. "name = evr" is exactly EQUAL
+SENSE_LESS = 1 << 1
+SENSE_GREATER = 1 << 2
+SENSE_EQUAL = 1 << 3
+
+
+def exact_requires(header, rpm):
+    """The names a package requires at exactly one version, as rpm matches
+    them: "nftables(x86-64) = 1:1.0.9-6.el9" pins nftables"""
+    names = header[rpm.RPMTAG_REQUIRENAME] or []
+    flags = header[rpm.RPMTAG_REQUIREFLAGS] or []
+    pinned = set()
+    for name, flag in zip(names, flags):
+        if flag & (SENSE_LESS | SENSE_GREATER | SENSE_EQUAL) == SENSE_EQUAL:
+            pinned.add(text(name).split("(")[0])
+    return pinned
+
+
 def evr_tuple(header, rpm):
     epoch = header[rpm.RPMTAG_EPOCHNUM]
     return (str(epoch), text(header[rpm.RPMTAG_VERSION]), text(header[rpm.RPMTAG_RELEASE]))
@@ -178,13 +210,16 @@ def packages_from_rpm(args):
     principal_dirs = [os.path.realpath(d) for d in args.principal_dir]
     absent = set(args.assume_absent)
 
-    # What the node has installed, by the source package it was built from
+    # What the node has installed, by the source package it was built from,
+    # and what each of those pins at an exact version
     installed_by_source = {}
+    installed_pins = {}
     for h in ts.dbMatch():
         installed_name = text(h[rpm.RPMTAG_NAME])
         source = source_name(text(h[rpm.RPMTAG_SOURCERPM]))
         if source and installed_name not in absent:
             installed_by_source.setdefault(source, set()).add(installed_name)
+            installed_pins.setdefault(installed_name, set()).update(exact_requires(h, rpm))
 
     packages = []
     for path in args.rpms:
@@ -218,6 +253,7 @@ def packages_from_rpm(args):
 
         srpm = text(header[rpm.RPMTAG_SOURCERPM]) or name
         source = source_name(srpm) or name
+        family = sorted(installed_by_source.get(source, ()))
         packages.append({
             "file": path,
             "name": name,
@@ -228,7 +264,8 @@ def packages_from_rpm(args):
             "principal": principal,
             "installed": installed,
             "installed_evr": evr_string(installed_evr) if installed_evr else None,
-            "node_family": sorted(installed_by_source.get(source, ())),
+            "node_family": family,
+            "node_pins": {n: sorted(installed_pins.get(n, ())) for n in family},
         })
     return packages
 
@@ -244,6 +281,7 @@ def packages_from_facts(path, rpms):
         p.setdefault("installed_evr", None)
         p.setdefault("arch", "x86_64")
         p.setdefault("node_family", [])
+        p.setdefault("node_pins", {})
     if not rpms:
         return facts
 
