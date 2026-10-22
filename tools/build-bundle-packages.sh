@@ -96,10 +96,12 @@ parse_params "$@"
 # Each directory is one principal package and whatever this machine lacks for
 # it, resolved by the package manager against what is installed here. Run on the
 # oldest release, that is the closure an old node needs and a newer one skips:
-# install-packages.sh hands dpkg and rpm only what is not already there at the
-# version the bundle holds. The repository serves the newest packages of the
-# release whatever point of it asks, so what lands here is the same content a
-# node of the newest point has.
+# install-packages.sh hands dpkg and rpm what is not already there at the
+# version the bundle holds, and of the dependencies only what the node does not
+# hold newer (plan-rpm-install.py, deb-common.sh); what release.yml declares
+# goes in at its version whatever the node holds. The repository serves the
+# newest packages of the release whatever point of it asks, so what lands here
+# is the same content a node of the newest point has.
 #
 # The oldest release is the oldest minor for rhel (8.0, 9.0, 10.0) and the GA
 # image for ubuntu (22.04 with no point release, 24.04 the same), since the

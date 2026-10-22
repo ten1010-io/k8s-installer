@@ -44,6 +44,12 @@ declare -A deb_plan_reason=()
 # How many debs the last deb_install_planned handed to dpkg
 deb_installed_count=0
 
+# The key a deb is planned under: its path made canonical, so that a directory
+# may name it another way than the plan was given it and still find it
+deb_plan_key() {
+  realpath -m "$1"
+}
+
 deb_is_principal() {
   local name=$1
   local path=$2
@@ -281,11 +287,30 @@ deb_plan_install() {
   local action
   local path
   local reason
+  local key
   while IFS=$'\t' read -r action path reason; do
     [[ -z $action ]] && continue
-    deb_plan_action["$path"]=$action
-    deb_plan_reason["$path"]=$reason
+    key=$(deb_plan_key "$path")
+    deb_plan_action["$key"]=$action
+    deb_plan_reason["$key"]=$reason
   done <<< "$plan"
+
+  return 0
+}
+
+# What is already installed at the bundled version goes by in silence: an
+# update finds most of the bundle that way, and the lines that matter would
+# drown among them. A copy of a deb that another directory also holds says
+# which directory hands it over. The rest is the node keeping its own, and why
+deb_say_skipped() {
+  local path=$1
+  local reason=$2
+
+  case $reason in
+    *" is installed") ;;
+    *" is planned as "*) msg "[INFO] $(basename "$path") is handed over with another directory: $reason" ;;
+    *) msg "[INFO] Keeping what the node holds instead of $(basename "$path"): $reason" ;;
+  esac
 
   return 0
 }
@@ -306,16 +331,15 @@ deb_install_planned() {
 
   local to_install=()
   local path
-  local reason
+  local key
   for path in "$@"; do
-    case ${deb_plan_action["$path"]-} in
+    key=$(deb_plan_key "$path")
+    case ${deb_plan_action["$key"]-} in
       install)
         to_install+=("$path")
         ;;
       skip)
-        reason=${deb_plan_reason["$path"]}
-        [[ $reason != *" is installed" ]] &&
-          msg "[INFO] Keeping what the node holds instead of $(basename "$path"): $reason"
+        deb_say_skipped "$path" "${deb_plan_reason["$key"]}"
         ;;
       installed)
         ;;
@@ -334,7 +358,7 @@ deb_install_planned() {
   dpkg -i "${dpkg_opts[@]}" "${to_install[@]}"
 
   for path in "${to_install[@]}"; do
-    deb_plan_action["$path"]="installed"
+    deb_plan_action["$(deb_plan_key "$path")"]="installed"
   done
 
   return 0

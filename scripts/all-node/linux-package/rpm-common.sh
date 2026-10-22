@@ -16,6 +16,13 @@
 RPM_COMMON_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 RPM_PLANNER_PATH="$RPM_COMMON_DIR_PATH/plan-rpm-install.py"
 
+# The key an rpm is planned under: its path made canonical, so that a directory
+# may name it another way than the plan was given it, relative or through a
+# link, and still find it
+rpm_plan_key() {
+  realpath -m "$1"
+}
+
 # What rpm_plan_install decided for each rpm, by the path it was given as:
 # "install", "skip", or "installed" once rpm_install_planned has handed it over
 declare -A rpm_plan_action=()
@@ -73,11 +80,30 @@ rpm_plan_install() {
   local action
   local path
   local reason
+  local key
   while IFS=$'\t' read -r action path reason; do
     [[ -z $action ]] && continue
-    rpm_plan_action["$path"]=$action
-    rpm_plan_reason["$path"]=$reason
+    key=$(rpm_plan_key "$path")
+    rpm_plan_action["$key"]=$action
+    rpm_plan_reason["$key"]=$reason
   done <<< "$plan"
+
+  return 0
+}
+
+# What is already installed at the bundled version goes by in silence: an
+# update finds most of the bundle that way, and the lines that matter would
+# drown among them. A copy of an rpm that another directory also holds says
+# which directory hands it over. The rest is the node keeping its own, and why
+rpm_say_skipped() {
+  local path=$1
+  local reason=$2
+
+  case $reason in
+    *" is installed") ;;
+    *" is planned as "*) msg "[INFO] $(basename "$path") is handed over with another directory: $reason" ;;
+    *) msg "[INFO] Keeping what the node holds instead of $(basename "$path"): $reason" ;;
+  esac
 
   return 0
 }
@@ -97,13 +123,15 @@ rpm_install_planned() {
 
   local to_install=()
   local path
+  local key
   for path in "$@"; do
-    case ${rpm_plan_action["$path"]-} in
+    key=$(rpm_plan_key "$path")
+    case ${rpm_plan_action["$key"]-} in
       install)
         to_install+=("$path")
         ;;
       skip)
-        msg "[INFO] Keeping what the node holds instead of $(basename "$path"): ${rpm_plan_reason["$path"]}"
+        rpm_say_skipped "$path" "${rpm_plan_reason["$key"]}"
         ;;
       installed)
         ;;
@@ -123,7 +151,7 @@ rpm_install_planned() {
   rpm -Uvh --force "${to_install[@]}"
 
   for path in "${to_install[@]}"; do
-    rpm_plan_action["$path"]="installed"
+    rpm_plan_action["$(rpm_plan_key "$path")"]="installed"
   done
 
   return 0

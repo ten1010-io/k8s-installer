@@ -265,12 +265,17 @@ rhel_install() {
 
   [[ $(getenforce) != "Disabled" ]] && setenforce 0
 
-  dnf erase -y --disableplugin subscription-manager \
+  # Only the names given leave. dnf would otherwise take with podman whatever
+  # came in as its dependency, fuse-overlayfs and slirp4netns among them, and
+  # the plan rhel_require_installable tried above saw those as held by the
+  # node: what it tested and what is installed below would be two different
+  # sets. Left behind, they are planned as any other dependency the node holds
+  dnf erase -y --disableplugin subscription-manager --setopt=clean_requirements_on_remove=False \
     systemd-timesyncd \
     ntp \
     chrony
 
-  dnf erase -y --disableplugin subscription-manager \
+  dnf erase -y --disableplugin subscription-manager --setopt=clean_requirements_on_remove=False \
     podman \
     runc \
     systemd-container
@@ -615,8 +620,10 @@ rhel_require_installable() {
 }
 
 # systemd re-executes on SIGTERM to pid 1, which is how the one just laid down
-# takes over without a reboot. Where the node kept its own, there is nothing to
-# take over
+# takes over without a reboot. Where nothing of its directory went in, the node
+# kept its own and there is nothing to take over. The count is the directory's
+# rather than the one rpm's: re-executing a systemd that did not change is
+# harmless, and cheaper than knowing which rpm of the directory it was
 rhel_reexec_systemd_if_installed() {
   if [[ $rpm_installed_count = 0 ]]; then
     msg "[INFO] systemd of the node is kept. not re-executing it"

@@ -148,7 +148,11 @@ ubuntu2204_setup() {
     ubuntu_plan_dirs "$base/python3.10" "$base/python3" "$base/python3-distutils" "$base/python3.10-venv"
     ubuntu_install_dir "$base/python3.10"
     # python3-minimal before the rest of python3, which the others pre-depend on
-    deb_install_planned python3-minimal -- "$base"/python3/python3-minimal*
+    local minimal=()
+    mapfile -t minimal < <(deb_files_of "$base/python3" | grep -E '/python3-minimal_[^/]*\.deb$' || true)
+    [[ ${#minimal[@]} = 0 ]] &&
+      die "[ERROR] Directory[\"python3\"] of the bundle holds no python3-minimal, which the rest of it pre-depends on"
+    deb_install_planned python3-minimal -- "${minimal[@]}"
     ubuntu_install_dir "$base/python3"
     ubuntu_install_dir "$base/python3-distutils"
     ubuntu_install_dir "$base/python3.10-venv"
