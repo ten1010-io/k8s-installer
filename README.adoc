@@ -1069,29 +1069,29 @@ NOTE: **apiserver 쪽은 따로 켜야 합니다.** apiserver 는 기본적으�
 클러스터에는 레지스트리가 둘 있습니다. kubeadm 이 쓰는 것(`ki-cp-k8s-registry`, 5000)은 릴리스가
 채우고, 워크로드가 쓰는 것(`ki-cp-user-registry`, 5001)은 여기서 채웁니다.
 
-담을 것을 `ki-cp-user-registry-images.yml` 에 선언합니다. 이미지는 `images`, helm 차트는 `charts`
-입니다.
-`ki-cp-user-registry-images.yml.example` 을
-복사해서 쓰면 됩니다. 그 다음 **이미지를 받을 수 있는 곳에서** 아카이브를 만듭니다.
+담을 것을 `ki-cp-user-registry-artifacts.yml` 에 선언합니다. 이미지는 `images`, helm 차트는 `charts`
+입니다. 둘을 아울러 아티팩트라고 부르고, 파일 이름이 `artifacts` 인 것도 그래서입니다.
+`ki-cp-user-registry-artifacts.yml.example` 을
+복사해서 쓰면 됩니다. 그 다음 **이미지와 차트를 받을 수 있는 곳에서** 아카이브를 만듭니다.
 
 [source,shell]
 ----
 ./download-bundle.sh                        # 도구가 쓰는 crane 이 이 번들 안에 있습니다
-tools/build-user-registry-images.sh
+tools/build-user-registry-artifacts.sh
 ----
 
 번들은 풀지 않아도 됩니다. 도구가 받아 둔 `bundle-<버전>.tgz` 에서 crane 만 꺼내 씁니다. 그 아카이브가
 없으면 `setup.sh` 가 `/opt/k8s-installer` 에 풀어 둔 번들을 대신 쓰는데, 거기 설치된 것이 이 트리와 같은
 릴리스일 때만입니다. 둘 다 없으면 거부하고 `download-bundle.sh` 를 안내합니다.
 
-나온 `ki-cp-user-registry-images.tgz` 를 매체로 반입한 뒤, 제어 노드에서 밀어 넣습니다.
+나온 `ki-cp-user-registry-artifacts.tgz` 를 매체로 반입한 뒤, 제어 노드에서 밀어 넣습니다.
 
 [source,shell]
 ----
 source /opt/k8s-installer/venv/bin/activate
 cd /opt/k8s-installer/ansible
-ansible-playbook -i inventory.yml playbooks/push-user-registry-images.yml \
-  -e archive=/media/usb/ki-cp-user-registry-images.tgz
+ansible-playbook -i inventory.yml playbooks/push-user-registry-artifacts.yml \
+  -e archive=/media/usb/ki-cp-user-registry-artifacts.tgz
 ----
 
 모든 ki cp 노드에 같은 내용이 들어갑니다. 파드는 그때 VIP 를 들고 있는 노드에서 당기므로 노드마다
@@ -1119,7 +1119,7 @@ ansible-playbook -i inventory.yml playbooks/check-user-registry.yml
 `check` 는 보고만 합니다. 어긋난 채로 두면 그 노드가 VIP 를 드는 순간부터 그 이미지를 당기는 파드가
 실패하는데, 레지스트리는 정상 응답하고 카탈로그만 짧아서 **아무것도 티가 나지 않습니다.** 첫 신호가
 "어떤 노드에 스케줄되면 뜨고 어떤 노드면 안 뜨는 파드" 이고, 그때는 원인에서 한참 떨어져 있습니다.
-그래서 `add-node`, `push-user-registry-images`, `prune-user-registry` 끝에서 자동으로 돌아갑니다.
+그래서 `add-node`, `push-user-registry-artifacts`, `prune-user-registry` 끝에서 자동으로 돌아갑니다.
 
 워크로드에서는 이렇게 씁니다.
 
@@ -1135,7 +1135,7 @@ image: ki-cp.ki.local:5001/library/nginx:1.25
 
 [source,yaml]
 ----
-# ki-cp-user-registry-images.yml
+# ki-cp-user-registry-artifacts.yml
 charts:
   - ghcr.io/myorg/charts/myapp:1.4.0
 ----
@@ -1146,7 +1146,7 @@ charts:
 
 [source,yaml]
 ----
-# ki-cp-user-registry-images.yml
+# ki-cp-user-registry-artifacts.yml
 mappings:
   - from: ghcr.io/myorg/charts/myapp:1.4.0
     to: charts/myapp:1.4.0
@@ -1198,16 +1198,16 @@ push 는 더하기만 하므로 레지스트리는 계속 커집니다. 목록 �
 ----
 # 무엇이 지워질지만 봅니다
 ansible-playbook -i inventory.yml playbooks/prune-user-registry.yml \
-  -e keep=/path/to/ki-cp-user-registry-images.yml
+  -e keep=/path/to/ki-cp-user-registry-artifacts.yml
 
 # 실제로 지웁니다
 ansible-playbook -i inventory.yml playbooks/prune-user-registry.yml \
-  -e keep=/path/to/ki-cp-user-registry-images.yml -e delete=
+  -e keep=/path/to/ki-cp-user-registry-artifacts.yml -e delete=
 ----
 
 [WARNING]
 ====
-에어갭 안의 레지스트리는 그 이미지의 유일한 사본입니다. 지운 이미지를 되돌리려면 다시 반입해야
+에어갭 안의 레지스트리는 거기 담긴 것의 유일한 사본입니다. 지운 것을 되돌리려면 다시 반입해야
 하므로, `-e delete=` 없이 먼저 목록을 확인하세요.
 ====
 

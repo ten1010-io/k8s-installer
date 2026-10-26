@@ -9,8 +9,8 @@ Available options:
 -h, --help     Print this help and exit
 -v, --verbose  Print script debug info
 --vars-path    File path
---keep-path    The file declaring the images to keep, in the shape of
-               ki-cp-user-registry-images.yml
+--keep-path    The file declaring the artifacts to keep, in the shape of
+               ki-cp-user-registry-artifacts.yml
 --delete       Actually delete. Without it nothing is removed and what would be
                is printed
 EOF
@@ -103,12 +103,12 @@ var_svc_root_path=""
 registry_host=""
 
 # Removes from the user registry everything the keep file does not name, and
-# reclaims what those images were holding.
+# reclaims what those artifacts were holding.
 #
 # Says what it would remove and removes nothing unless --delete is passed. A
-# registry inside an air gap is the only copy of what it holds: an image deleted
-# here is fetched again by crossing the gap with it, so the cost of deleting one
-# image too many is a trip rather than a command
+# registry inside an air gap is the only copy of what it holds: an artifact
+# deleted here is fetched again by crossing the gap with it, so the cost of
+# deleting one artifact too many is a trip rather than a command
 main() {
   require_file_exists "$vars_path"
   require_file_exists "$keep_path"
@@ -136,7 +136,7 @@ main() {
     return 0
   fi
 
-  msg "[INFO] These images are in the user registry and not in the keep file:"
+  msg "[INFO] These artifacts are in the user registry and not in the keep file:"
   local ref
   while read -r ref; do
     [[ -z $ref ]] && continue
@@ -166,7 +166,7 @@ main() {
 # delete, which is a whole registry gone in a single --delete. The file that
 # says that is more likely the wrong file, or one whose keys got renamed, than
 # an operator who means it, and the archive it came from says so too:
-# build-user-registry-images.sh refuses to build one that declares nothing.
+# build-user-registry-artifacts.sh refuses to build one that declares nothing.
 #
 # Refused here rather than in get_kept_refs, which is reached through a command
 # substitution where a die only ends the subshell
@@ -194,8 +194,8 @@ set_readonly() {
 }
 
 # Everything the registry serves, against everything the keep file names. The
-# keep file is read for the references the images are served under, which is
-# what build-user-registry-images.sh derived the layout paths from, so the two
+# keep file is read for the references the artifacts are served under, which is
+# what build-user-registry-artifacts.sh derived the layout paths from, so the two
 # sides are the same strings
 get_refs_to_delete() {
   local kept
@@ -248,11 +248,11 @@ delete_refs() {
     [[ -z $ref ]] && continue
 
     digest=$($crane_cmd digest --insecure "$registry_host/$ref") ||
-      die "[ERROR] Failed to resolve the digest of image[\"$ref\"]"
+      die "[ERROR] Failed to resolve the digest of artifact[\"$ref\"]"
 
-    msg "[INFO] Deleting image[\"$ref\"]"
+    msg "[INFO] Deleting artifact[\"$ref\"]"
     $crane_cmd delete --insecure "$registry_host/${ref%%:*}@$digest" ||
-      die "[ERROR] Failed to delete image[\"$ref\"]"
+      die "[ERROR] Failed to delete artifact[\"$ref\"]"
   done <<< "$refs"
 
   return 0
@@ -262,7 +262,7 @@ delete_refs() {
 # until the registry walks its storage, and it will not do that while anything
 # could be uploading, so the registry is stopped for it rather than left running
 collect_garbage() {
-  msg "[INFO] Reclaiming the storage of the deleted images"
+  msg "[INFO] Reclaiming the storage of the deleted artifacts"
 
   docker compose -f "$etc_svc_root_path/compose.yml" down
 
@@ -270,7 +270,7 @@ collect_garbage() {
       -v "$var_svc_root_path/registry:/var/lib/registry" \
       "$(get_registry_image)" \
       bin/registry garbage-collect --delete-untagged /etc/docker/registry/config.yml ||
-    die "[ERROR] Failed to reclaim the storage of the deleted images. the registry is down, bring it back with setup-user-registry.sh --update"
+    die "[ERROR] Failed to reclaim the storage of the deleted artifacts. the registry is down, bring it back with setup-user-registry.sh --update"
 
   remove_empty_repositories
 
@@ -281,7 +281,7 @@ collect_garbage() {
 
 # Garbage collection reclaims the blobs and leaves the directory of the
 # repository standing. The catalog is a listing of those directories, so an
-# image whose last tag is gone goes on being named by it: nothing can be pulled
+# artifact whose last tag is gone goes on being named by it: nothing can be pulled
 # from it, and the operator who just removed it sees it in the catalog and
 # reasonably concludes it is still there. Runs while the registry is down, which
 # is where garbage collection already left it

@@ -94,10 +94,10 @@ var_svc_root_path=""
 # it, because what belongs in it is decided by whoever runs the cluster rather
 # than by a release.
 #
-# Filling it is push-user-registry-images.yml and nothing else. The registry is
+# Filling it is push-user-registry-artifacts.yml and nothing else. The registry is
 # left readonly so that it can not be pushed to directly: every ki cp node runs
 # one of these and a push through the vip would land on whichever node happened
-# to hold the address, leaving the nodes holding different images and a pod
+# to hold the address, leaving the nodes holding different artifacts and a pod
 # pulling or failing depending on where it was scheduled
 main() {
   require_file_exists "$vars_path"

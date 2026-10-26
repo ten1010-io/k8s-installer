@@ -1,10 +1,10 @@
 - import_playbook: tasks/begin-playbook.yml
   vars:
-    playbook: "push-user-registry-images"
+    playbook: "push-user-registry-artifacts"
 
 - import_playbook: tasks/prepare-vars.yml
 
-- import_playbook: tasks/push-user-registry-images.yml
+- import_playbook: tasks/push-user-registry-artifacts.yml
 
 - import_playbook: tasks/check-user-registry.yml
 

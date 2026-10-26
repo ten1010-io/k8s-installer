@@ -81,19 +81,20 @@ YQ_CMD=""
 CRANE_CMD=""
 
 REGISTRY_NAME="ki-cp-user-registry"
-IMAGES_YML_PATH="$KI_ROOT_PATH"/$REGISTRY_NAME-images.yml
-ARCHIVE_PATH="$KI_ROOT_PATH"/$REGISTRY_NAME-images.tgz
+ARTIFACTS_YML_PATH="$KI_ROOT_PATH"/$REGISTRY_NAME-artifacts.yml
+ARCHIVE_PATH="$KI_ROOT_PATH"/$REGISTRY_NAME-artifacts.tgz
 
-# Collects the images a cluster of this project is meant to serve from its user
-# registry into one archive, so that they can be carried across an air gap and
-# pushed with push-user-registry-images.yml on the other side.
+# Collects what a cluster of this project is meant to serve from its user
+# registry, images and charts alike, into one archive, so that it can be carried
+# across an air gap and pushed with push-user-registry-artifacts.yml on the other
+# side.
 #
-# Run where the images can still be reached. Everything it needs comes out of
+# Run where they can still be reached. Everything it needs comes out of
 # the bundle, which is the same crane the nodes push with: a build of it picked
 # up somewhere else would be a second version of the one tool that has to agree
 # with itself on both sides of the gap
 main() {
-  require_images_yml
+  require_artifacts_yml
 
   local staging_path
   staging_path=$(mktemp -d)
@@ -102,13 +103,13 @@ main() {
 
   locate_bundle_bin "$staging_path"
 
-  pull_references "$staging_path/$REGISTRY_NAME-images"
+  pull_references "$staging_path/$REGISTRY_NAME-artifacts"
   create_archive "$staging_path"
 
   msg ""
   msg "[INFO] Wrote \"$ARCHIVE_PATH\""
   msg "[INFO] Carry it to the control node and push it with:"
-  msg "[INFO]   ansible-playbook -i inventory.yml playbooks/push-user-registry-images.yml -e archive=<path>"
+  msg "[INFO]   ansible-playbook -i inventory.yml playbooks/push-user-registry-artifacts.yml -e archive=<path>"
 
   return 0
 }
@@ -175,29 +176,29 @@ require_bundle_bin() {
   return 0
 }
 
-require_images_yml() {
-  [[ ! -f $IMAGES_YML_PATH ]] &&
-    die "[ERROR] No such file or directory of which path is \"$IMAGES_YML_PATH\". declare the images to carry in it, the way $KI_ROOT_PATH/ki-cp-k8s-registry-images.yml declares the ones of the cluster itself"
+require_artifacts_yml() {
+  [[ ! -f $ARTIFACTS_YML_PATH ]] &&
+    die "[ERROR] No such file or directory of which path is \"$ARTIFACTS_YML_PATH\". declare the images and the charts to carry in it, the way $KI_ROOT_PATH/ki-cp-k8s-registry-images.yml declares the images of the cluster itself"
 
   return 0
 }
 
-# The images and the charts of the keep file, into one tree. Both end up in the
-# same registry and are carried in the same archive, so the only thing that tells
-# them apart here is how they are pulled
+# The images and the charts of the artifacts file, into one tree. Both end up in
+# the same registry and are carried in the same archive, so the only thing that
+# tells them apart here is how they are pulled
 pull_references() {
   local output_path=$1
 
   local images
   local charts
   local mappings
-  images=$($YQ_CMD -o json '.images // []' < "$IMAGES_YML_PATH")
-  charts=$($YQ_CMD -o json '.charts // []' < "$IMAGES_YML_PATH")
-  mappings=$($YQ_CMD -o json '.mappings // []' < "$IMAGES_YML_PATH")
+  images=$($YQ_CMD -o json '.images // []' < "$ARTIFACTS_YML_PATH")
+  charts=$($YQ_CMD -o json '.charts // []' < "$ARTIFACTS_YML_PATH")
+  mappings=$($YQ_CMD -o json '.mappings // []' < "$ARTIFACTS_YML_PATH")
 
   [[ $($YQ_CMD --null-input "$images | length") -eq 0 &&
      $($YQ_CMD --null-input "$charts | length") -eq 0 ]] &&
-    die "[ERROR] File[\"$IMAGES_YML_PATH\"] declares nothing under key[\"images\"] or key[\"charts\"]"
+    die "[ERROR] File[\"$ARTIFACTS_YML_PATH\"] declares nothing under key[\"images\"] or key[\"charts\"]"
 
   mkdir -p "$output_path"
 
@@ -255,7 +256,7 @@ create_archive() {
   local staging_path=$1
 
   rm -f "$ARCHIVE_PATH"
-  tar czf "$ARCHIVE_PATH" -C "$staging_path" "$REGISTRY_NAME-images"
+  tar czf "$ARCHIVE_PATH" -C "$staging_path" "$REGISTRY_NAME-artifacts"
 
   return 0
 }

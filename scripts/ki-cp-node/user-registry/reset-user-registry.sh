@@ -102,7 +102,7 @@ main() {
 
   [[ $(service_exists $SVC_NAME) = "true" ]] && docker compose --project-directory "$etc_svc_root_path" down
   rm -rf "$etc_svc_root_path"
-  # Takes the images with it. Unlike the registry kubeadm pulls from, nothing in
+  # Takes the artifacts with it. Unlike the registry kubeadm pulls from, nothing in
   # a release can put these back: they came across the air gap once and they
   # come across it again
   rm -rf "$var_svc_root_path"

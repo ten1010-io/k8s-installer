@@ -232,7 +232,7 @@ ki_cp_k8s_cp_lb_stats_password_path: "{{ ki_etc_services_path }}/ki-cp-k8s-cp-lb
 ki_cp_k8s_registry_port: 5000
 # The registry the workloads of the cluster pull from, as opposed to the one
 # kubeadm pulls from. What it holds is decided by whoever runs the cluster and
-# carried in with push-user-registry-images.yml, so no release ever fills it
+# carried in with push-user-registry-artifacts.yml, so no release ever fills it
 ki_cp_user_registry_port: 5001
 
 # The kubernetes version this cluster runs, which is the patch the release pins

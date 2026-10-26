@@ -153,7 +153,7 @@ main() {
     return 0
   fi
 
-  msg "[INFO] These images are served by node[\"$source_host\"] and not by this one:"
+  msg "[INFO] These artifacts are served by node[\"$source_host\"] and not by this one:"
   local ref
   while read -r ref; do
     msg "[INFO]   $ref"
@@ -162,7 +162,7 @@ main() {
   [[ $check = "true" ]] && return 0
 
   # Writable only while this is copying, and readonly again before it returns,
-  # the way push-user-registry-images.sh opens it. Rendered from the same
+  # the way push-user-registry-artifacts.sh opens it. Rendered from the same
   # template setup-user-registry.sh renders, so the file left behind is the one
   # that script would have written and the next --update reads no difference
   set_readonly "false"
@@ -275,11 +275,11 @@ copy_refs() {
   local ref
   while read -r ref; do
     [[ -z $ref ]] && continue
-    msg "[INFO] Copying image[\"$ref\"]"
+    msg "[INFO] Copying artifact[\"$ref\"]"
     # crane copy keeps the digest, which is the whole reason this registry is
     # filled by pushing rather than by loading a tarball into it
     $crane_cmd copy --insecure "$source_host/$ref" "$registry_host/$ref" > /dev/null ||
-      die "[ERROR] Failed to copy image[\"$ref\"]"
+      die "[ERROR] Failed to copy artifact[\"$ref\"]"
   done <<< "$refs"
 
   return 0

@@ -1,6 +1,6 @@
 # What the ki-cp-user-registry serves, which is what the workloads of this
 # cluster pull: images under the images key and helm charts under the charts
-# key. Copy this file to ki-cp-user-registry-images.yml and declare them
+# key. Copy this file to ki-cp-user-registry-artifacts.yml and declare them
 # there, the way ki-cp-k8s-registry-images.yml declares the ones kubeadm asks
 # for.
 #
@@ -8,10 +8,10 @@
 # needs rather than what the installer ships, so it is not carried in the bundle
 # and build-bundle-images.sh does not read it.
 #
-# tools/build-user-registry-images.sh turns it into
-# ki-cp-user-registry-images.tgz,
+# tools/build-user-registry-artifacts.sh turns it into
+# ki-cp-user-registry-artifacts.tgz,
 # which is carried across the air gap and pushed with
-# playbooks/push-user-registry-images.yml
+# playbooks/push-user-registry-artifacts.yml
 #
 # Give the name a registry pulls it by. The registry part is dropped on the way
 # in, so docker.io/library/nginx:1.25 is served as

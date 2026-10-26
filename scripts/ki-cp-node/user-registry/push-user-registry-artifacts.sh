@@ -9,7 +9,7 @@ Available options:
 -h, --help       Print this help and exit
 -v, --verbose    Print script debug info
 --vars-path      File path
---archive-path   The archive build-user-registry-images.sh produced
+--archive-path   The archive build-user-registry-artifacts.sh produced
 EOF
   exit
 }
@@ -96,7 +96,8 @@ ki_cp_user_registry_port=""
 etc_svc_root_path=""
 var_svc_root_path=""
 
-# Puts the images of an archive into the user registry of this node.
+# Puts the artifacts of an archive, images and charts alike, into the user
+# registry of this node.
 #
 # Additive. What is already here and not in the archive stays, because an
 # archive says what is being added rather than what the cluster is supposed to
@@ -120,31 +121,31 @@ main() {
   var_svc_root_path="$ki_var_root_path"/$SVC_NAME
   require_directory_exists "$etc_svc_root_path"
 
-  local images_path
-  images_path="$ki_tmp_root_path"/$SVC_NAME-images
-  extract_archive "$images_path"
+  local artifacts_path
+  artifacts_path="$ki_tmp_root_path"/$SVC_NAME-artifacts
+  extract_archive "$artifacts_path"
 
   # Writable only while this is pushing, and readonly again before it returns.
   # Between those two the registry would take a push from anywhere, and a push
   # that did not come through here reaches one node out of several
   set_readonly "false"
-  push_images "$images_path"
+  push_artifacts "$artifacts_path"
   set_readonly "true"
 
-  rm -rf "$images_path"
+  rm -rf "$artifacts_path"
   report_usage
 
   return 0
 }
 
 extract_archive() {
-  local images_path=$1
+  local artifacts_path=$1
 
-  rm -rf "$images_path"
-  mkdir -p "$(dirname "$images_path")"
-  tar xzf "$archive_path" -C "$(dirname "$images_path")"
+  rm -rf "$artifacts_path"
+  mkdir -p "$(dirname "$artifacts_path")"
+  tar xzf "$archive_path" -C "$(dirname "$artifacts_path")"
 
-  require_directory_exists "$images_path"
+  require_directory_exists "$artifacts_path"
 
   return 0
 }
@@ -165,21 +166,21 @@ set_readonly() {
   return 0
 }
 
-# The path of a layout under the images directory is the reference it is pushed
-# to, which is what build-user-registry-images.sh laid it out for
-push_images() {
-  local images_path=$1
+# The path of a layout under the artifacts directory is the reference it is
+# pushed to, which is what build-user-registry-artifacts.sh laid it out for
+push_artifacts() {
+  local artifacts_path=$1
 
   local layout
   local ref
-  for layout in $(find "$images_path" -name oci-layout -printf '%h\n' | sort); do
-    ref=${layout#"$images_path"/}
-    msg "[INFO] Pushing image[\"$ref\"]"
+  for layout in $(find "$artifacts_path" -name oci-layout -printf '%h\n' | sort); do
+    ref=${layout#"$artifacts_path"/}
+    msg "[INFO] Pushing artifact[\"$ref\"]"
     # Loopback, and the certificate of the registry is issued for its dns name
     # rather than for an address, so the name it would be verified against is not
     # the one being connected to
     $crane_cmd push --insecure "$layout" "127.0.0.1:$ki_cp_user_registry_port/$ref" > /dev/null ||
-      die "[ERROR] Failed to push image[\"$ref\"]"
+      die "[ERROR] Failed to push artifact[\"$ref\"]"
   done
 
   return 0

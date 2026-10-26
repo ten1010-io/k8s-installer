@@ -81,8 +81,11 @@ SERVICE_IMAGES_PATH="$BUNDLE_PATH"/ki-cp-service-images
 
 # The one registry the bundle carries. Named here rather than found by looking
 # for files of a shape, which used to pick up every *-images.yml beside it: the
-# user registry declares its contents the same way and must not end up in a
-# release bundle, since what it holds is chosen by whoever runs the cluster
+# user registry once declared its contents under that name, and what it holds
+# must not end up in a release bundle, since it is chosen by whoever runs the
+# cluster. Its file is ki-cp-user-registry-artifacts.yml now, which no longer
+# matches, and the fixing by name stays: that is what keeps the next file of the
+# same shape out, not its name
 K8S_REGISTRY_NAME="ki-cp-k8s-registry"
 K8S_REGISTRY_IMAGES_YML_PATH="$KI_ROOT_PATH/$K8S_REGISTRY_NAME-images.yml"
 
