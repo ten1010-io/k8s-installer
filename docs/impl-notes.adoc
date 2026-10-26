@@ -3307,8 +3307,22 @@ ki cp 노드마다 레지스트리가 하나씩 돌고, 파드는 그 순간 VIP
 OCI layout 을 요구하면서 만드는 법을 주지 않으면 반쪽입니다. `tools/build-user-registry-images.sh`
 가 목록 파일을 받아 아카이브 하나로 만듭니다.
 
-crane 은 `bundle/bin/crane` 을 씁니다. 번들이 없으면 거부하고 `download-bundle.sh` 를 안내합니다.
-각자 구해 온 crane 을 쓰면, 에어갭 양쪽에서 같은 물건이어야 할 도구가 두 버전이 됩니다.
+crane 은 번들의 것을 씁니다. 각자 구해 온 crane 을 쓰면, 에어갭 양쪽에서 같은 물건이어야 할 도구가
+두 버전이 됩니다. 노드가 미는 crane 은 `setup.sh` 가 릴리스의 번들에서 푼
+`/opt/k8s-installer/bundle/bin/crane` 이므로, 당기는 쪽도 그 릴리스의 번들에서 나온 것이어야 합니다.
+
+번들은 소스 트리에 풀리는 일이 없습니다. `download-bundle.sh` 는 트리 옆에 `bundle-<버전>.tgz` 를
+남기고, `setup.sh` 는 그것을 `/opt/k8s-installer` 에 풉니다. 트리에 `bundle/` 디렉토리가 있는 것은
+번들을 만드는 기계(`build-bundle-images.sh` 가 도는 곳)뿐입니다. 처음엔 도구가 그 디렉토리를 요구했고,
+없으면 "`download-bundle.sh` 를 먼저 하라"고 했습니다. 사용자가 이미 한 일을 다시 하라는 안내였고,
+다시 해도 그 디렉토리는 생기지 않습니다. 그래서 도구는 번들이 실제로 있는 곳을 이 순서로 봅니다.
+
+. 트리 옆의 `bundle-<버전>.tgz`. `download-bundle.sh` 가 남긴 것이고 `release.yml` 의 sha256 이
+  검사한 바로 그 파일입니다. 2GB 가 넘는 아카이브에서 crane 과 yq 둘만 임시 디렉토리로 꺼냅니다.
+. `/opt/k8s-installer/bundle`. 제어 노드 위의 트리에서 아카이브를 치운 뒤 돌릴 때를 위한 것입니다.
+  거기 설치된 릴리스가 트리의 릴리스와 같을 때만 씁니다. 다른 릴리스의 번들은 다른 crane 을 듭니다.
+
+둘 다 없을 때만 거부하고 `download-bundle.sh` 를 안내합니다.
 
 === 번들 빌드가 레지스트리를 고정합니다
 

@@ -68,9 +68,17 @@ parse_params "$@"
 # --- End of CLI template ---
 
 KI_ROOT_PATH=$(cd "$SCRIPT_DIR_PATH/.." &>/dev/null && pwd -P)
-BUNDLE_PATH="$KI_ROOT_PATH"/bundle
-YQ_CMD="$BUNDLE_PATH"/bin/yq
-CRANE_CMD="$BUNDLE_PATH"/bin/crane
+RELEASE_META_PATH="$KI_ROOT_PATH"/release.yml
+
+# Kept in sync with ki_opt_root_path of group_vars/all/constant-vars.yml, the way
+# setup.sh keeps its copy: this runs on a box that need not have ansible at all
+KI_OPT_ROOT_PATH="/opt/k8s-installer"
+KI_OPT_BUNDLE_BIN_PATH="$KI_OPT_ROOT_PATH"/bundle/bin
+KI_OPT_RELEASE_META_PATH="$KI_OPT_ROOT_PATH"/release.yml
+
+# Set by locate_bundle_bin once it knows which copy of the bundle they come from
+YQ_CMD=""
+CRANE_CMD=""
 
 REGISTRY_NAME="ki-cp-user-registry"
 IMAGES_YML_PATH="$KI_ROOT_PATH"/$REGISTRY_NAME-images.yml
@@ -85,13 +93,14 @@ ARCHIVE_PATH="$KI_ROOT_PATH"/$REGISTRY_NAME-images.tgz
 # up somewhere else would be a second version of the one tool that has to agree
 # with itself on both sides of the gap
 main() {
-  require_bundle
   require_images_yml
 
   local staging_path
   staging_path=$(mktemp -d)
   # shellcheck disable=SC2064
   trap "rm -rf '$staging_path'" EXIT
+
+  locate_bundle_bin "$staging_path"
 
   pull_references "$staging_path/$REGISTRY_NAME-images"
   create_archive "$staging_path"
@@ -104,9 +113,62 @@ main() {
   return 0
 }
 
-require_bundle() {
-  [[ ! -d $BUNDLE_PATH ]] &&
-    die "[ERROR] Directory[\"$BUNDLE_PATH\"] not exists. run ./download-bundle.sh first, which brings the crane this needs"
+# The bundle is never unpacked into this tree. download-bundle.sh leaves it beside
+# the tree as the archive it was published as, and setup.sh unpacks that into
+# /opt/k8s-installer on the control node, so there is no bundle/ here to look in:
+# the one place that has such a directory is the machine a bundle is built on.
+# Asking for it sent the user back to a download-bundle.sh they had already run.
+# The two binaries are looked for where the bundle actually is, in this order:
+#
+#   1. bundle-<version>.tgz beside this tree. It is what download-bundle.sh
+#      leaves, and the sha256 of release.yml was checked against this very file.
+#      Only the two binaries are taken out of it, into the staging directory:
+#      the archive is a couple of gigabytes and nothing else in it is of use here
+#   2. /opt/k8s-installer/bundle, where setup.sh unpacked it, for a tree that
+#      sits on the control node and whose archive has since been cleared away.
+#      Taken only when the release set up there is the release of this tree,
+#      since the bundle of another release carries another crane, and the whole
+#      point of reaching for the bundle is to pull with the crane the nodes push
+#      with
+#
+# The members are asked for by name rather than searched for, so an archive that
+# lacks one is refused as not being a bundle instead of failing further on
+locate_bundle_bin() {
+  local staging_path=$1
+
+  # yq is one of the two things being looked for, so the one key needed to name
+  # the archive is read the way download-bundle.sh reads it
+  local version
+  version=$(grep -oP '^version: "\K[^"]+' < "$RELEASE_META_PATH" || true)
+  [[ -z $version ]] && die "[ERROR] File[\"$RELEASE_META_PATH\"] has no version"
+
+  local archive_path="$KI_ROOT_PATH/bundle-$version.tgz"
+  if [[ -f $archive_path ]]; then
+    msg "[INFO] Taking crane and yq out of \"$archive_path\""
+    tar xzf "$archive_path" -C "$staging_path" bundle/bin/crane bundle/bin/yq ||
+      die "[ERROR] File[\"$archive_path\"] holds no bundle/bin/crane or no bundle/bin/yq. it is not a bundle of this installer, or did not arrive whole"
+    require_bundle_bin "$staging_path/bundle/bin"
+    return 0
+  fi
+
+  if [[ -d $KI_OPT_BUNDLE_BIN_PATH ]]; then
+    local opt_version
+    opt_version=$(grep -oP '^version: "\K[^"]+' < "$KI_OPT_RELEASE_META_PATH" 2>/dev/null || true)
+    [[ $opt_version != "$version" ]] &&
+      die "[ERROR] File[\"$archive_path\"] not exists, and what is set up in \"$KI_OPT_ROOT_PATH\" is release[\"${opt_version:-unknown}\"] rather than release[\"$version\"] of this tree, whose bundle carries another crane. run ./download-bundle.sh, which brings the one this needs"
+    msg "[INFO] Using crane and yq of \"$KI_OPT_BUNDLE_BIN_PATH\", where setup.sh unpacked the bundle of release[\"$version\"]"
+    require_bundle_bin "$KI_OPT_BUNDLE_BIN_PATH"
+    return 0
+  fi
+
+  die "[ERROR] File[\"$archive_path\"] not exists. run ./download-bundle.sh, which brings the crane this needs, or place the bundle of release[\"$version\"] there"
+}
+
+require_bundle_bin() {
+  local bin_path=$1
+
+  YQ_CMD="$bin_path"/yq
+  CRANE_CMD="$bin_path"/crane
   [[ ! -x $YQ_CMD ]] && die "[ERROR] File[\"$YQ_CMD\"] not exists or is not executable"
   [[ ! -x $CRANE_CMD ]] && die "[ERROR] File[\"$CRANE_CMD\"] not exists or is not executable"
 
