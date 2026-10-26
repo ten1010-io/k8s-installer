@@ -86,7 +86,6 @@ crane_cmd=""
 ki_var_root_path=""
 ki_etc_services_path=""
 ki_cp_user_registry_port=""
-ki_cp_ha_mode=""
 inventory_hostname=""
 target_node=""
 target_node_op=""
@@ -95,6 +94,7 @@ etc_svc_root_path=""
 var_svc_root_path=""
 registry_host=""
 source_host=""
+peer_ih_list=""
 
 # Makes the user registry of this node serve what the other ki cp nodes serve.
 #
@@ -108,6 +108,15 @@ source_host=""
 # The archive is not the only copy of what it holds, though. Every other ki cp
 # node is already serving exactly that, on this side of the air gap, which is
 # what this reads from.
+#
+# Whether there is another ki cp node is the only thing that decides if this
+# has work to do, and the ha mode does not say. A cluster without a vip can
+# still hold several ki cp nodes, push-user-registry-artifacts.yml fills every
+# one of them, and ki-cp.<zone> there names the first of them that is not
+# broken: lose that node, or turn the ha mode on later, and a registry that
+# was never asked anything is the one every pod pulls from. This used to
+# return at once outside the ha mode, which left the registry of a node added
+# to such a cluster empty with nothing reporting it.
 #
 # Copies without being asked twice, where prune-user-registry.sh removes nothing
 # unless it is. The caution there is that deleting inside an air gap costs a trip
@@ -125,15 +134,19 @@ main() {
   ki_var_root_path=$($yq_cmd '.ki_var_root_path' < "$vars_path")
   ki_etc_services_path=$($yq_cmd '.ki_etc_services_path' < "$vars_path")
   ki_cp_user_registry_port=$($yq_cmd '.ki_cp_user_registry_port' < "$vars_path")
-  ki_cp_ha_mode=$($yq_cmd '.ki_cp_ha_mode' < "$vars_path")
   inventory_hostname=$($yq_cmd '.inventory_hostname' < "$vars_path")
   target_node=$($yq_cmd '.target_node' < "$vars_path")
   target_node_op=$($yq_cmd '.target_node_op' < "$vars_path")
   require_valid_target_node_op
 
-  # One ki cp node is the whole of the registry of the cluster, so there is
-  # nobody for it to agree with
-  [[ $ki_cp_ha_mode = "false" ]] && exit 0
+  # Said rather than returned from in silence. The playbooks that run this
+  # print whatever it says, and a line that names the reason is the difference
+  # between a check that found nothing to compare and one that did not run
+  peer_ih_list=$(get_peer_ih_list)
+  if [[ -z $peer_ih_list ]]; then
+    msg "[INFO] This is the only ki cp node, so there is nothing to agree with"
+    return 0
+  fi
 
   etc_svc_root_path="$ki_etc_services_path"/$SVC_NAME
   var_svc_root_path="$ki_var_root_path"/$SVC_NAME
@@ -174,14 +187,14 @@ main() {
   return 0
 }
 
-# A peer rather than the vip. The vip can be held by the very node this is
-# filling, whose answer is the one answer not worth having, and every ki cp node
-# serves the same registry anyway: what is wanted is any of the others that is
-# answering
+# A peer rather than the name ki-cp.<zone> resolves to. That name can point at
+# the very node this is filling, whose answer is the one answer not worth having,
+# and every ki cp node serves the same registry anyway: what is wanted is any of
+# the others that is answering
 find_source_host() {
   local ih
   local ip
-  for ih in $(get_peer_ih_list); do
+  for ih in $peer_ih_list; do
     ip=$(get_ip "$ih")
     if curl -sk --max-time 3 "https://$ip:$ki_cp_user_registry_port/v2/" > /dev/null 2>&1; then
       echo "$ip:$ki_cp_user_registry_port"
