@@ -77,6 +77,7 @@ parse_params "$@"
 KI_ROOT_PATH=$(cd "$SCRIPT_DIR_PATH/.." &>/dev/null && pwd -P)
 RELEASE_META_PATH="$KI_ROOT_PATH"/release.yml
 README_PATH="$KI_ROOT_PATH"/README.adoc
+CI_ANSIBLE_REQUIREMENTS_PATH="$KI_ROOT_PATH"/tools/ci-requirements-ansible.txt
 
 MARKER_PREFIX="// check-release-docs: "
 
@@ -86,19 +87,62 @@ main() {
   local failed="false"
   check_block packages || failed="true"
   check_block binaries || failed="true"
+  local python
+  for python in $(read_pythons); do
+    check_block "python_packages $python" || failed="true"
+  done
+  check_ansible_core_pins || failed="true"
 
   if [[ $failed = "true" ]]; then
     die "[ERROR] File[\"$README_PATH\"] and file[\"$RELEASE_META_PATH\"] disagree. release.yml is where a version is decided, so correct the table unless what is wrong is the release file itself"
   fi
 
-  msg "[INFO] README.adoc agrees with release.yml on every declared component"
+  msg "[INFO] README.adoc and $(basename "$CI_ANSIBLE_REQUIREMENTS_PATH") agree with release.yml on every declared component"
 
   return 0
+}
+
+# The pythons python_packages of release.yml declares a block for
+read_pythons() {
+  awk '
+    $0 == "python_packages:" { in_block = 1; next }
+    in_block && /^  [A-Za-z0-9._-]+:$/ { name = $1; sub(/:$/, "", name); print name; next }
+    in_block && /^[^ #]/ { exit }
+  ' < "$RELEASE_META_PATH"
+
+  return 0
+}
+
+# tools/ci-requirements-ansible.txt pins the ansible-core the parse check runs
+# under each python, and release.yml pins the ansible-core the bundle carries
+# for that python. The check exists to read the playbooks with the parser a
+# node has, so the two are the same fact in two files and the copy is checked
+check_ansible_core_pins() {
+  local ok="true"
+  local pinned minor declared
+  while read -r pinned minor; do
+    [[ -z $pinned ]] && continue
+    declared=$(lookup ansible-core "$(read_declared "python_packages python3.$minor")")
+    if [[ -z $declared ]]; then
+      msg "[ERROR] $(basename "$CI_ANSIBLE_REQUIREMENTS_PATH") pins ansible-core[\"$pinned\"] for python 3.$minor and release.yml declares no ansible-core for python3.$minor"
+      ok="false"
+      continue
+    fi
+    if [[ $pinned != "$declared" ]]; then
+      msg "[ERROR] ansible-core for python 3.$minor is version[\"$declared\"] in release.yml and version[\"$pinned\"] in $(basename "$CI_ANSIBLE_REQUIREMENTS_PATH")"
+      ok="false"
+    fi
+  done < <(grep -oP '^ansible-core==\K[0-9.]+; python_version == "3\.[0-9]+"' "$CI_ANSIBLE_REQUIREMENTS_PATH" | sed -E 's/; python_version == "3\.([0-9]+)"/ \1/')
+
+  [[ $ok = "true" ]] && return 0
+
+  return 1
 }
 
 require_files() {
   [[ ! -f $RELEASE_META_PATH ]] && die "[ERROR] No such file or directory of which path is \"$RELEASE_META_PATH\""
   [[ ! -f $README_PATH ]] && die "[ERROR] No such file or directory of which path is \"$README_PATH\""
+  [[ ! -f $CI_ANSIBLE_REQUIREMENTS_PATH ]] && die "[ERROR] No such file or directory of which path is \"$CI_ANSIBLE_REQUIREMENTS_PATH\""
 
   return 0
 }
@@ -159,23 +203,28 @@ lookup() {
 
 # The entries of a top level block of release.yml, as "<name> <version>" lines.
 # Reading stops at the first line of the block that is not an entry, which is how
-# the next key of the file ends it
+# the next key of the file ends it. A block named as "<block> <key>" is the
+# block one level down, which is how python_packages declares one per python
 read_declared() {
   local block=$1
 
-  awk -v block="$block" '
-    $0 == block ":" { in_block = 1; next }
-    in_block {
-      if ($0 ~ /^  [A-Za-z0-9._-]+: "[^"]+"$/) {
-        name = $1
-        sub(/:$/, "", name)
-        version = $2
-        gsub(/"/, "", version)
-        print name, version
-        next
-      }
-      exit
+  local key=""
+  [[ $block = *" "* ]] && key=${block#* } && block=${block%% *}
+
+  awk -v block="$block" -v key="$key" '
+    $0 == block ":" { in_block = 1; in_key = (key == ""); next }
+    in_block && key != "" && $0 == "  " key ":" { in_key = 1; next }
+    in_block && key != "" && /^  [A-Za-z0-9._-]+:$/ { in_key = 0; next }
+    in_block && in_key && $0 ~ "^" (key == "" ? "  " : "    ") "[A-Za-z0-9._-]+: \"[^\"]+\"$" {
+      name = $1
+      sub(/:$/, "", name)
+      version = $2
+      gsub(/"/, "", version)
+      print name, version
+      next
     }
+    in_block && key == "" { exit }
+    in_block && /^[^ #]/ { exit }
   ' < "$RELEASE_META_PATH"
 
   return 0

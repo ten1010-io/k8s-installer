@@ -17,10 +17,10 @@
 # both: pip takes the line whose python it is being run under, so the workflow
 # only has to name the two pythons and never repeats a version.
 #
-# These numbers are read off a node - /opt/k8s-installer/venv/bin/ansible
-# --version, on one of each operating system - and they move when the bundle
-# moves. Nothing in this repository builds the bundle, so nothing here can
-# derive them.
+# These numbers are the ansible-core of python_packages in release.yml, which
+# is what fetch-bundle-python-packages.sh puts in the bundle for each python,
+# and they move when that moves. pip can not read them from there, so they are
+# written again here and check-release-docs.sh refuses the two disagreeing.
 #
 # ansible-core rather than the ansible distribution: a syntax check needs the
 # parser and nothing else. The one collection these playbooks reach for,

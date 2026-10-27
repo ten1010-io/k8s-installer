@@ -124,6 +124,39 @@ packages:
   nvidia-container-toolkit: "1.20.1"
   nvidia-container-toolkit-base: "1.20.1"
 
+# The python packages of bundle/python-packages, which setup-venv.sh installs
+# into the venv the control node runs ansible from, declared per python because
+# the operating system of the node decides the python and the two pythons do
+# not run one ansible: ansible 12 wants 3.11 or later and ubuntu 22.04 has 3.10.
+#
+# Named here are the ones setup-venv.sh asks pip for, plus ansible-core, since
+# the ansible distribution only pins its core to a minor and the core is what
+# parses the playbooks. What those pull in - cryptography, jinja2, cffi - is
+# resolved by pip when fetch-bundle-python-packages.sh fills the directories,
+# the way the os closures are, and is not declared. Which directory each name
+# goes in is what setup-venv.sh says, and the tool reads it from there.
+#
+# tools/ci-requirements-ansible.txt carries the two ansible-core versions again,
+# for the playbook parse check, and check-release-docs.sh refuses the two files
+# disagreeing
+python_packages:
+  python3.10:
+    ansible: "10.7.0"
+    ansible-core: "2.17.13"
+    jmespath: "1.0.1"
+    jinja2-cli: "0.8.2"
+    PyYAML: "6.0.2"
+    pydantic: "2.11.9"
+    netifaces: "0.11.0"
+  python3.12:
+    ansible: "12.1.0"
+    ansible-core: "2.19.3"
+    jmespath: "1.0.1"
+    jinja2-cli: "0.8.2"
+    PyYAML: "6.0.3"
+    pydantic: "2.12.0"
+    netifaces: "0.11.0"
+
 # The binaries of bundle/bin, which are one set for the whole window rather than
 # one per minor. helm, etcdctl, etcdutl and nerdctl are laid down under
 # /usr/local/bin for whoever runs the cluster, so these are the versions a user
