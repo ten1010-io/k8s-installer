@@ -675,9 +675,10 @@ download_rpm() {
     # nothing is a temporary file to it, wherever it was told to put it, and a
     # "dnf install" of anything afterwards leaves the directory empty
     rm -f "$scratch"/*.rpm
-    dnf "${pm_opts[@]}" -y -q install --downloadonly --downloaddir "$scratch" "${excludes[@]}" \
-      --setopt=install_weak_deps=False --setopt=keepcache=True "${group_specs[@]}" >/dev/null ||
-      die "[ERROR] Fail to download the packages of directory[\"$dir\"]"
+    local output
+    output=$(dnf "${pm_opts[@]}" -y -q install --downloadonly --downloaddir "$scratch" "${excludes[@]}" \
+      --setopt=install_weak_deps=False --setopt=keepcache=True "${group_specs[@]}" 2>&1) ||
+      die "[ERROR] Fail to download the packages of directory[\"$dir\"]. dnf said:\n$(tail -n 20 <<< "$output")"
 
     local stale
     stale=$(stale_rpms)
@@ -762,6 +763,7 @@ is_pinned() {
 # Fetches the principals the plan brought nothing of, see harvest
 fetch_named_rpm() {
   local in_scratch
+  local output
   in_scratch=$(rpm -qp --queryformat '%{NAME}\n' "$scratch"/*.rpm 2>/dev/null || true)
 
   local spec name
@@ -769,8 +771,8 @@ fetch_named_rpm() {
     name=$(dnf "${pm_opts[@]}" -q repoquery --latest-limit 1 --arch x86_64,noarch --queryformat '%{name}' "$spec" 2>/dev/null | head -1)
     [[ -z $name ]] && die "[ERROR] The repositories of this machine hold no package[\"$spec\"]"
     grep -qx "$name" <<< "$in_scratch" && continue
-    dnf "${pm_opts[@]}" -q download --destdir "$scratch" --arch x86_64,noarch "$spec" >/dev/null ||
-      die "[ERROR] Fail to download package[\"$spec\"]"
+    output=$(dnf "${pm_opts[@]}" -q download --destdir "$scratch" --arch x86_64,noarch "$spec" 2>&1) ||
+      die "[ERROR] Fail to download package[\"$spec\"]. dnf said:\n$(tail -n 20 <<< "$output")"
   done
 
   return 0
@@ -816,9 +818,10 @@ download_deb() {
   # root rather than as _apt, which can not write under a directory of root's
   # and says so for every file before falling back to root anyway
   rm -f "$scratch"/*.deb
-  apt-get -y -q install --download-only --no-install-recommends "${pm_opts[@]}" \
-    -o "Dir::Cache::archives=$scratch" -o APT::Sandbox::User=root "${group_specs[@]}" >/dev/null ||
-    die "[ERROR] Fail to download the packages of directory[\"$dir\"]"
+  local output
+  output=$(apt-get -y -q install --download-only --no-install-recommends "${pm_opts[@]}" \
+    -o "Dir::Cache::archives=$scratch" -o APT::Sandbox::User=root "${group_specs[@]}" 2>&1) ||
+    die "[ERROR] Fail to download the packages of directory[\"$dir\"]. apt said:\n$(tail -n 20 <<< "$output")"
   rm -rf "$scratch/lock" "$scratch/partial"
 
   return 0
@@ -985,6 +988,7 @@ verify_union_rpm_on() {
 # Returns 1 when it fetched something, so that the pass is repeated
 verify_fix_rpm() {
   local dir=$1 i=$2 result=$3
+  local output
 
   local line need by name fetched=""
   while read -r line; do
@@ -1028,8 +1032,8 @@ verify_fix_rpm() {
     local spec=$name
     grep -q "^  $name: \"" "$release_meta_path" && spec="$name-$(declared_version "$name")"
     msg "[INFO] Directory[\"$dir\"] on baseline $i: \"$need\" is needed by $by. fetching package[\"$spec\"] into it"
-    dnf -q download --destdir "$out_path/$dir" --arch x86_64,noarch "$spec" >/dev/null ||
-      die "[ERROR] Fail to download package[\"$spec\"]"
+    output=$(dnf -q download --destdir "$out_path/$dir" --arch x86_64,noarch "$spec" 2>&1) ||
+      die "[ERROR] Fail to download package[\"$spec\"]. dnf said:\n$(tail -n 20 <<< "$output")"
   done <<< "$result"
 
   if [[ -z $fetched ]]; then
@@ -1169,8 +1173,9 @@ EOF
 
   local target="$out_path/$dir"
   mkdir -p "$target"
-  dnf -y -q download --repo "$repo_id" --destdir "$target" --arch x86_64,noarch "${specs[@]}" >/dev/null ||
-    die "[ERROR] Fail to download packages[\"${specs[*]}\"] from repository[\"$url\"]"
+  local output
+  output=$(dnf -y -q download --repo "$repo_id" --destdir "$target" --arch x86_64,noarch "${specs[@]}" 2>&1) ||
+    die "[ERROR] Fail to download packages[\"${specs[*]}\"] from repository[\"$url\"]. dnf said:\n$(tail -n 20 <<< "$output")"
   rm -f "$repo_path"
 
   rpm --import "$gpgkey" || die "[ERROR] Fail to import the signing key of repository[\"$url\"] from \"$gpgkey\""
