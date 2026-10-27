@@ -159,11 +159,25 @@ parse_params "$@"
 #
 # The docker repository is added for containerd.io and docker, at the versions
 # release.yml declares. The python packages are one set for every os of a
-# python and are not taken here. The kubernetes packages and the nvidia toolkit
-# are not taken either: the rpms carry no distribution tag and the debs are one
-# build for every ubuntu, so they are copied from the directory of another os
+# python and are not taken here.
+#
+# The kubernetes packages and the nvidia toolkit are taken last, from the
+# repositories of whoever makes them, and those are attached for the download
+# and detached after it. They are not part of any closure: a node is handed
+# exactly the files of these directories, at the versions release.yml pins,
+# whatever the node holds. kubernetes is one repository per minor, so each
+# minor of the window gets its own directory from its own repository, which is
+# also what keeps the cri-tools and kubernetes-cni of one minor from answering
+# for another. The rpms carry no distribution tag and the debs are one build
+# for every ubuntu, so every os of a family downloads the same files; each os
+# directory still downloads its own rather than copying a neighbour's, since a
+# copy is the step that goes stale when the pins move
 DOCKER_RPM_REPO_URL="https://download.docker.com/linux/rhel/docker-ce.repo"
 DOCKER_DEB_REPO_URL="https://download.docker.com/linux/ubuntu"
+K8S_REPO_URL="https://pkgs.k8s.io/core:/stable:"
+NVIDIA_REPO_URL="https://nvidia.github.io/libnvidia-container"
+K8S_PACKAGE_NAMES=(kubeadm kubelet kubectl cri-tools kubernetes-cni)
+NVIDIA_PACKAGE_NAMES=(libnvidia-container1 libnvidia-container-tools nvidia-container-toolkit nvidia-container-toolkit-base)
 
 # The directories are resolved in the order the node installs them, each one
 # against the state the ones before it leave behind: the principals of a
@@ -244,6 +258,9 @@ main() {
 
   union_baselines
   [[ $family = "rpm" ]] && verify_union_rpm
+
+  fetch_k8s_packages
+  fetch_nvidia_packages
 
   report
 
@@ -499,12 +516,11 @@ declared_version() {
   local name=$1
 
   local version
-  version=$(grep -oP "^  $name: \"\K[^\"]+" < "$release_meta_path")
-  [[ -z $version ]] && die "[ERROR] File[\"$release_meta_path\"] declares no version of package[\"$name\"]"
+  version=$(upstream_version "$name")
 
   if [[ $family = "deb" ]]; then
     local deb_version
-    deb_version=$(apt-cache madison "$name" | awk -v v="$version" '$3 ~ "^([0-9]+:)?" v "-" { print $3; exit }')
+    deb_version=$(apt-cache madison "$name" | awk -v v="$version" '!found && $3 ~ "^([0-9]+:)?" v "-" { print $3; found = 1 }')
     [[ -z $deb_version ]] && die "[ERROR] The repositories of this machine hold no package[\"$name\"] of version[\"$version\"], which release.yml declares"
     version=$deb_version
   fi
@@ -1032,27 +1048,221 @@ package_name_of() {
   esac
 }
 
+# The kubernetes packages of every minor of the window, one directory per
+# minor under k8s/, each from the repository of that minor alone. kubeadm,
+# kubelet and kubectl are asked for at the patch release.yml pins; cri-tools and
+# kubernetes-cni are what that repository serves newest, since nobody pins
+# them and the repository of a minor only ever holds what that minor was
+# released with
+fetch_k8s_packages() {
+  local minor patch
+  for minor in $(k8s_minors); do
+    patch=$(k8s_patch_of "$minor")
+    msg "[INFO] Fetching the packages of kubernetes[\"$minor\"] at $patch"
+    "fetch_from_repo_$family" "k8s/$minor" "kubernetes-$minor" "$K8S_REPO_URL/v$minor/$family" \
+      "kubeadm=$patch" "kubelet=$patch" "kubectl=$patch" cri-tools kubernetes-cni
+  done
+
+  return 0
+}
+
+fetch_nvidia_packages() {
+  local name specs=()
+  for name in "${NVIDIA_PACKAGE_NAMES[@]}"; do
+    specs+=("$name=$(upstream_version "$name")")
+  done
+
+  msg "[INFO] Fetching the nvidia container toolkit"
+  "fetch_from_repo_$family" nvidia-container-toolkit nvidia-container-toolkit "$NVIDIA_REPO_URL/stable/$family" "${specs[@]}"
+
+  return 0
+}
+
+# The minors of k8s_versions, as release.yml lists them
+k8s_minors() {
+  awk '
+    $0 == "k8s_versions:" { in_block = 1; next }
+    in_block && /^  "[0-9]+\.[0-9]+":$/ { gsub(/[":]/, "", $1); print $1; next }
+    in_block && /^[^ #]/ { exit }
+  ' < "$release_meta_path"
+
+  return 0
+}
+
+# The kubernetes patch k8s_versions pins for a minor, without the v
+k8s_patch_of() {
+  local minor=$1
+
+  local patch
+  patch=$(awk -v minor="$minor" '
+    $0 == "k8s_versions:" { in_block = 1; next }
+    in_block && $0 == "  \"" minor "\":" { in_minor = 1; next }
+    in_minor && /^    kubernetes: "v?[0-9.]+"$/ { gsub(/[v"]/, "", $2); print $2; exit }
+    in_block && /^  "/ { in_minor = 0 }
+    in_block && /^[^ #]/ { exit }
+  ' < "$release_meta_path")
+  [[ -z $patch ]] && die "[ERROR] File[\"$release_meta_path\"] pins no kubernetes patch for minor[\"$minor\"]"
+
+  echo "$patch"
+
+  return 0
+}
+
+# The upstream version release.yml declares for a package, which is the form
+# both package managers match on a prefix of once the repository is the right
+# one: 1.20.1 is nvidia-container-toolkit-1.20.1-1 in the rpm repository and
+# 1.20.1-1 in the deb one, and either is found from the number alone
+upstream_version() {
+  local name=$1
+
+  local version
+  version=$(grep -oP "^  $name: \"\K[^\"]+" < "$release_meta_path")
+  [[ -z $version ]] && die "[ERROR] File[\"$release_meta_path\"] declares no version of package[\"$name\"]"
+
+  echo "$version"
+
+  return 0
+}
+
+# Downloads named packages, each as name or name=version, from one repository
+# into a directory of --out-path. The repository is written disabled and
+# named to dnf for this download alone, so that it never takes part in the
+# closures above, and its file is removed afterwards so that this machine is
+# left as it was.
+#
+# dnf download verifies nothing, so the signing key of the repository is
+# imported and every file is checked against it: these are the files a node
+# installs, and this is the only point at which anything looks at their
+# signatures
+fetch_from_repo_rpm() {
+  local dir=$1 repo_id=$2 url=$3
+  shift 3
+
+  # The nvidia repository keeps one directory per architecture; the kubernetes
+  # one does not
+  local baseurl gpgkey
+  case $repo_id in
+  kubernetes-*)
+    baseurl="$url/"
+    gpgkey="$url/repodata/repomd.xml.key"
+    ;;
+  *)
+    baseurl="$url/\$basearch"
+    gpgkey="$NVIDIA_REPO_URL/gpgkey"
+    ;;
+  esac
+
+  local repo_path="/etc/yum.repos.d/$repo_id.repo"
+  cat > "$repo_path" <<EOF
+[$repo_id]
+name=$repo_id
+baseurl=$baseurl
+enabled=0
+gpgcheck=1
+gpgkey=$gpgkey
+EOF
+
+  local specs=() spec
+  for spec in "$@"; do
+    specs+=("${spec/=/-}")
+  done
+
+  local target="$out_path/$dir"
+  mkdir -p "$target"
+  dnf -y -q download --repo "$repo_id" --destdir "$target" --arch x86_64,noarch "${specs[@]}" >/dev/null ||
+    die "[ERROR] Fail to download packages[\"${specs[*]}\"] from repository[\"$url\"]"
+  rm -f "$repo_path"
+
+  rpm --import "$gpgkey" || die "[ERROR] Fail to import the signing key of repository[\"$url\"] from \"$gpgkey\""
+  local file
+  for file in "$target"/*.rpm; do
+    rpm -K "$file" 2>&1 | grep -q 'signatures OK$' ||
+      die "[ERROR] File[\"$file\"] is not signed by the key of repository[\"$url\"]:\n$(rpm -K "$file" 2>&1)"
+  done
+
+  require_each_named "$target" "$@"
+
+  return 0
+}
+
+# The deb side of the above. A flat repository can not be told apart from the
+# rest by apt once it is listed, so the list is written, read, downloaded from
+# and removed again, one repository at a time, and the version of every name
+# is looked up in the rows that repository answers madison with. apt verifies
+# what it downloads against the key the list names, so nothing is checked here
+# beyond that
+fetch_from_repo_deb() {
+  local dir=$1 list_id=$2 url=$3
+  shift 3
+
+  local key_url
+  case $list_id in
+  kubernetes-*) key_url="$url/Release.key" ;;
+  *) key_url="$NVIDIA_REPO_URL/gpgkey" ;;
+  esac
+  # The nvidia repository keeps one directory per architecture
+  [[ $list_id = kubernetes-* ]] || url="$url/amd64"
+
+  local key_path="/etc/apt/keyrings/$list_id.asc"
+  local list_path="/etc/apt/sources.list.d/$list_id.list"
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL "$key_url" -o "$key_path" || die "[ERROR] Fail to fetch the signing key of repository[\"$url\"] from \"$key_url\""
+  echo "deb [arch=amd64 signed-by=$key_path] $url /" > "$list_path"
+  apt-get -q update >/dev/null || die "[ERROR] Fail to read repository[\"$url\"]"
+
+  local target="$out_path/$dir"
+  mkdir -p "$target"
+  local spec name prefix version
+  for spec in "$@"; do
+    name=${spec%%=*}
+    prefix=""
+    [[ $spec = *=* ]] && prefix=${spec#*=}
+    version=$(apt-cache madison "$name" | awk -v url="$url" -v prefix="$prefix" \
+      '!found && index($5, url) == 1 && (prefix == "" || index($3, prefix "-") == 1) { print $3; found = 1 }')
+    [[ -z $version ]] && die "[ERROR] Repository[\"$url\"] holds no package[\"$spec\"]"
+    (cd "$target" && apt-get -q download -o APT::Sandbox::User=root "$name=$version" >/dev/null) ||
+      die "[ERROR] Fail to download package[\"$name=$version\"] from repository[\"$url\"]"
+  done
+
+  rm -f "$list_path" "$key_path"
+  apt-get -q update >/dev/null || true
+
+  require_each_named "$target" "$@"
+
+  return 0
+}
+
+# A download that brought fewer files than names is a directory a node will
+# refuse, so it is refused here, where the repository can still be asked why
+require_each_named() {
+  local target=$1
+  shift
+
+  local spec name missing=""
+  for spec in "$@"; do
+    name=${spec%%=*}
+    compgen -G "$target/$name"[-_][0-9]"*.$family" >/dev/null || missing+=" $name"
+  done
+  [[ -n $missing ]] && die "[ERROR] Directory[\"$target\"] was downloaded and holds no package of:$missing"
+
+  return 0
+}
+
 report() {
   local dir count
-  for dir in "$out_path"/*/; do
-    dir=${dir%/}
+  while read -r dir; do
     count=$(find "$dir" -name "*.$family" | wc -l)
     if [[ $count = 0 ]]; then
       # Nothing the oldest release lacks for it, which the node script reads as
       # a directory holding no package
       rmdir "$dir"
-      msg "[INFO] $(basename "$dir"): nothing the oldest release lacks"
+      msg "[INFO] ${dir#"$out_path"/}: nothing the oldest release lacks"
       continue
     fi
-    msg "[INFO] $(basename "$dir") ($count): $(find "$dir" -name "*.$family" -printf '%f ' | sed -e 's/\.\(x86_64\|noarch\)\.rpm//g' -e 's/_\(amd64\|all\)\.deb//g' -e 's/%3a/:/g')"
-  done
+    msg "[INFO] ${dir#"$out_path"/} ($count): $(find "$dir" -name "*.$family" -printf '%f ' | sed -e 's/\.\(x86_64\|noarch\)\.rpm//g' -e 's/_\(amd64\|all\)\.deb//g' -e 's/%3a/:/g')"
+  done < <(find "$out_path" -mindepth 1 -type d -not -path "$out_path/k8s" | sort)
 
-  local copy_from
-  case $family in
-  rpm) copy_from="other rhel" ;;
-  deb) copy_from="other ubuntu" ;;
-  esac
-  msg "[INFO] $(du -sh "$out_path" | cut -f1) under \"$out_path\". Copy k8s and nvidia-container-toolkit from the $copy_from directory next to these"
+  msg "[INFO] $(du -sh "$out_path" | cut -f1) under \"$out_path\", laid out as bundle/linux-packages/$os"
 
   # What each baseline produced is kept until here, so that a refusal above
   # can be read back to the baseline that caused it
