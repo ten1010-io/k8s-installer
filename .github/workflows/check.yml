@@ -62,6 +62,13 @@ jobs:
       - name: release.yml and README.adoc agree on what the release carries
         run: tools/check-release-docs.sh
 
+      # A release records the sha256 of its bundle and a snapshot leaves it
+      # empty. The scripts refuse a release that records none, so a release
+      # committed with the field empty is one no control node will install,
+      # and the field is filled by hand on the day the release is cut.
+      - name: A release records the sha256 of its bundle
+        run: tools/check-release-sha256.sh
+
       # A shell script that reaches a node with CRLF has a carriage return in
       # its shebang and does not run. .gitattributes keeps the working tree
       # right; this looks at what is actually stored, which is what a node ends

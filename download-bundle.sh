@@ -59,7 +59,10 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
-DOWNLOAD_BASE_URL="https://k8s-installer-bundle.s3.ap-northeast-2.amazonaws.com"
+# Where the bundles are published. The variable is for fetching a trial upload
+# that publish-bundle.sh put under another prefix or bucket, and for nothing
+# else: a release is read from the default
+DOWNLOAD_BASE_URL="${KI_BUNDLE_BASE_URL:-https://k8s-installer-bundle.s3.ap-northeast-2.amazonaws.com}"
 
 # Kept in step with the one setup.sh and upgrade.sh carry
 SNAPSHOT_SUFFIX="-SNAPSHOT"
