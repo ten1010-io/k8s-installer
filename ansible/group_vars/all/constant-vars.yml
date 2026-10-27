@@ -168,7 +168,7 @@ ki_cp_dns_server_image_digest: "sha256:770db6e381fa54a991b31e32496334fa9e69c3224
 # balancer is reloaded. See the stats frontend of
 # scripts/ki-cp-node/k8s-cp-lb/templates/haproxy.cfg.j2
 ki_cp_k8s_cp_lb_image: "haproxy:2.6"
-ki_cp_k8s_cp_lb_image_digest: "sha256:7e35a0edd273556c03461da98bdef80421de2253c781b6cf48a5a277ae8bbb30"
+ki_cp_k8s_cp_lb_image_digest: "sha256:7b5c6a7559f7af68140e79a4b5ff9f770c1b8e3b8e4807a57753bcfc10ccc60c"
 ki_cp_keepalived_image: "osixia/keepalived:2.0.20"
 ki_cp_keepalived_image_digest: "sha256:ba2a6419532cef068afc3586a6c597fd3b9fd8472592520c2f011d23c4672deb"
 ki_cp_ntp_server_image: "cturra/ntp:latest"
