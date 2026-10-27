@@ -69,6 +69,8 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
+source "$SCRIPT_DIR_PATH/linux-bin-common.sh"
+
 ki_opt_root_path=""
 ki_opt_scripts_path=""
 ki_opt_bundle_path=""
@@ -130,48 +132,13 @@ require_declared_binaries() {
       continue
     fi
 
-    found=$(binary_version "$name")
+    found=$(binary_version "$ki_opt_bundle_path/bin" "$name")
     [[ $found != "$version" ]] &&
       errors+="\n  binary[\"$name\"] is declared as version[\"$version\"] and the bundle holds version[\"${found:-unknown}\"]"
   done <<< "$declared"
 
   [[ -n $errors ]] &&
     die "[ERROR] The bundle does not hold what release[\"$($yq_cmd '.ki_release_version' < "$vars_path")\"] declares under binaries:$errors"
-
-  return 0
-}
-
-# What a binary of bundle/bin answers when asked its version.
-#
-# Each one is asked its own way and answers in its own shape:
-#
-#   helm     v3.13.1+g3547a4b
-#   etcdctl  etcdctl version: 3.5.23
-#   crane    0.22.1
-#   yq       yq (https://github.com/mikefarah/yq/) version v4.47.1
-#   nerdctl  nerdctl version 2.1.5
-#
-# so the invocation is per tool and what is taken from the output is the first
-# thing in it shaped like a version. A name this does not know stops the run
-# rather than being passed over: adding a binary to release.yml means saying how
-# it is asked, the same way adding a variable means saying what changing it does
-binary_version() {
-  local program=$1
-
-  local output
-  case $program in
-  helm | crane | etcdctl | etcdutl)
-    output=$("$ki_opt_bundle_path/bin/$program" version 2>&1) || true
-    ;;
-  yq | nerdctl)
-    output=$("$ki_opt_bundle_path/bin/$program" --version 2>&1) || true
-    ;;
-  *)
-    die "[ERROR] Binary[\"$program\"] is declared by release.yml and this script does not know how to ask its version. Add it to binary_version of install-programs.sh"
-    ;;
-  esac
-
-  grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' <<< "$output" | head -1 | sed 's/^v//' || true
 
   return 0
 }
