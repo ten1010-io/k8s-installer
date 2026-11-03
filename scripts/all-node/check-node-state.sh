@@ -333,7 +333,8 @@ check_kernel_modules() {
   missing=$(missing_kernel_modules | tr '\n' ' ')
   [[ -z $missing ]] && return 0
 
-  local kernel_dir="$ki_opt_bundle_path/linux-packages/rhel10/kernel"
+  local kernel_dir
+  kernel_dir="$ki_opt_bundle_path/linux-packages/rhel10/$(uname -m)/kernel"
   local bundle_version=""
   [[ $(get_os_distribution) = "rhel" && $(get_os_major_version) = "10" ]] &&
     bundle_version=$(bundle_kernel_version "$kernel_dir")
@@ -1103,7 +1104,7 @@ import_ki_opt_vars() {
 }
 
 setup_cmd_vars() {
-  yq_cmd="$ki_opt_bundle_path/bin/yq"
+  yq_cmd="$ki_opt_bundle_path/bin/$(uname -m)/yq"
   jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
   etcdctl_cmd="etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/peer.crt --key=/etc/kubernetes/pki/etcd/peer.key"
 }

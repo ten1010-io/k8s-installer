@@ -95,7 +95,7 @@ parse_params "$@"
 # the number is of the file this made, not of whatever was lying there
 KI_ROOT_PATH=$(cd "$SCRIPT_DIR_PATH/.." &>/dev/null && pwd -P)
 BUNDLE_PATH="$KI_ROOT_PATH"/bundle
-YQ_CMD="$BUNDLE_PATH"/bin/yq
+YQ_CMD="$BUNDLE_PATH"/bin/$(uname -m)/yq
 RELEASE_META_PATH="$KI_ROOT_PATH"/release.yml
 CONSTANT_VARS_PATH="$KI_ROOT_PATH"/ansible/group_vars/all/constant-vars.yml
 SETUP_VENV_PATH="$KI_ROOT_PATH"/scripts/setup-venv.sh
@@ -103,16 +103,22 @@ SETUP_VENV_PATH="$KI_ROOT_PATH"/scripts/setup-venv.sh
 # Kept in sync with ki_release_snapshot_suffix of group_vars/all/constant-vars.yml
 SNAPSHOT_SUFFIX="-SNAPSHOT"
 
-# The operating systems the installer supports, as linux-packages names them.
-# README.adoc lists the same five
-OS_DIRS=(rhel8 rhel9 rhel10 ubuntu22.04 ubuntu24.04)
 K8S_PACKAGE_NAMES=(kubeadm kubelet kubectl cri-tools kubernetes-cni)
 
 # shellcheck source=../scripts/all-node/linux-bin/linux-bin-common.sh
 source "$SCRIPT_DIR_PATH/../scripts/all-node/linux-bin/linux-bin-common.sh"
+# shellcheck source=arch-common.sh
+source "$SCRIPT_DIR_PATH/arch-common.sh"
 
 version=""
 missing=()
+# What release.yml declares the bundle is built for, read by check_architectures:
+# the operating systems with the architectures each is carried for, as uname -m
+# names them, and the architectures of the whole bundle, which are every name
+# that appears
+architectures=()
+oses=()
+declare -A arches_of_os
 
 main() {
   require_tree
@@ -123,6 +129,8 @@ main() {
   [[ -e $out_path ]] && die "[ERROR] File[\"$out_path\"] already exists. a bundle is made once, so remove it if it is not the one"
   [[ $write_sha256 = "true" && $(is_snapshot "$version") = "true" ]] &&
     die "[ERROR] Release[\"$version\"] is a snapshot, and a snapshot leaves bundle_sha256 empty: its bundle is republished under the same name, so there is no one value to write"
+
+  check_architectures
 
   msg "[INFO] Checking \"$BUNDLE_PATH\" against what release[\"$version\"] declares"
   check_linux_packages
@@ -155,54 +163,79 @@ require_tree() {
   return 0
 }
 
+# What release.yml says the bundle is built for, which every check below walks:
+# the operating systems with the architectures each is carried for, and the
+# architectures of the whole bundle, which are every name that appears. Each
+# name has to be one this installer has names for elsewhere (arch-common.sh),
+# since a name nothing knows is a directory nothing will have filled
+check_architectures() {
+  local os arch
+  while read -r os; do
+    [[ -z $os ]] && continue
+    oses+=("$os")
+    arches_of_os[$os]=$($YQ_CMD ".architectures[\"$os\"] | join(\" \")" < "$RELEASE_META_PATH")
+    [[ -z ${arches_of_os[$os]} ]] && die "[ERROR] Release[\"$version\"] carries os[\"$os\"] for no architecture. architectures lists at least one per os"
+    for arch in ${arches_of_os[$os]}; do
+      oci_arch_of "$arch" >/dev/null || die "[ERROR] Release[\"$version\"] carries os[\"$os\"] for architecture[\"$arch\"], which this installer does not know. architectures takes x86_64 and aarch64"
+      [[ " ${architectures[*]} " = *" $arch "* ]] || architectures+=("$arch")
+    done
+  done < <($YQ_CMD '.architectures // {} | keys | .[]' < "$RELEASE_META_PATH")
+  [[ ${#oses[@]} = 0 ]] && die "[ERROR] File[\"$RELEASE_META_PATH\"] declares no architectures, so nothing says which operating systems the bundle carries for which architecture"
+
+  return 0
+}
+
 is_snapshot() {
   if [[ ${1-} == *"$SNAPSHOT_SUFFIX" ]]; then echo "true"; else echo "false"; fi
 }
 
-# Every operating system, and for each: the closure directories hold
-# something, the kubernetes packages of every minor of the window are there
-# at the pinned patch, and every package release.yml declares is there at the
-# declared version. The kernel of rhel 10 besides, since setup-kernel.sh reads
-# that directory on a node whose kernel lacks the modules.
+# Every operating system, for every architecture it is carried for: the closure
+# directories hold something, the kubernetes packages of every minor of the
+# window are there at the pinned patch, and every package release.yml declares
+# is there at the declared version. The kernel of rhel 10 besides, since
+# setup-kernel.sh reads that directory on a node whose kernel lacks the modules.
 #
 # Versions are read off the file names rather than out of the files, since
 # rpm is not on an ubuntu machine and dpkg-deb not on a rhel one, and the
 # names are what the repositories wrote: name-version-release.arch.rpm and
 # name_[epoch%3a]version-revision_arch.deb
 check_linux_packages() {
-  local os ext minor patch name version
-  for os in "${OS_DIRS[@]}"; do
+  local os arch ext minor patch name version
+  for os in "${oses[@]}"; do
     case $os in
     rhel*) ext=rpm ;;
     *) ext=deb ;;
     esac
-    local base="$BUNDLE_PATH/linux-packages/$os"
+    for arch in ${arches_of_os[$os]}; do
+      local dir="linux-packages/$os/$arch"
+      local base="$BUNDLE_PATH/$dir"
 
-    if [[ -z $(find "$base" -maxdepth 2 -name "*.$ext" -print -quit 2>/dev/null) ]]; then
-      missing+=("linux-packages/$os: no $ext at all. run build-bundle-packages.sh --os $os on a machine of its oldest release")
-      continue
-    fi
+      if [[ -z $(find "$base" -maxdepth 2 -name "*.$ext" -print -quit 2>/dev/null) ]]; then
+        missing+=("$dir: no $ext at all. run build-bundle-packages.sh --os $os on a machine of its oldest release and of $arch")
+        continue
+      fi
 
-    for minor in $(k8s_minors); do
-      patch=$(k8s_patch_of "$minor")
-      for name in "${K8S_PACKAGE_NAMES[@]}"; do
-        case $name in
-        kubeadm | kubelet | kubectl) version=$patch ;;
-        *) version="" ;;
-        esac
-        has_package "$base/k8s/$minor" "$name" "$version" "$ext" ||
-          missing+=("linux-packages/$os/k8s/$minor: no $name${version:+ $version}")
+      for minor in $(k8s_minors); do
+        patch=$(k8s_patch_of "$minor")
+        for name in "${K8S_PACKAGE_NAMES[@]}"; do
+          case $name in
+          kubeadm | kubelet | kubectl) version=$patch ;;
+          *) version="" ;;
+          esac
+          has_package "$base/k8s/$minor" "$name" "$version" "$ext" ||
+            missing+=("$dir/k8s/$minor: no $name${version:+ $version}")
+        done
       done
+
+      while read -r name version; do
+        [[ -z $name ]] && continue
+        has_package "$base/*" "$name" "$version" "$ext" ||
+          missing+=("$dir: no $name $version, which release.yml declares under packages")
+      done < <($YQ_CMD '.packages | to_entries | .[] | .key + " " + .value' < "$RELEASE_META_PATH")
+
+      [[ $os = "rhel10" ]] && ! has_package "$base/kernel" kernel-core "" rpm &&
+        missing+=("$dir/kernel: no kernel-core, which setup-kernel.sh lays down on a node that can not load the modules")
     done
-
-    while read -r name version; do
-      [[ -z $name ]] && continue
-      has_package "$base/*" "$name" "$version" "$ext" ||
-        missing+=("linux-packages/$os: no $name $version, which release.yml declares under packages")
-    done < <($YQ_CMD '.packages | to_entries | .[] | .key + " " + .value' < "$RELEASE_META_PATH")
-
-    [[ $os = "rhel10" ]] && ! has_package "$base/kernel" kernel-core "" rpm &&
-      missing+=("linux-packages/rhel10/kernel: no kernel-core, which setup-kernel.sh lays down on a node that can not load the modules")
   done
 
   return 0
@@ -242,42 +275,59 @@ k8s_patch_of() {
   return 0
 }
 
-# Each binary is asked which version it is, with the code the node asks it
-# with, since the name of the file says nothing about which build it holds
+# Each binary of each architecture is asked which version it is, with the code
+# the node asks it with, since the name of the file says nothing about which
+# build it holds. Asking means running it, so a bundle of two architectures is
+# assembled on a machine that can run both: natively one, and the other through
+# a user mode emulator the kernel knows about. A machine that can run neither
+# the binaries of an architecture nor an emulator for them can not check them,
+# and says so rather than packing what it could not ask
 check_binaries() {
-  local name version found
-  while read -r name version; do
-    [[ -z $name ]] && continue
-    if [[ ! -x "$BUNDLE_PATH/bin/$name" ]]; then
-      missing+=("bin/$name: not there or not executable. run fetch-bundle-binaries.sh")
+  local arch name version found
+  for arch in "${architectures[@]}"; do
+    local dir="bin/$arch"
+    if ! can_run_arch "$arch"; then
+      missing+=("$dir: this machine is $(uname -m) and can not run $arch binaries to ask their versions. assemble on a machine that can, or register qemu-user-static with binfmt_misc")
       continue
     fi
-    found=$(binary_version "$BUNDLE_PATH/bin" "$name")
-    [[ $found = "$version" ]] ||
-      missing+=("bin/$name: version[\"${found:-unknown}\"] where release.yml declares version[\"$version\"]")
-  done < <($YQ_CMD '.binaries | to_entries | .[] | .key + " " + .value' < "$RELEASE_META_PATH")
-
-  return 0
-}
-
-# One tar per service constant-vars.yml declares an image for, named the way
-# build-bundle-images.sh names them
-check_service_images() {
-  local var svc_name
-  for var in $($YQ_CMD 'keys | .[] | select(test("^ki_cp_.+_image$"))' < "$CONSTANT_VARS_PATH"); do
-    svc_name=$(sed -e 's/_image$//' -e 's/_/-/g' <<< "$var")
-    [[ -f "$BUNDLE_PATH/ki-cp-service-images/$svc_name.tar" ]] ||
-      missing+=("ki-cp-service-images/$svc_name.tar: not there. run build-bundle-images.sh")
+    while read -r name version; do
+      [[ -z $name ]] && continue
+      if [[ ! -x "$BUNDLE_PATH/$dir/$name" ]]; then
+        missing+=("$dir/$name: not there or not executable. run fetch-bundle-binaries.sh --arch $arch")
+        continue
+      fi
+      found=$(binary_version "$BUNDLE_PATH/$dir" "$name")
+      [[ $found = "$version" ]] ||
+        missing+=("$dir/$name: version[\"${found:-unknown}\"] where release.yml declares version[\"$version\"]")
+    done < <($YQ_CMD '.binaries | to_entries | .[] | .key + " " + .value' < "$RELEASE_META_PATH")
   done
 
   return 0
 }
 
-# One directory per minor holding oci layouts, and among them the pause of
-# that minor, which is the one image release.yml names and the one a node
-# can not start anything without
+# One tar per service constant-vars.yml declares an image for, per
+# architecture, named the way build-bundle-images.sh names them
+check_service_images() {
+  local arch var svc_name
+  for arch in "${architectures[@]}"; do
+    for var in $($YQ_CMD 'keys | .[] | select(test("^ki_cp_.+_image$"))' < "$CONSTANT_VARS_PATH"); do
+      svc_name=$(sed -e 's/_image$//' -e 's/_/-/g' <<< "$var")
+      [[ -f "$BUNDLE_PATH/ki-cp-service-images/$arch/$svc_name.tar" ]] ||
+        missing+=("ki-cp-service-images/$arch/$svc_name.tar: not there. run build-bundle-images.sh")
+    done
+  done
+
+  return 0
+}
+
+# One directory per minor holding oci layouts, among them the pause of that
+# minor, which is the one image release.yml names and the one a node can not
+# start anything without. Each layout holds one entry, an index, and that index
+# has to list a manifest for every architecture the bundle is built for: a
+# layout pulled for one architecture pushes fine and serves a tag the nodes of
+# the other can not pull, which is a node where nothing starts
 check_registry_images() {
-  local minor pause dir
+  local minor pause dir layout
   for minor in $(k8s_minors); do
     dir="$BUNDLE_PATH/ki-cp-k8s-registry-images/$minor"
     if [[ -z $(find "$dir" -name oci-layout -print -quit 2>/dev/null) ]]; then
@@ -287,6 +337,34 @@ check_registry_images() {
     pause=$($YQ_CMD ".k8s_versions[\"$minor\"].pause" < "$RELEASE_META_PATH")
     [[ -n $(find "$dir" -type d -name "pause:$pause" -print -quit) ]] ||
       missing+=("ki-cp-k8s-registry-images/$minor: no pause:$pause, which release.yml names for kubernetes $minor")
+
+    for layout in $(find "$dir" -name oci-layout -printf '%h\n' | sort); do
+      check_layout_platforms "$layout"
+    done
+  done
+
+  return 0
+}
+
+# The platforms the index of a layout lists, against the architectures of the
+# release, by the names the registries use
+check_layout_platforms() {
+  local layout=$1
+  local ref=${layout#"$BUNDLE_PATH"/}
+
+  local digest
+  digest=$($YQ_CMD -p json -o yaml '.manifests[0].digest' < "$layout/index.json")
+  [[ $digest = sha256:* ]] || { missing+=("$ref: index.json names no manifest. run build-bundle-images.sh"); return 0; }
+  local index="$layout/blobs/sha256/${digest#sha256:}"
+  [[ -f $index ]] || { missing+=("$ref: the index it names is not among its blobs. run build-bundle-images.sh"); return 0; }
+
+  local listed
+  listed=$($YQ_CMD -p json -o yaml '[.manifests[].platform.architecture] | join(" ")' < "$index")
+  local arch oci
+  for arch in "${architectures[@]}"; do
+    oci=$(oci_arch_of "$arch")
+    [[ " $listed " = *" $oci "* ]] ||
+      missing+=("$ref: no manifest for $arch ($oci) in its index, which lists [$listed]. run build-bundle-images.sh")
   done
 
   return 0
@@ -294,23 +372,26 @@ check_registry_images() {
 
 # The wheel directories setup-venv.sh installs from, read off that script so
 # that a python or a project added there is asked for here without a second
-# list to keep, and in the directories of each python every project
-# release.yml pins for it, as a wheel of that version. A wheel is named after
-# the project with dashes turned to underscores, in whichever case the project
-# spells itself
+# list to keep, with the $ARCH of that script standing for each architecture
+# of the release in turn; and in the directories of each python and
+# architecture every project release.yml pins for it, as a wheel of that
+# version. A wheel is named after the project with dashes turned to
+# underscores, in whichever case the project spells itself
 check_python_packages() {
-  local dir python name version
-  for dir in $(grep -oP 'python-packages/\K[A-Za-z0-9._-]+/[A-Za-z0-9._-]+' "$SETUP_VENV_PATH" | sort -u); do
-    [[ -n $(find "$BUNDLE_PATH/python-packages/$dir" -name "*.whl" -print -quit 2>/dev/null) ]] ||
-      missing+=("python-packages/$dir: no wheel there, and setup-venv.sh installs from it. run fetch-bundle-python-packages.sh")
-  done
+  local arch dir python name version
+  for arch in "${architectures[@]}"; do
+    for dir in $(grep -oP 'python-packages/\K[A-Za-z0-9._-]+/\$ARCH/[A-Za-z0-9._-]+' "$SETUP_VENV_PATH" | sed "s#/\\\$ARCH/#/$arch/#" | sort -u); do
+      [[ -n $(find "$BUNDLE_PATH/python-packages/$dir" -name "*.whl" -print -quit 2>/dev/null) ]] ||
+        missing+=("python-packages/$dir: no wheel there, and setup-venv.sh installs from it. run fetch-bundle-python-packages.sh --arch $arch")
+    done
 
-  for python in $(grep -oP 'python-packages/\K[A-Za-z0-9._-]+' "$SETUP_VENV_PATH" | sort -u); do
-    while read -r name version; do
-      [[ -z $name ]] && continue
-      [[ -n $(find "$BUNDLE_PATH/python-packages/$python" -iname "${name//-/_}-$version-*.whl" -print -quit 2>/dev/null) ]] ||
-        missing+=("python-packages/$python: no wheel of $name $version, which release.yml declares under python_packages")
-    done < <($YQ_CMD ".python_packages[\"$python\"] // {} | to_entries | .[] | .key + \" \" + .value" < "$RELEASE_META_PATH")
+    for python in $(grep -oP 'python-packages/\K[A-Za-z0-9._-]+' "$SETUP_VENV_PATH" | sort -u); do
+      while read -r name version; do
+        [[ -z $name ]] && continue
+        [[ -n $(find "$BUNDLE_PATH/python-packages/$python/$arch" -iname "${name//-/_}-$version-*.whl" -print -quit 2>/dev/null) ]] ||
+          missing+=("python-packages/$python/$arch: no wheel of $name $version, which release.yml declares under python_packages")
+      done < <($YQ_CMD ".python_packages[\"$python\"] // {} | to_entries | .[] | .key + \" \" + .value" < "$RELEASE_META_PATH")
+    done
   done
 
   return 0

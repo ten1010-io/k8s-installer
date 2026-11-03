@@ -168,7 +168,8 @@ main() {
 rhel10_setup() {
   local missing=$1
 
-  local kernel_dir="$ki_opt_bundle_path/linux-packages/rhel10/kernel"
+  local kernel_dir
+  kernel_dir="$ki_opt_bundle_path/linux-packages/rhel10/$(uname -m)/kernel"
   local bundle_version
   bundle_version=$(bundle_kernel_version "$kernel_dir")
   [[ -z $bundle_version ]] &&
@@ -260,7 +261,7 @@ get_os_version() {
 }
 
 setup_cmd_vars() {
-  yq_cmd="$ki_opt_bundle_path/bin/yq"
+  yq_cmd="$ki_opt_bundle_path/bin/$(uname -m)/yq"
 
   return 0
 }

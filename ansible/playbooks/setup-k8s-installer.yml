@@ -18,6 +18,42 @@
     - name: Check ssh connection and passwordless sudo
       raw: "sudo -n true"
 
+    # The bundle holds nothing a node of another architecture can run, and
+    # nothing of an os it was not resolved for, and such a node used to find
+    # that out from "exec format error" inside setup-venv.sh, after the payload
+    # had been copied to it. Asked here, before anything is, and asked raw since
+    # the node has no python of its own yet. The os is named the way
+    # linux-packages names it: the id and the major for rhel, the id and the
+    # whole version for ubuntu. See release.yml
+    - name: Read the os and the architecture of the node
+      raw: ". /etc/os-release && echo \"$ID $VERSION_ID $(uname -m)\""
+      register: raw_result
+
+    - name: "Set_fact variable[\"node_os\"] and variable[\"node_machine\"]"
+      set_fact:
+        node_os: >-
+          {{ (raw_result.stdout | trim).split()[0]
+          ~ ((raw_result.stdout | trim).split()[1].split('.')[0] if (raw_result.stdout | trim).split()[0] == 'rhel'
+          else (raw_result.stdout | trim).split()[1]) }}
+        node_machine: "{{ (raw_result.stdout | trim).split()[2] }}"
+
+    - name: Check the node is of an os and an architecture the release is built for
+      fail:
+        msg: >-
+          Node["{{ inventory_hostname }}"] is {{ node_machine }} running {{ node_os }} and the
+          bundle of release["{{ ki_release_version }}"] carries
+          {% if node_os in ki_release_architectures -%}
+          {{ node_os }} for {{ ki_release_architectures[node_os] | join(', ') }} only.
+          {%- else -%}
+          no packages of {{ node_os }}.
+          {%- endif %}
+          Nothing in it can run on this node, so it is refused before the payload is copied to it
+      when: node_os not in ki_release_architectures or node_machine not in ki_release_architectures[node_os]
+
+    - name: "Remove temporary variable[\"raw_result\"]"
+      set_fact:
+        raw_result: null
+
 - hosts: localhost
   gather_facts: false
   any_errors_fatal: true

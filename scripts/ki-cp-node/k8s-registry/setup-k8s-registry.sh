@@ -116,7 +116,7 @@ main() {
   [[ $update = "false" ]] && require_not_setup $SVC_NAME
   require_directory_exists "$images_path"
 
-  docker load -i "$ki_opt_bundle_path"/ki-cp-service-images/$SVC_NAME.tar
+  docker load -i "$ki_opt_bundle_path"/ki-cp-service-images/"$(uname -m)"/$SVC_NAME.tar
 
   mkdir -p "$var_svc_root_path"
   mkdir -p "$etc_svc_root_path"
@@ -213,12 +213,13 @@ push_images() {
 # Whether this run has anything to do. This service is not a render followed by a
 # restart like the rest of the ki cp services: it is a write window opened to push
 # the images of the bundle through, and opening it takes the registry down twice.
-# apply-service-var-changes.yml runs without serial, so that happens on every ki cp
-# node at once and leaves the cluster with nowhere to pull an image of the release
-# from, which is the accident upgrade-k8s-registry.yml goes one node at a time to
-# avoid. The window is therefore opened only when the compose file about to be
-# written differs from the one the service is running under, or when the bundle
-# holds images the storage was not filled from
+# Done on every ki cp node at once, that leaves the cluster with nowhere to pull
+# an image of the release from, which is why reconcile-k8s-registry.yml goes one
+# node at a time, and why this is asked on every update-cluster.yml and
+# upgrade-cluster.yml rather than only when a variable changed: the window is
+# opened only when the compose file about to be written differs from the one the
+# service is running under, or when the bundle holds images the storage was not
+# filled from, and a run with neither leaves the registry as it is
 service_up_to_date() {
   local compose_yml_before=$1
   local images=$2
@@ -290,9 +291,9 @@ import_ki_opt_vars() {
 }
 
 setup_cmd_vars() {
-  yq_cmd="$ki_opt_bundle_path/bin/yq"
+  yq_cmd="$ki_opt_bundle_path/bin/$(uname -m)/yq"
   jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
-  crane_cmd="$ki_opt_bundle_path/bin/crane"
+  crane_cmd="$ki_opt_bundle_path/bin/$(uname -m)/crane"
 }
 
 validate_ki_opt_directory() {

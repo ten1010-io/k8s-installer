@@ -2,7 +2,12 @@
 # Every service rather than the one the variable belongs to: each setup script
 # already decides for itself whether anything it renders differs, and reaching
 # for the mapping of variable to service would be a second place for that answer
-# to live and to be wrong
+# to live and to be wrong.
+#
+# The registry of the cluster is the one service not written here. Writing it
+# can open a window that takes the registry down, and this play runs on every
+# ki cp node at once, so it is left to reconcile-k8s-registry.yml, which goes
+# one node at a time and is called whether or not a variable changed
 - hosts: ki_cp_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
@@ -22,9 +27,6 @@
 
         - name: Execute setup-k8s-cp-lb.sh --update
           shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh {{ vars_path_arg }} --update"
-
-        - name: Execute setup-k8s-registry.sh --update
-          shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-registry/setup-k8s-registry.sh {{ vars_path_arg }} --update"
 
         - name: Execute setup-user-registry.sh --update
           shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/user-registry/setup-user-registry.sh {{ vars_path_arg }} --update"

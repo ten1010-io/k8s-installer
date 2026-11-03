@@ -230,17 +230,18 @@ device_lines() {
 # for it, and the ids on the kernel command line are what answer it rather than
 # the state of the iommu. An iommu is on for whatever reason the site has of its
 # own: a host worth passing cards out of is very likely to have had intel_iommu=on
-# in /etc/default/grub before this ever ran, and reading that as "rebooted since"
+# in /etc/default/grub before this ever ran, and an aarch64 host has its smmu up
+# from the firmware without being asked, so reading that as "rebooted since"
 # sends whoever is holding the report off to read initramfs files when all the
 # node wants is a reboot. Asking after the ids instead is exact, and it also
 # catches the node whose ids were changed after its last boot, which looks
 # entirely healthy to the iommu.
 #
 # A node that did boot with them and has no iommu even so is the third, and it is
-# the one thing here that nothing written to the node can fix. The argument asking
-# for an iommu was on the command line and the machine came up without one, so it
-# is not offering one: vt-d or amd-vi is off in its firmware, or it is a guest
-# nobody gave an iommu to. Telling that node to reboot, which the state of the
+# the one thing here that nothing written to the node can fix. The command line
+# this wrote was there and the machine came up without an iommu, so it is not
+# offering one: vt-d or amd-vi is off in its firmware, its firmware describes no
+# smmu, or it is a guest nobody gave an iommu to. Telling that node to reboot, which the state of the
 # iommu on its own would, is telling it to do the thing that just failed.
 #
 # The fourth is a node that booted with the ids, has its iommu up, and still has a
@@ -262,12 +263,12 @@ explain_state() {
   fi
 
   if [[ $(iommu_state) = "off" ]]; then
-    echo "  This node booted with intel_iommu or amd_iommu on the command line and came up"
-    echo "  with no iommu anyway, which vfio-pci can not work without - the devices above"
-    echo "  are in no iommu group at all. Another reboot will not change it and there is"
-    echo "  nothing to fix in what was written here. The machine is not offering one:"
-    echo "  turn on VT-d or AMD-Vi in its firmware, and on a virtual machine give the guest"
-    echo "  an iommu of its own"
+    echo "  This node booted with the command line this wrote and came up with no iommu"
+    echo "  anyway, which vfio-pci can not work without - the devices above are in no iommu"
+    echo "  group at all. Another reboot will not change it and there is nothing to fix in"
+    echo "  what was written here. The machine is not offering one: on x86_64 turn on VT-d"
+    echo "  or AMD-Vi in its firmware, on aarch64 the firmware has to describe an smmu, and"
+    echo "  on a virtual machine give the guest an iommu of its own"
     return 0
   fi
 

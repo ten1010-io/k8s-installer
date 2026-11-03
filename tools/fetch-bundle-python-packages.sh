@@ -4,17 +4,21 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--out-path path]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--arch arch] [--out-path path]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
+--arch          The architecture to fetch for, as uname -m names it (x86_64, aarch64). Defaults to
+                this machine's. The container of another architecture runs through the user mode
+                emulator the container runtime has, when it has one
 --out-path      Directory to fill, laid out as bundle/python-packages is, defaults to that directory
-                of this tree. It is emptied first
+                of this tree. The directories of the architecture are emptied first, the others kept
 EOF
   exit
 }
 
 parse_params() {
+  arch=""
   out_path=""
 
   while :; do
@@ -22,6 +26,11 @@ parse_params() {
     -h | --help) print_usage ;;
     -v | --verbose) set -x ;;
     --no-color) NO_COLOR=1 ;;
+    --arch)
+      [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
+      arch="${2-}"
+      shift
+      ;;
     --out-path)
       [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
       out_path="${2-}"
@@ -72,9 +81,12 @@ parse_params "$@"
 # --- End of CLI template ---
 
 # Fills bundle/python-packages with the wheels setup-venv.sh installs the venv
-# of the control node from: one directory per python and per pip call of that
-# script, holding the projects the call names, at the versions release.yml
-# pins, and whatever they pull in.
+# of the control node from: one directory per python, per architecture and per
+# pip call of that script, holding the projects the call names, at the
+# versions release.yml pins, and whatever they pull in. A wheel with native
+# code is built for one architecture, so the directories of one architecture
+# are filled per run, under python-packages/<python>/<arch>, and the bundle of
+# two architectures is two runs.
 #
 # What goes where is read off setup-venv.sh rather than written here again,
 # so that a project added to a pip call of that script is fetched into the
@@ -95,29 +107,40 @@ parse_params "$@"
 # python - netifaces, last released before 3.10 - is built from its sdist
 # there and repaired by auditwheel into a wheel every node can load. The
 # image is pinned by digest, the way everything this repository installs is
-# pinned
+# pinned, one image per architecture (arch-common.sh)
 KI_ROOT_PATH=$(cd "$SCRIPT_DIR_PATH/.." &>/dev/null && pwd -P)
 RELEASE_META_PATH="$KI_ROOT_PATH"/release.yml
 SETUP_VENV_PATH="$KI_ROOT_PATH"/scripts/setup-venv.sh
 
-MANYLINUX_IMAGE="quay.io/pypa/manylinux_2_28_x86_64:2026.10.26-1@sha256:e0adf18521ad35192df733a6c62d35df7801957d24e0470238aacecfab2188a3"
+# shellcheck source=arch-common.sh
+source "$SCRIPT_DIR_PATH/arch-common.sh"
 
 work_path=""
 container_cmd=""
+manylinux_image=""
+oci_arch=""
 
 main() {
   [[ -f $RELEASE_META_PATH ]] || die "[ERROR] No such file or directory of which path is \"$RELEASE_META_PATH\""
   [[ -f $SETUP_VENV_PATH ]] || die "[ERROR] No such file or directory of which path is \"$SETUP_VENV_PATH\""
   [[ -z $out_path ]] && out_path="$KI_ROOT_PATH/bundle/python-packages"
+  [[ -z $arch ]] && arch=$(uname -m)
+  oci_arch=$(oci_arch_of "$arch") || die "[ERROR] Architecture[\"$arch\"] is not one this installer knows. --arch takes x86_64 or aarch64"
+  manylinux_image=$(manylinux_image_of "$arch")
 
   find_container_command
 
   local pythons
   pythons=$(pip_calls | cut -d' ' -f1 | sort -u)
-  [[ -z $pythons ]] && die "[ERROR] File[\"$SETUP_VENV_PATH\"] installs nothing from python-packages that this can read. pip calls are expected as \"pip install --no-index -f .../python-packages/<python>/<directory> <names>\""
+  [[ -z $pythons ]] && die "[ERROR] File[\"$SETUP_VENV_PATH\"] installs nothing from python-packages that this can read. pip calls are expected as \"pip install --no-index -f .../python-packages/<python>/\$ARCH/<directory> <names>\""
 
   work_path=$(mktemp -d)
-  rm -rf "$out_path"
+  # The directories of this architecture alone: the other architecture's were
+  # fetched by a run of their own, on a machine of theirs as likely as not
+  local python
+  for python in $pythons; do
+    rm -rf "${out_path:?}/$python/$arch"
+  done
   mkdir -p "$out_path"
 
   local python
@@ -141,10 +164,11 @@ find_container_command() {
   die "[ERROR] docker or podman is needed to run the manylinux container the wheels are fetched in, and neither is installed"
 }
 
-# The pip calls of setup-venv.sh that read python-packages, as
+# The pip calls of setup-venv.sh that read python-packages, with the $ARCH of
+# that script taken out of the path since one run fills one architecture, as
 # "<python> <directory> <name>..." lines, one per call
 pip_calls() {
-  grep -oP 'python-packages/\Kpython3\.[0-9]+/[A-Za-z0-9._-]+ [A-Za-z0-9._ -]+$' "$SETUP_VENV_PATH" | tr '/' ' ' | sort -u
+  grep -oP 'python-packages/\Kpython3\.[0-9]+/\$ARCH/[A-Za-z0-9._-]+ [A-Za-z0-9._ -]+$' "$SETUP_VENV_PATH" | sed 's#/\$ARCH/#/#' | tr '/' ' ' | sort -u
 
   return 0
 }
@@ -209,19 +233,22 @@ fetch_python() {
       local specs=()
       for name in $names; do
         version=$(awk -v n="$name" '$1 == n { print $2; exit }' <<< "$declared")
-        [[ -z $version ]] && die "[ERROR] File[\"$RELEASE_META_PATH\"] pins no version of $name for $python, which setup-venv.sh installs into python-packages/$python/$dir"
+        [[ -z $version ]] && die "[ERROR] File[\"$RELEASE_META_PATH\"] pins no version of $name for $python, which setup-venv.sh installs into python-packages/$python/\$ARCH/$dir"
         specs+=("$name==$version")
       done
-      echo "echo '[INFO] $python/$dir: ${specs[*]}'"
+      echo "echo '[INFO] $python/$arch/$dir: ${specs[*]}'"
       echo "fetch $dir ${specs[*]}"
     done < <(pip_calls)
     echo "chown -R $(id -u):$(id -g) /out"
   } > "$script"
   cp "$constraints" "$work_path/constraints.txt"
 
-  mkdir -p "$out_path/$python"
-  "$container_cmd" run --rm -e HOME=/tmp -v "$out_path/$python:/out" -v "$work_path:/work:ro" "$MANYLINUX_IMAGE" bash /work/"$python".sh ||
-    die "[ERROR] Fail to fetch the python packages of $python"
+  # The platform is named so that a machine of the other architecture runs
+  # the image of this one through its emulator rather than refusing it, and a
+  # machine of this one is told nothing it did not know
+  mkdir -p "$out_path/$python/$arch"
+  "$container_cmd" run --rm --platform "linux/$oci_arch" -e HOME=/tmp -v "$out_path/$python/$arch:/out" -v "$work_path:/work:ro" "$manylinux_image" bash /work/"$python".sh ||
+    die "[ERROR] Fail to fetch the python packages of $python for $arch"
 
   require_declared "$python" "$declared"
 
@@ -238,12 +265,12 @@ require_declared() {
   local name version errors=""
   while read -r name version; do
     [[ -z $name ]] && continue
-    [[ -n $(find "$out_path/$python" -iname "${name//-/_}-$version-*.whl" -print -quit) ]] ||
-      errors+="\n  $name $version is pinned and no directory of $python holds a wheel of it"
+    [[ -n $(find "$out_path/$python/$arch" -iname "${name//-/_}-$version-*.whl" -print -quit) ]] ||
+      errors+="\n  $name $version is pinned and no directory of $python/$arch holds a wheel of it"
   done <<< "$declared"
-  [[ -n $(find "$out_path/$python" -name "*.tar.gz" -print -quit) ]] &&
-    errors+="\n  a source archive is left under $python, which a node without a compiler can not install"
-  [[ -n $errors ]] && die "[ERROR] Directory[\"$out_path/$python\"] is not what release.yml declares:$errors"
+  [[ -n $(find "$out_path/$python/$arch" -name "*.tar.gz" -print -quit) ]] &&
+    errors+="\n  a source archive is left under $python/$arch, which a node without a compiler can not install"
+  [[ -n $errors ]] && die "[ERROR] Directory[\"$out_path/$python/$arch\"] is not what release.yml declares:$errors"
 
   return 0
 }
@@ -252,9 +279,9 @@ report() {
   local dir
   while read -r dir; do
     msg "[INFO] ${dir#"$out_path"/} ($(find "$dir" -name "*.whl" | wc -l)): $(find "$dir" -name "*.whl" -printf '%f ' | sed -E 's/-(py[0-9]+(\.py[0-9]+)*|cp[0-9]+)-[^ ]*//g')"
-  done < <(find "$out_path" -mindepth 2 -type d | sort)
+  done < <(find "$out_path" -mindepth 3 -maxdepth 3 -type d -path "*/$arch/*" | sort)
 
-  msg "[INFO] $(du -sh "$out_path" | cut -f1) under \"$out_path\", laid out as bundle/python-packages"
+  msg "[INFO] $(du -sh "$out_path" | cut -f1) under \"$out_path\", laid out as bundle/python-packages, with the $arch directories of this run"
 
   return 0
 }

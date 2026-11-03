@@ -223,17 +223,34 @@ require_vfio_pci_devices_exist() {
   return 0
 }
 
-# Which of the two the processor of this node needs. Read from the processor
-# rather than taken as a variable, because it is a fact about the machine and
-# getting it wrong is a node that boots with an iommu that never comes up
+# What this node's iommu needs on the kernel line. Read from the machine rather
+# than taken as a variable, because it is a fact about the machine and getting
+# it wrong is a node that boots with an iommu that never comes up.
+#
+# On x86_64 the iommu is off until asked for and the argument that asks is the
+# processor's: intel_iommu or amd_iommu, told apart by the vendor the processor
+# reports. On aarch64 there is nothing to turn on - the smmu is described by the
+# firmware and the kernel brings it up on its own - so the only thing left to
+# say is the same thing iommu=pt says on x86_64, in its architecture neutral
+# spelling: let the devices the host keeps bypass translation, so that only
+# what is handed to vfio pays for it. check-vfio-pci.sh reads the state of the
+# iommu back the same way on both, from /sys/class/iommu
 set_iommu_kernel_args() {
-  local vendor_id
-  vendor_id=$(grep -m1 -oP '^vendor_id\s*:\s*\K.+' /proc/cpuinfo || true)
+  local machine
+  machine=$(uname -m)
 
-  case "$vendor_id" in
-    GenuineIntel) iommu_kernel_args="intel_iommu=on iommu=pt" ;;
-    AuthenticAMD) iommu_kernel_args="amd_iommu=on iommu=pt" ;;
-    *) die "[ERROR] Can not tell which iommu this node needs from vendorId[\"$vendor_id\"]" ;;
+  case "$machine" in
+    x86_64)
+      local vendor_id
+      vendor_id=$(grep -m1 -oP '^vendor_id\s*:\s*\K.+' /proc/cpuinfo || true)
+      case "$vendor_id" in
+        GenuineIntel) iommu_kernel_args="intel_iommu=on iommu=pt" ;;
+        AuthenticAMD) iommu_kernel_args="amd_iommu=on iommu=pt" ;;
+        *) die "[ERROR] Can not tell which iommu this node needs from vendorId[\"$vendor_id\"]" ;;
+      esac
+      ;;
+    aarch64) iommu_kernel_args="iommu.passthrough=1" ;;
+    *) die "[ERROR] This installer does not know how the iommu of a $machine node is asked for" ;;
   esac
 
   return 0
@@ -513,7 +530,7 @@ get_os_version() {
 }
 
 setup_cmd_vars() {
-  yq_cmd="$ki_opt_bundle_path/bin/yq"
+  yq_cmd="$ki_opt_bundle_path/bin/$(uname -m)/yq"
   jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
 }
 

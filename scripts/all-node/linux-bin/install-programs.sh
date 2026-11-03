@@ -74,6 +74,7 @@ source "$SCRIPT_DIR_PATH/linux-bin-common.sh"
 ki_opt_root_path=""
 ki_opt_scripts_path=""
 ki_opt_bundle_path=""
+bin_path=""
 ki_opt_venv_path=""
 
 yq_cmd=""
@@ -101,7 +102,7 @@ main() {
 install_program() {
   local program=$1
 
-  cp -f "$ki_opt_bundle_path/bin/$program" "/usr/local/bin/$program"
+  cp -f "$bin_path/$program" "/usr/local/bin/$program"
   chown root:root "/usr/local/bin/$program"
   chmod 755 "/usr/local/bin/$program"
 }
@@ -127,12 +128,12 @@ require_declared_binaries() {
   while read -r name version; do
     [[ -z $name ]] && continue
 
-    if [[ ! -f "$ki_opt_bundle_path/bin/$name" ]]; then
+    if [[ ! -f "$bin_path/$name" ]]; then
       errors+="\n  binary[\"$name\"] is declared as version[\"$version\"] and is not in the bundle"
       continue
     fi
 
-    found=$(binary_version "$ki_opt_bundle_path/bin" "$name")
+    found=$(binary_version "$bin_path" "$name")
     [[ $found != "$version" ]] &&
       errors+="\n  binary[\"$name\"] is declared as version[\"$version\"] and the bundle holds version[\"${found:-unknown}\"]"
   done <<< "$declared"
@@ -151,7 +152,9 @@ import_ki_opt_vars() {
 }
 
 setup_cmd_vars() {
-  yq_cmd="$ki_opt_bundle_path/bin/yq"
+  # The binaries of this machine's architecture. See release.yml
+  bin_path="$ki_opt_bundle_path/bin/$(uname -m)"
+  yq_cmd="$bin_path/yq"
   jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
 }
 

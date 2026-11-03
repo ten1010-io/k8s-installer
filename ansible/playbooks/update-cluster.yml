@@ -13,6 +13,11 @@
 
 - import_playbook: tasks/apply-service-var-changes.yml
 
+# Not under the class["service"] condition of the play before it. What the
+# registry holds follows the bundle on the node as well as the variables, and
+# the script is the one that can tell either has moved. See the file
+- import_playbook: tasks/reconcile-k8s-registry.yml
+
 # Before class["kubelet"], not after. Both write the same file on a node, and
 # this one is the one that can not be applied by a restart: a node whose policy
 # changed has to be drained and have its checkpoint taken away first, and a

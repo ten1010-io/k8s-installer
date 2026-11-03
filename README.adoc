@@ -81,7 +81,7 @@ k8s_minor_version: "1.36"
 === 릴리스가 고정하는 나머지
 
 쿠버네티스만 고정되는 것이 아닙니다. 배포판이 아니라 만든 곳에서 받아 오는 패키지 —
-containerd, docker, nvidia container toolkit — 와 `bundle/bin` 의 바이너리도 `release.yml` 이
+containerd, docker, nvidia container toolkit — 와 `bundle/bin/<arch>` 의 바이너리도 `release.yml` 이
 버전으로 적습니다.
 
 [source,yaml]
@@ -114,7 +114,7 @@ binaries:
 둘 다 릴리스가 말하는 그 도커입니다.
 
 바이너리는 실행해서 물어보는 수밖에 없습니다. 패키지 파일은 안에 버전을 들고 있지만
-`bundle/bin` 에 있는 것은 `helm` 이라는 이름의 파일이고 이름만 봐서는 어느 helm 인지 알 수
+`bundle/bin/<arch>` 에 있는 것은 `helm` 이라는 이름의 파일이고 이름만 봐서는 어느 helm 인지 알 수
 없습니다. 도구마다 묻는 법이 달라서, `binaries` 에 이름을 더하는 것은 `install-programs.sh`
 에 그 도구를 어떻게 묻는지 알려 주는 일이기도 합니다. 모르는 이름은 넘어가지 않고 멈춥니다.
 
@@ -147,7 +147,7 @@ binaries:
 |===
 
 // check-release-docs: binaries
-.바이너리 (`bundle/bin`)
+.바이너리 (`bundle/bin/<arch>`, 아키텍처마다 같은 버전)
 [cols="2,1"]
 |===
 |이름 |버전
@@ -165,7 +165,7 @@ binaries:
 적습니다. 이것들이 끌고 오는 것(cryptography, jinja2 같은 것)은 OS 의존성 묶음처럼 선언하지 않습니다.
 
 // check-release-docs: python_packages python3.10
-.파이썬 패키지 (`bundle/python-packages/python3.10`, ubuntu 22.04)
+.파이썬 패키지 (`bundle/python-packages/python3.10/<arch>`, ubuntu 22.04)
 [cols="2,1"]
 |===
 |이름 |버전
@@ -180,7 +180,7 @@ binaries:
 |===
 
 // check-release-docs: python_packages python3.12
-.파이썬 패키지 (`bundle/python-packages/python3.12`, ubuntu 24.04 와 rhel)
+.파이썬 패키지 (`bundle/python-packages/python3.12/<arch>`, ubuntu 24.04 와 rhel)
 [cols="2,1"]
 |===
 |이름 |버전
@@ -323,7 +323,8 @@ NUMA 는 <<kubelet 이 CPU 를 나눠 주는 방식>> 에서 씁니다. `numa["-
 
 지정하면 그 노드에 다음이 설정됩니다.
 
-* 커널 명령줄에 `intel_iommu=on iommu=pt` (AMD 이면 `amd_iommu=on`). 프로세서를 보고 고릅니다
+* 커널 명령줄에 `intel_iommu=on iommu=pt` (AMD 이면 `amd_iommu=on`). 프로세서를 보고 고릅니다.
+  aarch64 노드는 SMMU 를 펌웨어가 켜므로 켜는 인자가 없고, `iommu=pt` 와 같은 뜻인 `iommu.passthrough=1` 만 들어갑니다
 * 커널 명령줄에 `vfio-pci.ids=...` 도 함께. vfio-pci 가 모듈이 아니라 커널에 내장된 배포판에서는
   아래 `modprobe.d` 가 읽히지 않아서, ID 를 커널 명령줄로 줘야 장치가 묶입니다
 * initramfs 에 `vfio`, `vfio_iommu_type1`, `vfio-pci`
@@ -493,8 +494,8 @@ k8s_node:
 * *재부팅해야 적용됩니다.* <<장치를 게스트에게 통과시키기 (vfio-pci)>> 와 **같은 재부팅**을 씁니다 —
   `provision_reboot: true` 면 노드를 만드는 동안 설치본이 한 번 재부팅하고, 아니면 적용되지 않은
   노드가 플레이북이 돌 때마다 끝에서 보고됩니다
-* *IOMMU 인자는 여기 적지 않습니다.* `intel_iommu`·`amd_iommu`·`iommu`·`vfio-pci.ids` 는 vfio-pci
-  쪽이 장치 목록에서 도출해 자기 파일에 쓰는 것이라, 여기 적으면 거부합니다
+* *IOMMU 인자는 여기 적지 않습니다.* `intel_iommu`·`amd_iommu`·`iommu`·`iommu.passthrough`·`vfio-pci.ids` 는
+  vfio-pci 쪽이 장치 목록에서 도출해 자기 파일에 쓰는 것이라, 여기 적으면 거부합니다
 * *hugepage 는 선언한 만큼 잡히지 않을 수 있습니다.* 1G 페이지는 부팅 때 연속된 1G 가 있어야 하고,
   커널은 잡을 수 있는 만큼만 잡고 `dmesg` 에 한 번 적습니다. 그래서 `check-kernel-args.sh` 가
   선언한 수와 커널이 쥔 수를 크기별로 비교해 플레이북 끝에서 보고하고, 같은 수를
@@ -838,6 +839,11 @@ ansible-playbook -i inventory.yml playbooks/update-cluster.yml
 변수가 섞여 있으면 **아무것도 적용하지 않고** 어느 노드의 어떤 변수가 문제인지 알려준 뒤
 멈춥니다. 적용 방법은 `ansible/group_vars/all/constant-vars.yml` 의 `ki_var_classes` 에
 변수별로 적혀 있고, 자세한 근거는 `docs/impl-notes.adoc` 에 있습니다.
+
+변수와 무관하게 하는 일이 하나 있습니다. ki cp 노드의 레지스트리가 그 노드의 번들이 담은 이미지로
+채워져 있는지를 매번 묻고, 다르면 ki cp 노드를 **하나씩** 돌며 다시 밀어 넣습니다. 같으면 레지스트리를
+건드리지 않습니다. 스냅샷처럼 이름은 그대로인데 내용이 바뀐 번들을 `upgrade.sh` 로 다시 놓은 뒤에는
+이 플레이북이 레지스트리를 그 번들에 맞춥니다.
 
 `k8s_minor_version` 은 여기서 적용되지 않습니다. 쿠버네티스를 옮기는 것은 kubeadm 이 하는 일이고
 이 플레이북은 그것을 하지 않으므로, 바뀌어 있으면 <<클러스터 업그레이드>> 를 부르라고 알려준 뒤
@@ -1607,46 +1613,59 @@ sha256sum bundle-1.36.1.tgz
 
 === 릴리스를 자르는 절차
 
-번들을 만드는 기계 한 대에서 순서대로 합니다. 트리에 `bundle/` 디렉토리가 있는 것은 이 기계뿐이고,
-아래 도구들이 그 디렉토리를 채우고, 검사하고, 묶어서 올립니다. 모든 단계가 `release.yml` 을 읽으므로
-버전과 `k8s_versions`·`packages`·`binaries`·`python_packages` 를 먼저 그 파일에 정하고 시작합니다. 릴리스라면 `version` 에서
-`-SNAPSHOT` 을 떼는 것도 지금입니다 — 아카이브 이름과 S3 의 키가 그 값에서 나옵니다.
+번들을 만드는 기계 한 대에서 모읍니다. 트리에 `bundle/` 디렉토리가 있는 것은 이 기계뿐이고, 아래 도구들이
+그 디렉토리를 채우고, 검사하고, 묶어서 올립니다. 모든 단계가 `release.yml` 을 읽으므로 버전과
+`architectures`·`k8s_versions`·`packages`·`binaries`·`python_packages` 를 먼저 그 파일에 정하고 시작합니다. 릴리스라면 `version` 에서 `-SNAPSHOT` 을 떼는 것도 지금입니다 — 아카이브 이름과 S3 의 키가
+그 값에서 나옵니다.
 
-. *OS 패키지.* 지원하는 운영체제 다섯 개 각각에 대해, 그 OS 의 **가장 오래된 릴리스** 기계에서 (또는 그
-  기계의 패키지 데이터베이스 사본을 `--root` 로 주어) 돌리고 결과를 `bundle/linux-packages/<os>` 로 옮깁니다.
-  의존성 묶음과 함께 쿠버네티스 패키지(마이너마다 `k8s/<마이너>`)와 nvidia container toolkit 도 받습니다.
-  가장 오래된 릴리스여야 하는 이유와 `--root` 를 여럿 주는 법은 도구 머리말에 있습니다.
+번들은 `release.yml` 의 `architectures` 가 OS 마다 적은 아키텍처마다 한 벌을 담습니다. 패키지·바이너리·wheel 은
+**그 아키텍처의 기계에서** 받아야 하므로(패키지 관리자는 자기 아키텍처로 풀고, 바이너리는 실행해서 버전을
+묻습니다) 아래 1·2·4 는 아키텍처마다 그 기계에서 한 번씩 돌리고 결과를 모으는 기계의 `bundle/` 에 옮깁니다.
+이미지는 레지스트리에서 받는 것이라 한 기계에서 전부 받습니다. 모으는 기계가 다른 아키텍처의 바이너리를
+실행할 수 있어야 조립이 그 버전을 물을 수 있으므로, 두 아키텍처를 담을 때는 `qemu-user-static` 을 깔아
+binfmt 를 등록해 둡니다.
+
+. *OS 패키지.* `architectures` 의 (OS, 아키텍처) 쌍마다, 그 OS 의 **가장 오래된 릴리스** 와 그 아키텍처의
+  기계에서 (또는 그 기계의 패키지 데이터베이스 사본을 `--root` 로 주어) 돌리고 결과를
+  `bundle/linux-packages/<os>/<arch>` 로 옮깁니다. 의존성 묶음과 함께 쿠버네티스 패키지(마이너마다
+  `k8s/<마이너>`)와 nvidia container toolkit 도 받습니다. 가장 오래된 릴리스여야 하는 이유와 `--root` 를 여럿
+  주는 법은 도구 머리말에 있습니다.
 +
 [source,shell]
 ----
-tools/build-bundle-packages.sh --os rhel8 --out-path /root/out/rhel8      # rhel9, rhel10, ubuntu22.04, ubuntu24.04 도 같게
+tools/build-bundle-packages.sh --os rhel8 --out-path /root/out/rhel8/x86_64      # 다른 OS 와 아키텍처도 같게
 ----
-. *바이너리.* `binaries` 의 여섯을 공식 배포처에서 받아 `bundle/bin` 에 놓고, 받은 것마다 버전을 물어
-  `release.yml` 과 대조합니다. 노드의 `install-programs.sh` 와 같은 코드로 묻습니다. 이미지 도구가 여기의
-  `yq` 와 `crane` 을 쓰므로 이미지보다 먼저입니다.
+. *바이너리.* `binaries` 의 여섯을 공식 배포처에서 받아 `bundle/bin/<arch>` 에 놓고, 받은 것마다 버전을 물어
+  `release.yml` 과 대조합니다. 노드의 `install-programs.sh` 와 같은 코드로 묻습니다. 이미지 도구가 모으는
+  기계의 `yq` 와 `crane` 을 쓰므로 이미지보다 먼저입니다.
 +
 [source,shell]
 ----
-tools/fetch-bundle-binaries.sh
+tools/fetch-bundle-binaries.sh                      # 이 기계의 아키텍처
+tools/fetch-bundle-binaries.sh --arch aarch64       # 그 아키텍처의 기계에서, 또는 binfmt 가 있는 기계에서
 ----
-. *이미지.* ki cp 서비스 이미지와 마이너별 레지스트리 이미지를 받습니다. 마이너를 더했다면
-  `ki-cp-k8s-registry-images.yml` 에 그 마이너의 kubeadm 이 말하는 목록이 먼저 있어야 합니다.
+. *이미지.* ki cp 서비스 이미지와 마이너별 레지스트리 이미지를 `architectures` 에 나오는 아키텍처 전부로 받습니다.
+  서비스 이미지는 아키텍처마다 tar 하나, 레지스트리 이미지는 이미지마다 아키텍처 전부를 담은 인덱스 하나입니다.
+  마이너를 더했다면 `ki-cp-k8s-registry-images.yml` 에 그 마이너의 kubeadm 이 말하는 목록이 먼저 있어야 합니다.
 +
 [source,shell]
 ----
 tools/build-bundle-images.sh
 ----
-. *파이썬 패키지.* `setup-venv.sh` 가 venv 를 만들 때 읽는 wheel 을 `bundle/python-packages/<python>/<디렉토리>`
+. *파이썬 패키지.* `setup-venv.sh` 가 venv 를 만들 때 읽는 wheel 을 `bundle/python-packages/<python>/<arch>/<디렉토리>`
   에 받습니다. 무엇이 어느 디렉토리로 가는지는 `setup-venv.sh` 에서, 버전은 `release.yml` 의 `python_packages`
-  에서 읽습니다. 두 파이썬의 wheel 을 노드 전부가 올릴 수 있는 glibc 로 받기 위해 manylinux 컨테이너 안에서
-  받으므로 `docker`(또는 `podman`)가 있어야 하고, wheel 이 없는 프로젝트(netifaces)는 그 안에서 빌드합니다.
+  에서 읽습니다. 두 파이썬의 wheel 을 노드 전부가 올릴 수 있는 glibc 로 받기 위해 그 아키텍처의 manylinux
+  컨테이너 안에서 받으므로 `docker`(또는 `podman`)가 있어야 하고, wheel 이 없는 프로젝트(netifaces)는 그 안에서
+  빌드합니다. 한 번에 한 아키텍처를 받고 다른 아키텍처의 디렉토리는 그대로 둡니다.
 +
 [source,shell]
 ----
-tools/fetch-bundle-python-packages.sh
+tools/fetch-bundle-python-packages.sh                 # 이 기계의 아키텍처
+tools/fetch-bundle-python-packages.sh --arch aarch64  # 그 아키텍처의 기계에서, 또는 에뮬레이터가 있는 docker 에서
 ----
-. *조립.* `bundle/` 에 위의 전부가 있는지 — OS 다섯, 마이너마다 쿠버네티스 패키지, 선언한 패키지와
-  바이너리(실행해서), 서비스 이미지, 마이너마다 레지스트리 이미지와 pause, rhel 10 의 커널, 파이썬 wheel —
+. *조립.* `bundle/` 에 위의 전부가 있는지 — `architectures` 의 (OS, 아키텍처) 쌍마다 패키지와 마이너마다 쿠버네티스 패키지,
+  선언한 패키지, 아키텍처마다 바이너리(실행해서)와 서비스 이미지와 파이썬 wheel, 마이너마다 레지스트리 이미지와
+  pause 와 이미지마다 아키텍처 전부의 매니페스트, rhel 10 의 커널 —
   먼저 보고, 하나라도 없으면 빠진 것을 전부 적고 묶지 않습니다. 다 있으면 `bundle-<버전>.tgz` 를 트리 옆에
   만들고 sha256 을 출력합니다. 같은 내용이면 언제 누가 묶어도 같은 sha256 입니다. 릴리스는 `--write-sha256`
   으로 그 값을 `release.yml` 의 `bundle_sha256` 에 적습니다. 스냅샷은 비워 둡니다.
@@ -2197,13 +2216,47 @@ tzdata 가 없어 시간대 이름을 받아도 찾을 것이 없고, ntp 는 ch
 
 == 지원하는 운영체제
 
-* Ubuntu
+* Ubuntu (x86_64, aarch64)
 ** 22.04.0 ~ 22.04.5 지원
 ** 24.04.0 ~ 24.04.5 지원
-* Redhat
+* Redhat (x86_64)
 ** 8.0 ~ 8.10 지원
 ** 9.0 ~ 9.8 지원
 ** 10.0 ~ 10.2 지원
+
+aarch64 는 Ubuntu 만 담습니다. Grace 같은 arm64 서버가 먼저 필요로 하는 것이 그쪽이고, RHEL 의 aarch64 는
+도구가 같으므로 필요해지면 `architectures` 의 그 OS 줄에 더하고 그 아키텍처의 기계에서 closure 를 뽑으면 됩니다.
+aarch64 노드는 EC2 Graviton(Ubuntu 22.04/24.04 arm64)에서 x86_64 컨트롤 플레인에 워커로 붙여 설치·추가·제거·재부팅·
+인증서 갱신·etcd 백업과 복구·1.35→1.36 업그레이드·고장 노드 제거·재설치까지 돌려 검증했고, 22.04 와 24.04 의 GA
+이미지에서 오프라인으로 설치했습니다. ki cp 노드와 컨트롤 플레인을 aarch64 로 두는 것과 GPU 경로(툴킷·CDI·디바이스
+플러그인 `cdi-cri`·kubelet 의 static CPU 배치)는 g5g(Graviton2 + T4G) 단일 노드에서, GPU 를 vfio-pci 로 넘기는 쪽
+(`gpu_passthrough: true`)과 그 위의 KubeVirt(v1.9.1, T4G 한 장과 전용 CPU 를 받은 VM 안에서 그 GPU 가 보임)는
+g5g.metal(Graviton2 베어메탈 + T4G 두 장)에서 확인했습니다. Grace Blackwell(GB200)과 DGX OS 위의 설치는 아직 검증하지
+않았습니다.
+
+=== 아키텍처
+
+// check-release-docs reads the table below and compares it against every architecture
+// named under architectures of release.yml and oci_arch_of of tools/arch-common.sh.
+// Keep this marker if you move the table
+// check-release-docs: architectures
+[cols="1,1"]
+|===
+|`uname -m` (번들의 이름) |쿠버네티스의 이름
+
+|x86_64 |amd64
+|aarch64 |arm64
+|===
+
+번들은 위 아키텍처로 만들어진 것을 아키텍처마다 한 벌씩 담습니다. `bundle/bin/<arch>` 의 바이너리,
+`python-packages/<python>/<arch>` 의 wheel, `linux-packages/<os>/<arch>` 의 OS 패키지,
+`ki-cp-service-images/<arch>` 의 서비스 이미지가 그것이고, 노드는 `uname -m` 으로 자기 디렉토리를 찾습니다.
+레지스트리 이미지는 이미지마다 아키텍처 전부의 매니페스트를 담은 인덱스 하나라 노드가 자기 것을 받습니다.
+어느 OS 를 어느 아키텍처로 담았는지는 `release.yml` 의 `architectures` 가 OS 마다 적고, 그 값이 이 표와 위의
+OS 목록을 이깁니다. 거기 없는 (OS, 아키텍처) 조합의 기계에는 실행할 수 있는 것이 하나도 없으므로 번들을 풀거나
+복사하기 **전에** 거부합니다 — 제어 노드는 `setup.sh` 와 `upgrade.sh` 가, 나머지 노드는
+`setup-k8s-installer.yml` 과 `upgrade-k8s-installer.yml` 이 노드마다 `/etc/os-release` 와 `uname -m` 을 물어서
+거부하고, 그 노드가 무엇이고 릴리스가 그 OS 를 어느 아키텍처로 담았는지 적습니다.
 
 [NOTE]
 ====

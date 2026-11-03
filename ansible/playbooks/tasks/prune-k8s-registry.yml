@@ -8,7 +8,8 @@
 # knows what the release does.
 #
 # Prints what it would remove and removes nothing unless -e delete= is passed.
-# Getting it wrong here is recovered by running upgrade-k8s-registry.yml, which
+# Getting it wrong here is recovered by removing the pushed-images record of the
+# node and running update-cluster.yml, whose reconcile-k8s-registry.yml then
 # pushes the whole of the bundle again, so the caution is less than the user
 # registry needs. It is kept the same anyway, because two prunes that are asked
 # for differently are a way to reach for the wrong one.

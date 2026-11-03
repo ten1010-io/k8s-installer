@@ -117,6 +117,10 @@ os_distribution=""
 os_major_version=""
 os_minor_version=""
 
+# What uname -m answers, which is the name of the directory of this node's
+# packages under each os of linux-packages. See release.yml
+arch=$(uname -m)
+
 main() {
   require_file_exists "$vars_path"
   import_ki_opt_vars
@@ -260,7 +264,7 @@ rhel_install() {
   # what came before, which only the rhel 8 bundle carries; empty on the others
   dirs+=(iptables nftables docker nvidia-container-toolkit ethtool iproute socat devel)
 
-  local base="$ki_opt_bundle_path/linux-packages/$os_dir"
+  local base="$ki_opt_bundle_path/linux-packages/$os_dir/$arch"
   rhel_require_installable "$base" "${dirs[@]}"
 
   [[ $(getenforce) != "Disabled" ]] && setenforce 0
@@ -308,11 +312,26 @@ rhel_install() {
 set_k8s_packages_path() {
   local os_dir=$1
 
-  k8s_packages_path="$ki_opt_bundle_path/linux-packages/$os_dir/k8s/$k8s_minor_version"
+  require_os_arch_bundled "$os_dir"
+
+  k8s_packages_path="$ki_opt_bundle_path/linux-packages/$os_dir/$arch/k8s/$k8s_minor_version"
   [[ ! -d $k8s_packages_path ]] &&
     die "[ERROR] No such directory of which path is \"$k8s_packages_path\". The bundle of this release does not carry the packages of kubernetes[\"$k8s_minor_version\"]"
 
   return 0
+}
+
+# The bundle carries each os for the architectures os_architectures of
+# release.yml lists for it, and nothing says every os is built for every one.
+# A node whose pair is not there is refused here, by name, before anything is
+# planned: without this the first thing it would hear is dpkg or rpm finding no
+# files in a directory that does not exist
+require_os_arch_bundled() {
+  local os_dir=$1
+
+  [[ -d "$ki_opt_bundle_path/linux-packages/$os_dir/$arch" ]] && return 0
+
+  die "[ERROR] The bundle of release[\"$($yq_cmd '.ki_release_version' < "$vars_path")\"] carries no packages of $os_dir for $arch: directory[\"linux-packages/$os_dir/$arch\"] is not in it. os_architectures of release.yml says which architectures each os is built for"
 }
 
 # Refuses a bundle that does not hold what the release says it holds.
@@ -341,7 +360,7 @@ require_declared_packages() {
     die "[ERROR] Variable[\"ki_release_packages\"] of file[\"$vars_path\"] is empty. it is read from packages of release.yml, so a vars file without it was not written by the playbooks of this release"
 
   local bundled
-  bundled=$(list_bundled_packages "$ki_opt_bundle_path/linux-packages/$os_dir" "$pkg_kind")
+  bundled=$(list_bundled_packages "$ki_opt_bundle_path/linux-packages/$os_dir/$arch" "$pkg_kind")
 
   local errors=""
   local name
@@ -445,7 +464,7 @@ list_bundled_packages() {
 ubuntu_install_debs() {
   local os_dir=$1
 
-  local base="$ki_opt_bundle_path/linux-packages/$os_dir"
+  local base="$ki_opt_bundle_path/linux-packages/$os_dir/$arch"
 
   local files=()
   mapfile -t files < <(ubuntu_deb_files "$os_dir")
@@ -485,7 +504,7 @@ ubuntu_install_deb_dir() {
 ubuntu_deb_files() {
   local os_dir=$1
 
-  local base="$ki_opt_bundle_path/linux-packages/$os_dir"
+  local base="$ki_opt_bundle_path/linux-packages/$os_dir/$arch"
   local dir
   for dir in "${UBUNTU_DEB_DIRS[@]}"; do
     deb_files_of "$base/$dir"
@@ -515,7 +534,7 @@ ubuntu_deb_files() {
 setup_deb_plan_args() {
   local os_dir=$1
 
-  deb_principal_dirs=("$k8s_packages_path" "$ki_opt_bundle_path/linux-packages/$os_dir/systemd")
+  deb_principal_dirs=("$k8s_packages_path" "$ki_opt_bundle_path/linux-packages/$os_dir/$arch/systemd")
   deb_principals=()
 
   local name
@@ -774,7 +793,7 @@ import_ki_opt_vars() {
 }
 
 setup_cmd_vars() {
-  yq_cmd="$ki_opt_bundle_path/bin/yq"
+  yq_cmd="$ki_opt_bundle_path/bin/$(uname -m)/yq"
   jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
 }
 

@@ -73,7 +73,9 @@ RELEASE_META_PATH="$KI_ROOT_PATH"/release.yml
 # Kept in sync with ki_opt_root_path of group_vars/all/constant-vars.yml, the way
 # setup.sh keeps its copy: this runs on a box that need not have ansible at all
 KI_OPT_ROOT_PATH="/opt/k8s-installer"
-KI_OPT_BUNDLE_BIN_PATH="$KI_OPT_ROOT_PATH"/bundle/bin
+# The binaries of this machine's architecture, which is the directory a node
+# of it reads too. See release.yml
+KI_OPT_BUNDLE_BIN_PATH="$KI_OPT_ROOT_PATH"/bundle/bin/$(uname -m)
 KI_OPT_RELEASE_META_PATH="$KI_OPT_ROOT_PATH"/release.yml
 
 # Set by locate_bundle_bin once it knows which copy of the bundle they come from
@@ -146,9 +148,11 @@ locate_bundle_bin() {
   local archive_path="$KI_ROOT_PATH/bundle-$version.tgz"
   if [[ -f $archive_path ]]; then
     msg "[INFO] Taking crane and yq out of \"$archive_path\""
-    tar xzf "$archive_path" -C "$staging_path" bundle/bin/crane bundle/bin/yq ||
-      die "[ERROR] File[\"$archive_path\"] holds no bundle/bin/crane or no bundle/bin/yq. it is not a bundle of this installer, or did not arrive whole"
-    require_bundle_bin "$staging_path/bundle/bin"
+    local bin_dir
+    bin_dir="bundle/bin/$(uname -m)"
+    tar xzf "$archive_path" -C "$staging_path" "$bin_dir/crane" "$bin_dir/yq" ||
+      die "[ERROR] File[\"$archive_path\"] holds no $bin_dir/crane or no $bin_dir/yq. it is not a bundle of this installer, is not built for $(uname -m), or did not arrive whole"
+    require_bundle_bin "$staging_path/$bin_dir"
     return 0
   fi
 

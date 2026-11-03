@@ -4,28 +4,23 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--platform platform]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
---platform      Platform to pull, defaults to linux/amd64
+
+The images are pulled for every architecture release.yml declares, one service
+image per architecture and one registry layout per image holding every one
 EOF
   exit
 }
 
 parse_params() {
-  platform="linux/amd64"
-
   while :; do
     case "${1-}" in
     -h | --help) print_usage ;;
     -v | --verbose) set -x ;;
     --no-color) NO_COLOR=1 ;;
-    --platform)
-      [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
-      platform="${2-}"
-      shift
-      ;;
     -?*) die "[ERROR] Unknown option: $1" ;;
     *) break ;;
     esac
@@ -72,12 +67,22 @@ parse_params "$@"
 # The archive is made from that directory once this has run
 KI_ROOT_PATH=$(cd "$SCRIPT_DIR_PATH/.." &>/dev/null && pwd -P)
 BUNDLE_PATH="$KI_ROOT_PATH"/bundle
-YQ_CMD="$BUNDLE_PATH"/bin/yq
-CRANE_CMD="$BUNDLE_PATH"/bin/crane
+YQ_CMD="$BUNDLE_PATH"/bin/$(uname -m)/yq
+CRANE_CMD="$BUNDLE_PATH"/bin/$(uname -m)/crane
 
 CONSTANT_VARS_PATH="$KI_ROOT_PATH"/ansible/group_vars/all/constant-vars.yml
 RELEASE_META_PATH="$KI_ROOT_PATH"/release.yml
 SERVICE_IMAGES_PATH="$BUNDLE_PATH"/ki-cp-service-images
+
+# shellcheck source=arch-common.sh
+source "$SCRIPT_DIR_PATH/arch-common.sh"
+
+# The architectures release.yml declares, as uname -m names them, and what the
+# registries call each. Set by read_architectures
+architectures=()
+declare -A oci_arch_of_arch
+
+work_path=""
 
 # The one registry the bundle carries. Named here rather than found by looking
 # for files of a shape, which used to pick up every *-images.yml beside it: the
@@ -92,12 +97,36 @@ K8S_REGISTRY_IMAGES_YML_PATH="$KI_ROOT_PATH/$K8S_REGISTRY_NAME-images.yml"
 main() {
   require_bundle
   require_version_matches_window
+  read_architectures
+
+  work_path=$(mktemp -d)
 
   build_service_images
   build_registry_images
 
+  rm -rf "$work_path"
+
   msg ""
-  msg "[INFO] Bundle images built"
+  msg "[INFO] Bundle images built for ${architectures[*]}"
+
+  return 0
+}
+
+# A node of either architecture is given images it can run, so every image is
+# pulled for every architecture the bundle is built for, which is every
+# architecture any os of release.yml is carried for. Read from release.yml
+# rather than taken as an option: what the bundle is built for is the release's
+# to say, and an image left out for one architecture is a node of it that can
+# start nothing
+read_architectures() {
+  local arch oci
+  while read -r arch; do
+    [[ -z $arch ]] && continue
+    oci=$(oci_arch_of "$arch") || die "[ERROR] Release.yml declares architecture[\"$arch\"], which this installer does not know"
+    architectures+=("$arch")
+    oci_arch_of_arch[$arch]=$oci
+  done < <($YQ_CMD '.architectures // {} | [.[][]] | unique | .[]' < "$RELEASE_META_PATH")
+  [[ ${#architectures[@]} = 0 ]] && die "[ERROR] File[\"$RELEASE_META_PATH\"] declares no architectures. It is written as architectures: with one \"<os>: [<arch>, ...]\" line per os"
 
   return 0
 }
@@ -143,16 +172,17 @@ require_version_matches_window() {
 # The ki cp services are run by docker, which loads them from a tar rather than
 # pulling them, and docker load reads a docker archive and not an oci layout. The
 # tar is named after the service so that the setup script of that service finds
-# it from the name it already holds
+# it from the name it already holds, under the directory of the architecture it
+# runs on: a docker archive holds one platform, so there is one per architecture
 build_service_images() {
   msg "[INFO] Building the ki cp service images"
 
   rm -rf "$SERVICE_IMAGES_PATH"
-  mkdir -p "$SERVICE_IMAGES_PATH"
 
   local var
   local svc_name
   local image
+  local arch
   for var in $(get_service_image_vars); do
     svc_name=$(get_svc_name "$var")
     image=$($YQ_CMD ".$var" < "$CONSTANT_VARS_PATH")
@@ -160,8 +190,11 @@ build_service_images() {
 
     require_declared_digest "$var" "$image"
 
-    msg "[INFO]   $svc_name  <-  $image"
-    "$CRANE_CMD" pull --platform "$platform" --format tarball "$image" "$SERVICE_IMAGES_PATH/$svc_name.tar"
+    for arch in "${architectures[@]}"; do
+      msg "[INFO]   $arch/$svc_name  <-  $image"
+      mkdir -p "$SERVICE_IMAGES_PATH/$arch"
+      "$CRANE_CMD" pull --platform "linux/${oci_arch_of_arch[$arch]}" --format tarball "$image" "$SERVICE_IMAGES_PATH/$arch/$svc_name.tar"
+    done
   done
 
   return 0
@@ -219,7 +252,10 @@ get_svc_name() {
 # What ends up in a registry is pushed there rather than loaded, and a push has
 # to preserve the digest of the image it was given, which a docker archive does
 # not. These are oci layouts, one per image, because crane refuses to push a
-# layout holding more than one entry to a single reference
+# layout holding more than one entry to a single reference. The one entry is an
+# index of the manifests of every architecture (merge_layouts), so that the
+# registry serves one tag a node of any of them pulls from.
+#
 # One directory per kubernetes minor the release carries, because a node is
 # given the images of the minor its cluster runs and the registry is filled from
 # that directory alone. release.yml decides which minors those are, so a minor
@@ -278,8 +314,55 @@ build_registry_images_of_minor() {
     # reference
     msg "[INFO]   $repo_and_tag  <-  $full_name"
     mkdir -p "$(dirname "$output_path/$repo_and_tag")"
-    "$CRANE_CMD" pull --platform "$platform" --format oci --annotate-ref "$full_name" "$output_path/$repo_and_tag"
+    local arch layouts=()
+    for arch in "${architectures[@]}"; do
+      rm -rf "${work_path:?}/$arch"
+      "$CRANE_CMD" pull --platform "linux/${oci_arch_of_arch[$arch]}" --format oci "$full_name" "$work_path/$arch"
+      layouts+=("$work_path/$arch")
+    done
+    merge_layouts "$output_path/$repo_and_tag" "$full_name" "${layouts[@]}"
   done
+
+  return 0
+}
+
+# One layout out of the layouts of each architecture: the blobs of all of them,
+# which are addressed by content and so never collide, and an index.json with
+# one entry, an image index that lists the manifest of each architecture with
+# its platform. That shape is what crane itself writes when it is handed an
+# index, and crane push of it pushes the index and everything under it, so the
+# registry ends up serving the tag as a multi-architecture image the way the
+# upstream registry does, holding only the architectures the bundle is built
+# for. Pulling the upstream index whole would bring the architectures nobody
+# asked for and, for pause, a few hundred megabytes of windows layers
+merge_layouts() {
+  local dest=$1 full_name=$2
+  shift 2
+
+  rm -rf "$dest"
+  mkdir -p "$dest/blobs/sha256"
+
+  local layout entry entries=()
+  for layout in "$@"; do
+    cp -p "$layout"/blobs/sha256/* "$dest/blobs/sha256/"
+    # The one entry of a layout crane wrote for one platform: media type,
+    # digest, size and platform. The reference crane annotated it with goes,
+    # since the index above it carries the reference for the whole
+    entry=$($YQ_CMD -p json -o json -I0 '.manifests[0] | del(.annotations)' < "$layout/index.json")
+    [[ -z $entry || $entry = "null" ]] && die "[ERROR] Layout[\"$layout\"] holds no manifest to merge"
+    entries+=("$entry")
+  done
+
+  local index
+  index=$(printf '{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[%s]}' "$(IFS=,; echo "${entries[*]}")")
+  local digest size
+  digest=$(printf '%s' "$index" | sha256sum | cut -d' ' -f1)
+  size=$(printf '%s' "$index" | wc -c)
+  printf '%s' "$index" > "$dest/blobs/sha256/$digest"
+
+  printf '{"schemaVersion":2,"manifests":[{"mediaType":"application/vnd.oci.image.index.v1+json","digest":"sha256:%s","size":%s,"annotations":{"org.opencontainers.image.ref.name":"%s"}}]}\n' \
+    "$digest" "$size" "$full_name" > "$dest/index.json"
+  printf '{"imageLayoutVersion": "1.0.0"}\n' > "$dest/oci-layout"
 
   return 0
 }

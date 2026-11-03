@@ -4,12 +4,15 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] --os os --out-path path [--root path]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] --os os --out-path path [--arch arch] [--root path]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
 --os            ubuntu22.04, ubuntu24.04, rhel8, rhel9 or rhel10, which must be what this machine runs
---out-path      Directory to fill, laid out as bundle/linux-packages/<os> is
+--out-path      Directory to fill, laid out as bundle/linux-packages/<os>/<arch> is
+--arch          The architecture to resolve for, as uname -m names it (x86_64, aarch64). Defaults to
+                this machine's, and has to be this machine's: the package manager resolves for the
+                architecture it runs on, and the roots have to be of it too
 --root          Resolve against the package database under this directory instead of this
                 machine's. Given more than once, every root is resolved and the directories hold
                 the union, which is how a closure covers both the oldest image and a minimal install
@@ -20,6 +23,7 @@ EOF
 parse_params() {
   os=""
   out_path=""
+  arch=""
   roots=()
 
   while :; do
@@ -40,6 +44,11 @@ parse_params() {
     --root)
       [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
       roots+=("${2-}")
+      shift
+      ;;
+    --arch)
+      [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
+      arch="${2-}"
       shift
       ;;
     -?*) die "[ERROR] Unknown option: $1" ;;
@@ -90,8 +99,12 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
-# Fills bundle/linux-packages/<os> from the repositories, on a machine that runs
-# the OLDEST release of that os the installer supports.
+# Fills bundle/linux-packages/<os>/<arch> from the repositories, on a machine
+# that runs the OLDEST release of that os the installer supports, of that
+# architecture. A closure is per architecture as much as per os: the packages
+# are different files, the repositories keep them apart, and the package
+# manager resolves for the architecture it runs on. So the machine is of the
+# architecture it resolves for, and so are the roots it is given
 #
 # Each directory is one principal package and whatever this machine lacks for
 # it, resolved by the package manager against what is installed here. Run on the
@@ -216,8 +229,16 @@ root=""
 
 release_meta_path="$SCRIPT_DIR_PATH"/../release.yml
 
+# shellcheck source=arch-common.sh
+source "$SCRIPT_DIR_PATH/arch-common.sh"
+
 # rpm or deb, after the os
 family=""
+
+# What the repositories of each family call the architecture: dnf takes what
+# uname -m says, apt and the nvidia repository take the debian name
+rpm_arch=""
+deb_arch=""
 
 # Set by harvest_kernel for the one directory that is allowed to hold a kernel
 take_kernel="false"
@@ -233,6 +254,7 @@ main() {
   esac
 
   [[ -f $release_meta_path ]] || die "[ERROR] No such file or directory of which path is \"$release_meta_path\""
+  require_this_arch
 
   rm -rf "$out_path" "$out_path.baselines"
   mkdir -p "$out_path"
@@ -441,6 +463,20 @@ os_of() {
   return 0
 }
 
+# The package manager resolves for the architecture of this machine, and the
+# mock installs rpm runs against the roots do too, so the closure of an
+# architecture comes from a machine of it. A --root of another architecture
+# would resolve to this machine's packages under the other's name
+require_this_arch() {
+  [[ -z $arch ]] && arch=$(uname -m)
+  rpm_arch=$(rpm_arch_of "$arch") || die "[ERROR] Architecture[\"$arch\"] is not one this installer knows. --arch takes x86_64 or aarch64"
+  deb_arch=$(oci_arch_of "$arch")
+
+  [[ $(uname -m) = "$arch" ]] && return 0
+
+  die "[ERROR] This machine is $(uname -m) and the packages of $arch have to be resolved on a machine of that architecture"
+}
+
 require_this_os() {
   [[ $(os_of /etc/os-release) = "$os" ]] ||
     die "[ERROR] This machine runs $(grep -oP '^PRETTY_NAME="\K[^"]+' /etc/os-release) and the packages of $os have to be resolved on a machine that runs it, or with the repositories of one"
@@ -499,7 +535,7 @@ add_docker_repo() {
     codename=$(grep -oP '^VERSION_CODENAME=\K\w+' /etc/os-release)
     install -m 0755 -d /etc/apt/keyrings
     curl -fsSL "$DOCKER_DEB_REPO_URL/gpg" -o /etc/apt/keyrings/docker.asc
-    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] $DOCKER_DEB_REPO_URL $codename stable" > /etc/apt/sources.list.d/docker.list
+    echo "deb [arch=$deb_arch signed-by=/etc/apt/keyrings/docker.asc] $DOCKER_DEB_REPO_URL $codename stable" > /etc/apt/sources.list.d/docker.list
     apt-get -q update >/dev/null
     ;;
   esac
@@ -657,7 +693,7 @@ download_rpm() {
     while read -r name version; do
       [[ -z $name ]] && continue
       spec="$name-$version"
-      newest=$(dnf "${pm_opts[@]}" -q repoquery --latest-limit 1 --arch x86_64,noarch --queryformat '%{version}-%{release}' "$name" 2>/dev/null | tail -1)
+      newest=$(dnf "${pm_opts[@]}" -q repoquery --latest-limit 1 --arch "$rpm_arch",noarch --queryformat '%{version}-%{release}' "$name" 2>/dev/null | tail -1)
       if [[ ${version#*:} = "$newest" ]]; then
         msg "[INFO] Directory[\"$dir\"] moves package[\"$name\"] down to the newest build the repository has, $newest, which the baseline is past"
         continue
@@ -720,7 +756,7 @@ stale_rpms() {
   [[ ${#names[@]} = 0 ]] && return 0
 
   local newest
-  newest=$(dnf "${pm_opts[@]}" -q repoquery --latest-limit 1 --arch x86_64,noarch \
+  newest=$(dnf "${pm_opts[@]}" -q repoquery --latest-limit 1 --arch "$rpm_arch",noarch \
     --queryformat '%{name} %{version}-%{release}' "${names[@]}" 2>/dev/null)
 
   local name vr arch
@@ -768,10 +804,10 @@ fetch_named_rpm() {
 
   local spec name
   for spec in "$@"; do
-    name=$(dnf "${pm_opts[@]}" -q repoquery --latest-limit 1 --arch x86_64,noarch --queryformat '%{name}' "$spec" 2>/dev/null | head -1)
+    name=$(dnf "${pm_opts[@]}" -q repoquery --latest-limit 1 --arch "$rpm_arch",noarch --queryformat '%{name}' "$spec" 2>/dev/null | head -1)
     [[ -z $name ]] && die "[ERROR] The repositories of this machine hold no package[\"$spec\"]"
     grep -qx "$name" <<< "$in_scratch" && continue
-    output=$(dnf "${pm_opts[@]}" -q download --destdir "$scratch" --arch x86_64,noarch "$spec" 2>&1) ||
+    output=$(dnf "${pm_opts[@]}" -q download --destdir "$scratch" --arch "$rpm_arch",noarch "$spec" 2>&1) ||
       die "[ERROR] Fail to download package[\"$spec\"]. dnf said:\n$(tail -n 20 <<< "$output")"
   done
 
@@ -1007,7 +1043,7 @@ verify_fix_rpm() {
       # is otherwise answered by the mls policy rather than the targeted one
       # the image runs; else the first
       local providers
-      providers=$(dnf -q repoquery --arch x86_64,noarch --queryformat '%{name}' --whatprovides "$need" 2>/dev/null | sort -u)
+      providers=$(dnf -q repoquery --arch "$rpm_arch",noarch --queryformat '%{name}' --whatprovides "$need" 2>/dev/null | sort -u)
       [[ -z $providers ]] && die "[ERROR] Directory[\"$dir\"] wants \"$need\" on baseline $i and the repositories hold nothing that provides it"
       name=""
       local candidate
@@ -1032,7 +1068,7 @@ verify_fix_rpm() {
     local spec=$name
     grep -q "^  $name: \"" "$release_meta_path" && spec="$name-$(declared_version "$name")"
     msg "[INFO] Directory[\"$dir\"] on baseline $i: \"$need\" is needed by $by. fetching package[\"$spec\"] into it"
-    output=$(dnf -q download --destdir "$out_path/$dir" --arch x86_64,noarch "$spec" 2>&1) ||
+    output=$(dnf -q download --destdir "$out_path/$dir" --arch "$rpm_arch",noarch "$spec" 2>&1) ||
       die "[ERROR] Fail to download package[\"$spec\"]. dnf said:\n$(tail -n 20 <<< "$output")"
   done <<< "$result"
 
@@ -1174,7 +1210,7 @@ EOF
   local target="$out_path/$dir"
   mkdir -p "$target"
   local output
-  output=$(dnf -y -q download --repo "$repo_id" --destdir "$target" --arch x86_64,noarch "${specs[@]}" 2>&1) ||
+  output=$(dnf -y -q download --repo "$repo_id" --destdir "$target" --arch "$rpm_arch",noarch "${specs[@]}" 2>&1) ||
     die "[ERROR] Fail to download packages[\"${specs[*]}\"] from repository[\"$url\"]. dnf said:\n$(tail -n 20 <<< "$output")"
   rm -f "$repo_path"
 
@@ -1206,13 +1242,13 @@ fetch_from_repo_deb() {
   *) key_url="$NVIDIA_REPO_URL/gpgkey" ;;
   esac
   # The nvidia repository keeps one directory per architecture
-  [[ $list_id = kubernetes-* ]] || url="$url/amd64"
+  [[ $list_id = kubernetes-* ]] || url="$url/$deb_arch"
 
   local key_path="/etc/apt/keyrings/$list_id.asc"
   local list_path="/etc/apt/sources.list.d/$list_id.list"
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL "$key_url" -o "$key_path" || die "[ERROR] Fail to fetch the signing key of repository[\"$url\"] from \"$key_url\""
-  echo "deb [arch=amd64 signed-by=$key_path] $url /" > "$list_path"
+  echo "deb [arch=$deb_arch signed-by=$key_path] $url /" > "$list_path"
   apt-get -q update >/dev/null || die "[ERROR] Fail to read repository[\"$url\"]"
 
   local target="$out_path/$dir"
@@ -1264,10 +1300,10 @@ report() {
       msg "[INFO] ${dir#"$out_path"/}: nothing the oldest release lacks"
       continue
     fi
-    msg "[INFO] ${dir#"$out_path"/} ($count): $(find "$dir" -name "*.$family" -printf '%f ' | sed -e 's/\.\(x86_64\|noarch\)\.rpm//g' -e 's/_\(amd64\|all\)\.deb//g' -e 's/%3a/:/g')"
+    msg "[INFO] ${dir#"$out_path"/} ($count): $(find "$dir" -name "*.$family" -printf '%f ' | sed -e "s/\.\($rpm_arch\|noarch\)\.rpm//g" -e "s/_\($deb_arch\|all\)\.deb//g" -e 's/%3a/:/g')"
   done < <(find "$out_path" -mindepth 1 -type d -not -path "$out_path/k8s" | sort)
 
-  msg "[INFO] $(du -sh "$out_path" | cut -f1) under \"$out_path\", laid out as bundle/linux-packages/$os"
+  msg "[INFO] $(du -sh "$out_path" | cut -f1) under \"$out_path\", laid out as bundle/linux-packages/$os/$arch"
 
   # What each baseline produced is kept until here, so that a refusal above
   # can be read back to the baseline that caused it

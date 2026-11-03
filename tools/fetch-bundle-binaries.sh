@@ -4,17 +4,21 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--out-path path]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--arch arch] [--out-path path]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
---out-path      Directory to fill with the binaries release.yml declares, defaults to bundle/bin of
-                this tree. It is emptied first
+--arch          The architecture to fetch for, as uname -m names it (x86_64, aarch64). Defaults to
+                this machine's. This machine has to be able to run binaries of it, since each one
+                is asked its version
+--out-path      Directory to fill with the binaries release.yml declares, defaults to bundle/bin/<arch>
+                of this tree. It is emptied first
 EOF
   exit
 }
 
 parse_params() {
+  arch=""
   out_path=""
 
   while :; do
@@ -22,6 +26,11 @@ parse_params() {
     -h | --help) print_usage ;;
     -v | --verbose) set -x ;;
     --no-color) NO_COLOR=1 ;;
+    --arch)
+      [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
+      arch="${2-}"
+      shift
+      ;;
     --out-path)
       [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
       out_path="${2-}"
@@ -81,21 +90,32 @@ parse_params "$@"
 # a checksum published next to a download is changed by whoever changes the
 # download, and what the release scheme needs to know is that the file called
 # "helm" in the bundle is the helm the release names. The binary itself is the
-# only thing that can say so. This therefore has to run on linux/amd64, which
-# is what the binaries are built for and what the nodes run
+# only thing that can say so. This therefore has to run on a machine that can
+# run binaries of the architecture it fetches for: one of that architecture,
+# or one with a user mode emulator registered for it.
+#
+# One architecture per run, into bundle/bin/<arch>, since the binaries of one
+# architecture are asked on a machine of it and the bundle of two architectures
+# is assembled from two such runs
 KI_ROOT_PATH=$(cd "$SCRIPT_DIR_PATH/.." &>/dev/null && pwd -P)
 RELEASE_META_PATH="$KI_ROOT_PATH"/release.yml
 
 # shellcheck source=../scripts/all-node/linux-bin/linux-bin-common.sh
 source "$SCRIPT_DIR_PATH/../scripts/all-node/linux-bin/linux-bin-common.sh"
+# shellcheck source=arch-common.sh
+source "$SCRIPT_DIR_PATH/arch-common.sh"
 
 work_path=""
+# What the projects that publish the binaries call the architecture
+oci_arch=""
 
 main() {
   [[ -f $RELEASE_META_PATH ]] || die "[ERROR] No such file or directory of which path is \"$RELEASE_META_PATH\""
-  [[ -z $out_path ]] && out_path="$KI_ROOT_PATH/bundle/bin"
+  [[ -z $arch ]] && arch=$(uname -m)
+  oci_arch=$(oci_arch_of "$arch") || die "[ERROR] Architecture[\"$arch\"] is not one this installer knows. --arch takes x86_64 or aarch64"
+  [[ -z $out_path ]] && out_path="$KI_ROOT_PATH/bundle/bin/$arch"
 
-  require_linux_amd64
+  require_can_run
   require_command curl
   require_command tar
 
@@ -114,16 +134,16 @@ main() {
   done <<< "$declared"
 
   msg ""
-  msg "[INFO] $(wc -l <<< "$declared") binaries under \"$out_path\", each the version release.yml declares"
+  msg "[INFO] $(wc -l <<< "$declared") binaries of $arch under \"$out_path\", each the version release.yml declares"
 
   return 0
 }
 
 # The binaries are asked which version they are, so they have to run here
-require_linux_amd64() {
-  [[ $(uname -s) = "Linux" && $(uname -m) = "x86_64" ]] && return 0
+require_can_run() {
+  [[ $(uname -s) = "Linux" ]] && can_run_arch "$arch" && return 0
 
-  die "[ERROR] This runs on linux/amd64, which the binaries of the bundle are built for, and this machine is $(uname -s)/$(uname -m)"
+  die "[ERROR] This machine is $(uname -s)/$(uname -m) and can not run the $arch binaries it would fetch, which have to be asked their version. Run this on a machine of that architecture, or register qemu-user-static with binfmt_misc"
 }
 
 require_command() {
@@ -164,26 +184,33 @@ fetch_binary() {
   local name=$1
   local version=$2
 
+  # crane alone names x86_64 as uname does and arm64 as docker does
+  local crane_arch
+  case $arch in
+  x86_64) crane_arch="x86_64" ;;
+  *) crane_arch="$oci_arch" ;;
+  esac
+
   local url member
   case $name in
   helm)
-    url="https://get.helm.sh/helm-v$version-linux-amd64.tar.gz"
-    member="linux-amd64/helm"
+    url="https://get.helm.sh/helm-v$version-linux-$oci_arch.tar.gz"
+    member="linux-$oci_arch/helm"
     ;;
   etcdctl | etcdutl)
-    url="https://github.com/etcd-io/etcd/releases/download/v$version/etcd-v$version-linux-amd64.tar.gz"
-    member="etcd-v$version-linux-amd64/$name"
+    url="https://github.com/etcd-io/etcd/releases/download/v$version/etcd-v$version-linux-$oci_arch.tar.gz"
+    member="etcd-v$version-linux-$oci_arch/$name"
     ;;
   nerdctl)
-    url="https://github.com/containerd/nerdctl/releases/download/v$version/nerdctl-$version-linux-amd64.tar.gz"
+    url="https://github.com/containerd/nerdctl/releases/download/v$version/nerdctl-$version-linux-$oci_arch.tar.gz"
     member="nerdctl"
     ;;
   yq)
-    url="https://github.com/mikefarah/yq/releases/download/v$version/yq_linux_amd64"
+    url="https://github.com/mikefarah/yq/releases/download/v$version/yq_linux_$oci_arch"
     member=""
     ;;
   crane)
-    url="https://github.com/google/go-containerregistry/releases/download/v$version/go-containerregistry_Linux_x86_64.tar.gz"
+    url="https://github.com/google/go-containerregistry/releases/download/v$version/go-containerregistry_Linux_$crane_arch.tar.gz"
     member="crane"
     ;;
   *)

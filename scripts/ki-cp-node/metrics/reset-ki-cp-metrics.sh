@@ -132,7 +132,7 @@ import_ki_opt_vars() {
 # Only yq. Nothing here renders a template, and the venv that would do it is
 # one more directory this has to find on a node it is meant to be able to clean
 setup_cmd_vars() {
-  yq_cmd="$ki_opt_bundle_path/bin/yq"
+  yq_cmd="$ki_opt_bundle_path/bin/$(uname -m)/yq"
 }
 
 validate_ki_opt_directory() {

@@ -44,6 +44,49 @@
 # development cluster and can only be rebuilt from there.
 version: "1.36.0-SNAPSHOT"
 
+# The cpu architectures the bundle of this release is built for, per operating
+# system, named the way uname -m names them: x86_64 for what kubernetes and
+# debian call amd64, aarch64 for what they call arm64.
+#
+# Everything in the bundle that runs is built for one architecture - the
+# binaries of bundle/bin, the python wheels, the packages of linux-packages,
+# the images the ki cp services run on - so the bundle holds one directory per
+# architecture it is built for, under bin, under each os of linux-packages,
+# under each python of python-packages and under ki-cp-service-images, named
+# as listed here. A node finds its own by asking uname -m and nothing else,
+# which is why the names are the ones uname -m answers rather than the ones
+# kubernetes uses: a mapping would have to be carried by every script that
+# opens the bundle, and the first of those runs before anything else is on the
+# node. The images of the registry are not per architecture: each is pulled for
+# every architecture listed here and the registry serves the index, so a node
+# of either pulls what it can run.
+#
+# Declared per os because a closure is resolved per os and per architecture, on
+# a machine of both, and not every os is built for every architecture: the
+# arm64 work starts with ubuntu and reaches rhel later, if at all. The
+# architectures of the whole bundle - what bin, the wheels and the images are
+# built for - are every name that appears here. assemble-bundle.sh requires
+# linux-packages/<os>/<arch> for exactly these pairs and the rest for the
+# union, install-packages.sh refuses a node whose pair is not here, naming it,
+# and the entry checks ask the pair before anything is unpacked.
+#
+# A node of an os or an architecture not listed gets nothing it can run.
+# Nothing used to say so, and the first thing such a node did with the bundle
+# was to fail with "exec format error" from the first binary setup-venv.sh
+# handed it, long after the archive was copied across and with nothing in the
+# message about why. So this is checked before anything is unpacked, on every
+# machine the bundle reaches: setup.sh and upgrade.sh check the control node,
+# and setup-k8s-installer.yml and upgrade-k8s-installer.yml ask every other
+# node before the payload is copied to it. Each row is written as a flow
+# sequence on its own line, because setup.sh reads this block with awk before
+# the yq of the bundle is available, the way it reads version with grep
+architectures:
+  rhel8: ["x86_64"]
+  rhel9: ["x86_64"]
+  rhel10: ["x86_64"]
+  ubuntu22.04: ["x86_64", "aarch64"]
+  ubuntu24.04: ["x86_64", "aarch64"]
+
 # The kubernetes minors this release can deploy, and the patch each one is pinned
 # to. k8s_minor_version of vars.yml names one of these keys and k8s_version of
 # constant-vars.yml is what that key holds, so a cluster only ever runs a patch

@@ -74,7 +74,7 @@ SRC_RELEASE_META_PATH="$SCRIPT_DIR_PATH"/release.yml
 # The bundle of the release being installed is still an archive at this point, so
 # this is the yq of the release being replaced. Everything read with it is read
 # before that bundle is unpacked over it
-YQ_CMD="$KI_OPT_BUNDLE_PATH"/bin/yq
+YQ_CMD="$KI_OPT_BUNDLE_PATH"/bin/$(uname -m)/yq
 
 # Kept in sync with ki_release_snapshot_suffix of group_vars/all/constant-vars.yml
 SNAPSHOT_SUFFIX="-SNAPSHOT"
@@ -92,6 +92,7 @@ main() {
   # to be known before anything is unpacked
   version=$(grep -oP '^version: "\K[^"]+' < "$SRC_RELEASE_META_PATH")
   [[ -z $version ]] && die "[ERROR] File[\"$SRC_RELEASE_META_PATH\"] has no version"
+  require_architecture_supported
   installed_version=$(<"$KI_OPT_RELEASE_PATH")
 
   src_bundle_archive_path="$SCRIPT_DIR_PATH/bundle-$version.tgz"
@@ -131,6 +132,53 @@ require_root() {
   [[ $(id -u) = "0" ]] && return 0
 
   die "[ERROR] This script must be run as root"
+}
+
+# Whether the bundle is built for this machine, which release.yml says per os in
+# the words uname -m answers. The bundle holds nothing a machine of another
+# architecture can run, and nothing of an os it was not resolved for, and until
+# this was asked such a machine found out from the first binary it was handed -
+# "exec format error" from somewhere inside setup-venv.sh, after the archive
+# had been unpacked, with nothing in the message about why. So it is asked
+# before anything is unpacked, and read with awk the way version is read with
+# grep, since the yq that would read it is inside the bundle this has not
+# unpacked yet. setup-k8s-installer.yml asks the managed nodes the same
+# question before it copies the payload to them.
+#
+# The os is named the way linux-packages names it: the id and the major for
+# rhel, the id and the whole version for ubuntu
+require_architecture_supported() {
+  grep -q '^architectures:$' < "$SRC_RELEASE_META_PATH" ||
+    die "[ERROR] File[\"$SRC_RELEASE_META_PATH\"] has no architectures block. it is written as architectures: with one \"  <os>: [\"<arch>\", ...]\" line per os"
+
+  local id os_version
+  id=$(grep -oP '^ID="?\K\w+(?="?$)' /etc/os-release || true)
+  os_version=$(grep -oP '^VERSION_ID="?\K[0-9.]+(?="?$)' /etc/os-release || true)
+  [[ $id = "rhel" ]] && os_version=${os_version%%.*}
+  local os="$id$os_version"
+  local machine
+  machine=$(uname -m)
+
+  local carried
+  carried=$(awk -v os="$os" '
+    $0 == "architectures:" { in_block = 1; next }
+    in_block && /^  [A-Za-z0-9._-]+: \[.*\]$/ {
+      name = $1; sub(/:$/, "", name)
+      if (name != os) next
+      list = $0; sub(/^[^[]*\[/, "", list); sub(/\].*$/, "", list); gsub(/[" ]/, "", list); gsub(/,/, " ", list)
+      print list; exit
+    }
+    in_block && /^[^ #]/ { exit }
+  ' < "$SRC_RELEASE_META_PATH")
+  [[ -z $carried ]] &&
+    die "[ERROR] This machine runs $os and the bundle of release[\"$version\"] carries no packages of it. architectures of release.yml lists the operating systems it was built for"
+
+  local name
+  for name in $carried; do
+    [[ $name = "$machine" ]] && return 0
+  done
+
+  die "[ERROR] This machine is $machine running $os and the bundle of release[\"$version\"] carries $os for $carried only. nothing in it can run here, so it is refused before it is unpacked"
 }
 
 require_setup() {

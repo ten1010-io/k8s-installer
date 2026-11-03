@@ -87,7 +87,12 @@ KI_OPT_SCRIPTS_PATH="$ki_opt_root_path"/scripts
 KI_OPT_BUNDLE_PATH="$ki_opt_root_path"/bundle
 KI_OPT_VENV_PATH="$ki_opt_root_path"/venv
 
-YQ_CMD="$KI_OPT_BUNDLE_PATH"/bin/yq
+# What uname -m answers, which is the name of this machine's directory under
+# bin, under each os of linux-packages and under each python of
+# python-packages. See release.yml
+ARCH=$(uname -m)
+
+YQ_CMD="$KI_OPT_BUNDLE_PATH"/bin/$ARCH/yq
 
 os_info=""
 os_distribution=""
@@ -131,6 +136,17 @@ main() {
 # An upgrade ships new versions of the python packages, and pip can not be relied
 # on to reconcile an existing environment offline, so the environment is thrown
 # away and built again from the packages of the new release
+# The wheels of this python are built per architecture and the bundle carries
+# the architectures release.yml lists. A machine whose directory is not there
+# is refused by name rather than by pip finding no distribution
+require_python_packages_bundled() {
+  local python=$1
+
+  [[ -d "$KI_OPT_BUNDLE_PATH/python-packages/$python/$ARCH" ]] && return 0
+
+  die "[ERROR] The bundle carries no python packages of $python for $ARCH: directory[\"python-packages/$python/$ARCH\"] is not in it. architectures of release.yml says what the bundle is built for"
+}
+
 remove_venv_if_forced() {
   [[ $force = "false" ]] && return 0
   [[ ! -e $KI_OPT_VENV_PATH ]] && return 0
@@ -143,7 +159,7 @@ remove_venv_if_forced() {
 
 ubuntu2204_setup() {
   if [[ $(ubuntu2204_is_installed python3\.10-venv) = "false" ]]; then
-    local base="$KI_OPT_BUNDLE_PATH/linux-packages/ubuntu22.04"
+    local base="$KI_OPT_BUNDLE_PATH/linux-packages/ubuntu22.04/$ARCH"
     export DEBIAN_FRONTEND=noninteractive
     ubuntu_plan_dirs "$base/python3.10" "$base/python3" "$base/python3-distutils" "$base/python3.10-venv"
     ubuntu_install_dir "$base/python3.10"
@@ -164,11 +180,12 @@ ubuntu2204_setup() {
   else
     msg "[INFO] K8s installer will create virtual environment[\"venv\"]"
 
+    require_python_packages_bundled python3.10
     python3.10 -m venv "$KI_OPT_VENV_PATH"
-    "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.10/netifaces netifaces
-    "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.10/jinja2-cli jinja2-cli PyYAML
-    "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.10/ansible ansible jmespath
-    "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.10/pydantic pydantic
+    "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.10/$ARCH/netifaces netifaces
+    "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.10/$ARCH/jinja2-cli jinja2-cli PyYAML
+    "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.10/$ARCH/ansible ansible jmespath
+    "$KI_OPT_VENV_PATH"/bin/pip3.10 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.10/$ARCH/pydantic pydantic
   fi
 
   validate_venv_directory
@@ -182,7 +199,7 @@ ubuntu2204_setup() {
 
 ubuntu2404_setup() {
   if [[ $(ubuntu2404_is_installed python3\.12-venv) = "false" ]]; then
-    local base="$KI_OPT_BUNDLE_PATH/linux-packages/ubuntu24.04"
+    local base="$KI_OPT_BUNDLE_PATH/linux-packages/ubuntu24.04/$ARCH"
     export DEBIAN_FRONTEND=noninteractive
     ubuntu_plan_dirs "$base/python3.12" "$base/python3.12-venv"
     ubuntu_install_dir "$base/python3.12"
@@ -195,11 +212,12 @@ ubuntu2404_setup() {
   else
     msg "[INFO] K8s installer will create virtual environment[\"venv\"]"
 
+    require_python_packages_bundled python3.12
     python3.12 -m venv "$KI_OPT_VENV_PATH"
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/netifaces netifaces
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/jinja2-cli jinja2-cli PyYAML
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/ansible ansible jmespath
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/pydantic pydantic
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/$ARCH/netifaces netifaces
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/$ARCH/jinja2-cli jinja2-cli PyYAML
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/$ARCH/ansible ansible jmespath
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/$ARCH/pydantic pydantic
   fi
 
   validate_venv_directory
@@ -213,7 +231,7 @@ ubuntu2404_setup() {
 
 rhel8_setup() {
   if [[ $(rhel_is_installed python3\.12) = "false" ]]; then
-    rhel_install_dir "$KI_OPT_BUNDLE_PATH/linux-packages/rhel8/python3.12"
+    rhel_install_dir "$KI_OPT_BUNDLE_PATH/linux-packages/rhel8/$ARCH/python3.12"
   fi
 
   if [[ -e $KI_OPT_VENV_PATH ]]; then
@@ -221,11 +239,12 @@ rhel8_setup() {
   else
     msg "[INFO] K8s installer will create virtual environment[\"venv\"]"
 
+    require_python_packages_bundled python3.12
     python3.12 -m venv "$KI_OPT_VENV_PATH"
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/netifaces netifaces
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/jinja2-cli jinja2-cli PyYAML
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/ansible ansible jmespath
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/pydantic pydantic
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/$ARCH/netifaces netifaces
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/$ARCH/jinja2-cli jinja2-cli PyYAML
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/$ARCH/ansible ansible jmespath
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/$ARCH/pydantic pydantic
   fi
 
   validate_venv_directory
@@ -255,7 +274,7 @@ rhel8_setup() {
 # an openssl at least as new as the ones the directory brings, and downgrading
 # them breaks the packages of the node pinned to them, openssl-devel among them
 rhel9_setup() {
-  rhel_install_dir "$KI_OPT_BUNDLE_PATH/linux-packages/rhel9/python3.12"
+  rhel_install_dir "$KI_OPT_BUNDLE_PATH/linux-packages/rhel9/$ARCH/python3.12"
 
   rhel_create_venv
 
@@ -339,11 +358,12 @@ rhel_create_venv() {
   else
     msg "[INFO] K8s installer will create virtual environment[\"venv\"]"
 
+    require_python_packages_bundled python3.12
     python3.12 -m venv "$KI_OPT_VENV_PATH"
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/netifaces netifaces
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/jinja2-cli jinja2-cli PyYAML
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/ansible ansible jmespath
-    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/pydantic pydantic
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/$ARCH/netifaces netifaces
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/$ARCH/jinja2-cli jinja2-cli PyYAML
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/$ARCH/ansible ansible jmespath
+    "$KI_OPT_VENV_PATH"/bin/pip3.12 install --no-index -f "$KI_OPT_BUNDLE_PATH"/python-packages/python3.12/$ARCH/pydantic pydantic
   fi
 
   validate_venv_directory

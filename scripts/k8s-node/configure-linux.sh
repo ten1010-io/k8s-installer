@@ -217,7 +217,7 @@ get_os_version() {
 }
 
 setup_cmd_vars() {
-  yq_cmd="$ki_opt_bundle_path/bin/yq"
+  yq_cmd="$ki_opt_bundle_path/bin/$(uname -m)/yq"
   jinja2_cmd="$ki_opt_venv_path/bin/jinja2"
 }
 

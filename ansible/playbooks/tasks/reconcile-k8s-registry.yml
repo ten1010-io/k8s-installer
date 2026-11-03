@@ -1,0 +1,34 @@
+# Brings the registry of every ki cp node to what the bundle on that node holds.
+#
+# The script is asked every time and decides for itself: it opens its write
+# window and pushes when the compose file it would render differs from the one
+# the service runs under, or when the images of the bundle are not the ones the
+# storage was last filled from, and otherwise leaves the registry running as it
+# is. So this is called without a condition, and what it costs a run with
+# nothing to do is one "docker compose up -d" that changes nothing.
+#
+# upgrade-cluster.yml calls it first, before any node is upgraded: kubeadm pulls
+# the images of the new version while it upgrades, and on an air gapped cluster
+# there is nowhere else for them to come from, so a node upgraded before this
+# ran would have nothing to pull.
+#
+# update-cluster.yml calls it as well, whether or not a variable changed. It
+# used to reach the script only through the class["service"] block of
+# apply-service-var-changes.yml, which is skipped when no such variable changed,
+# so a bundle that was replaced under a release that kept its name - a snapshot
+# redeployed with upgrade.sh - left the registry serving what the bundle before
+# it held, and a node added afterwards was told to pull images that were not
+# there. The registry answers to the bundle rather than to the variables, and
+# the script already knew how to tell.
+#
+# One node at a time. Every ki cp node runs a registry of its own behind the
+# vip, and taking them all down together would leave nothing answering
+- hosts: ki_cp_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute setup-k8s-registry.sh --update
+      shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-registry/setup-k8s-registry.sh {{ vars_path_arg }} --update"

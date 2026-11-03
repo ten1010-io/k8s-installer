@@ -79,6 +79,9 @@ RELEASE_META_PATH="$KI_ROOT_PATH"/release.yml
 README_PATH="$KI_ROOT_PATH"/README.adoc
 CI_ANSIBLE_REQUIREMENTS_PATH="$KI_ROOT_PATH"/tools/ci-requirements-ansible.txt
 
+# shellcheck source=arch-common.sh
+source "$SCRIPT_DIR_PATH/arch-common.sh"
+
 MARKER_PREFIX="// check-release-docs: "
 
 main() {
@@ -92,12 +95,13 @@ main() {
     check_block "python_packages $python" || failed="true"
   done
   check_ansible_core_pins || failed="true"
+  check_architectures || failed="true"
 
   if [[ $failed = "true" ]]; then
     die "[ERROR] File[\"$README_PATH\"] and file[\"$RELEASE_META_PATH\"] disagree. release.yml is where a version is decided, so correct the table unless what is wrong is the release file itself"
   fi
 
-  msg "[INFO] README.adoc and $(basename "$CI_ANSIBLE_REQUIREMENTS_PATH") agree with release.yml on every declared component"
+  msg "[INFO] README.adoc and $(basename "$CI_ANSIBLE_REQUIREMENTS_PATH") agree with release.yml on every declared component and architecture"
 
   return 0
 }
@@ -185,6 +189,67 @@ check_block() {
       msg "[ERROR] ${block}[\"$name\"] is listed as version[\"$version\"] in the table of README.adoc and release.yml declares no such component"
       ok="false"
     fi
+  done <<< "$tabled"
+
+  [[ $ok = "true" ]] && return 0
+
+  return 1
+}
+
+# The architectures a release is built for live in more than one place too:
+# release.yml names them per os, arch-common.sh knows what the registries call
+# each, and README.adoc shows both in a table. The table is read from under its
+# marker, and every row has to be an architecture some os is carried for, paired
+# with the name arch-common.sh gives it; every architecture that appears has to
+# be a row
+check_architectures() {
+  local declared
+  declared=$(awk '
+    $0 == "architectures:" { in_block = 1; next }
+    in_block && /^  [A-Za-z0-9._-]+: \[.*\]$/ {
+      list = $0; sub(/^[^[]*\[/, "", list); sub(/\].*$/, "", list); gsub(/[" ]/, "", list)
+      n = split(list, arches, ",")
+      for (i = 1; i <= n; i++) if (!(arches[i] in seen)) { seen[arches[i]] = 1; print arches[i] }
+      next
+    }
+    in_block { exit }
+  ' < "$RELEASE_META_PATH")
+  [[ -z $declared ]] &&
+    die "[ERROR] File[\"$RELEASE_META_PATH\"] declares no architectures this can read. It is expected as architectures: with one \"  <os>: [\"<arch>\", ...]\" line per os"
+
+  local tabled
+  tabled=$(awk -v marker="${MARKER_PREFIX}architectures" '
+    $0 == marker { found = 1; next }
+    found && $0 == "|===" {
+      in_table = !in_table
+      if (!in_table) { exit }
+      next
+    }
+    in_table && $0 ~ /^\|[a-z0-9_]+ \|[a-z0-9]+$/ { print substr($1, 2), substr($2, 2) }
+  ' < "$README_PATH")
+  [[ -z $tabled ]] &&
+    die "[ERROR] File[\"$README_PATH\"] carries no table with a row under marker[\"${MARKER_PREFIX}architectures\"]. Rows are expected as \"|<uname -m> |<kubernetes name>\""
+
+  local ok="true"
+  local name oci found
+  while read -r name; do
+    oci=$(oci_arch_of "$name") || { msg "[ERROR] architectures of release.yml name [\"$name\"] and arch-common.sh has no row for it"; ok="false"; continue; }
+    found=$(lookup "$name" "$tabled")
+    if [[ -z $found ]]; then
+      msg "[ERROR] architectures of release.yml name [\"$name\"] and the table of README.adoc does not list it"
+      ok="false"
+      continue
+    fi
+    if [[ $found != "$oci" ]]; then
+      msg "[ERROR] architecture[\"$name\"] is called $oci by arch-common.sh and $found in the table of README.adoc"
+      ok="false"
+    fi
+  done <<< "$declared"
+
+  while read -r name oci; do
+    grep -qxF "$name" <<< "$declared" && continue
+    msg "[ERROR] architecture[\"$name\"] is listed in the table of README.adoc and no os of release.yml is carried for it"
+    ok="false"
   done <<< "$tabled"
 
   [[ $ok = "true" ]] && return 0

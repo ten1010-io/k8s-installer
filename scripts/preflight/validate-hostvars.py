@@ -98,9 +98,9 @@ KUBEADM_CONTROL_PLANE_VOLUME_NAMES = frozenset({
 
 
 # The kernel command line arguments the vfio-pci component derives from the
-# devices a node is given and writes itself. Named in kernel_cmdline_extra_args
-# as well, they would have two writers
-VFIO_PCI_OWNED_KERNEL_ARGS = frozenset({"intel_iommu", "amd_iommu", "iommu", "vfio-pci.ids"})
+# devices a node is given and writes itself, on x86_64 and on aarch64. Named in
+# kernel_cmdline_extra_args as well, they would have two writers
+VFIO_PCI_OWNED_KERNEL_ARGS = frozenset({"intel_iommu", "amd_iommu", "iommu", "iommu.passthrough", "vfio-pci.ids"})
 
 
 # A user name as useradd accepts one, with the trailing $ of a machine account

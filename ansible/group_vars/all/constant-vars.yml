@@ -61,6 +61,14 @@ ki_release_k8s: "{{ ki_release_k8s_versions[k8s_minor_version | default('')] | d
 # of bundle/bin its version. See release.yml
 ki_release_packages: "{{ (lookup('file', ki_opt_release_meta_path) | from_yaml)['packages'] }}"
 ki_release_binaries: "{{ (lookup('file', ki_opt_release_meta_path) | from_yaml)['binaries'] }}"
+# The architectures the bundle of this release is built for, per os, in the
+# words uname -m answers, and the os named the way linux-packages names it.
+# setup-k8s-installer.yml and upgrade-k8s-installer.yml ask every managed node
+# its os and machine before the payload is copied to it, since a node of a pair
+# not here can run nothing in the bundle and used to find that out from "exec
+# format error" inside setup-venv.sh. setup.sh and upgrade.sh ask the control
+# node the same way. See release.yml
+ki_release_architectures: "{{ (lookup('file', ki_opt_release_meta_path) | from_yaml)['architectures'] }}"
 # A version carrying this suffix is a development build. It keeps its name while
 # its content changes, so a node holding one can only have it replaced by itself.
 # See release.yml. Kept in sync with SNAPSHOT_SUFFIX of setup.sh and upgrade.sh
