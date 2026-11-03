@@ -6,10 +6,17 @@
 # gets what its patch says.
 #
 # What separates this from class["kubelet"] is the drain. kubelet keeps a
-# checkpoint of the cpu manager policy it last ran and refuses to start when the
-# configuration disagrees with it, so the checkpoint has to go, and with it go the
-# exclusive cpus it recorded. Whatever was holding one has to be off the node
-# before that happens, which a restart of kubelet would not arrange.
+# checkpoint of the cpu manager policy it last ran, and another of the memory
+# manager policy and the memory it reserved per numa node, and refuses to start
+# when the configuration disagrees with either, so the checkpoints have to go,
+# and with them go the exclusive cpus and the pinned memory they recorded.
+# Whatever was holding one has to be off the node before that happens, which a
+# restart of kubelet would not arrange.
+#
+# The nodes here are the ones diff-applied-vars.py filed under this class, which
+# on a node running the static memory manager includes a memory reservation that
+# changed: the checkpoint records what was reserved, so there a reservation is a
+# policy change in everything but name
 - hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true

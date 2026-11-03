@@ -79,6 +79,27 @@
           set_fact:
             shell_result: null
 
+    # Which operating system and kernel a node runs, for the one check that is
+    # about a kernel rather than a variable: a kernel older than 5.16 - the 4.18
+    # of rhel 8, the 5.15 ga kernel of ubuntu 22.04 - does not read the per numa
+    # node form of hugepages=, and validate-hostvars.py refuses it there rather
+    # than letting the node boot with a line the kernel drops. The node scripts
+    # ask get-os-info.sh for themselves; this is the same answer, kept so the
+    # control node can ask it about every node at once
+    - name: Setup variable[\"node_os\"]
+      block:
+        - name: Execute get-os-info.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/preflight/get-os-info.sh"
+          register: shell_result
+
+        - name: Set_fact variable[\"node_os\"]
+          set_fact:
+            node_os: "{{ shell_result.stdout | from_yaml }}"
+
+        - name: Remove temporary variable[\"shell_result\"]
+          set_fact:
+            shell_result: null
+
     - name: Setup variable[\"node_timezone\"]
       block:
         - name: Execute get-node-timezone.sh

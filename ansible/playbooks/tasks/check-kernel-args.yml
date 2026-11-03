@@ -19,8 +19,11 @@
   gather_facts: false
   any_errors_fatal: true
   tasks:
+    # --report-hugepages here and nowhere else. This play prints and decides
+    # nothing, so it is the one place a shortfall of hugepages can be said without
+    # being read as a node that wants a reboot - see the script
     - name: Execute check-kernel-args.sh
-      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/kernel-args/check-kernel-args.sh --node {{ inventory_hostname }}"
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/kernel-args/check-kernel-args.sh --node {{ inventory_hostname }} --report-hugepages"
       register: shell_result
 
     # Kept as a fact because the line below has to know whether any node in the
@@ -29,7 +32,7 @@
       set_fact:
         kernel_args_report: "{{ shell_result.stdout | trim }}"
 
-    - name: Report nodes that are not booted with their kernel command line arguments
+    - name: Report nodes that are not booted with their kernel command line arguments, or short of the hugepages they asked for
       debug:
         msg: "{{ shell_result.stdout_lines }}"
       when: kernel_args_report | length > 0

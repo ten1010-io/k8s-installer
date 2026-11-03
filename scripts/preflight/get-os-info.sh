@@ -63,12 +63,22 @@ main() {
   distribution="$(get_distribution)"
   major_version="$(get_major_version "$distribution")"
   minor_version="$(get_minor_version "$distribution" "$major_version")"
+  kernel_version="$(get_kernel_version)"
 
-  print_yaml "$distribution" "$major_version" "$minor_version"
+  print_yaml "$distribution" "$major_version" "$minor_version" "$kernel_version"
 }
 
 get_distribution() {
   grep -oP "^ID=\"?\K\w+(?=\"?$)" /etc/os-release
+}
+
+# The major.minor of the running kernel: 5.15 for 5.15.0-131-generic, 4.18 for
+# 4.18.0-553.el8_10.x86_64. For the one check that is about what the kernel
+# reads rather than which distribution ships it - the same release of ubuntu
+# boots a 5.15 or a 6.8 depending on whether the hwe kernel is installed, and
+# only the number tells them apart
+get_kernel_version() {
+  uname -r | grep -oP "^[0-9]+\.[0-9]+"
 }
 
 get_major_version() {
@@ -125,6 +135,7 @@ print_yaml() {
 distribution: "$1"
 major_version: "$2"
 minor_version: "$3"
+kernel_version: "$4"
 EOF
 }
 

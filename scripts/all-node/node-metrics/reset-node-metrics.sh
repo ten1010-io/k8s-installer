@@ -75,7 +75,7 @@ SERVICE_PATH="$UNIT_DIR_PATH"/$SVC_NAME.service
 TIMER_PATH="$UNIT_DIR_PATH"/$SVC_NAME.timer
 # What the checks of this node write, and the only files this component owns. The
 # certificate expiry beside them belongs to check-cert-expiry.sh and is left alone
-METRICS_FILES=(kernel-args.prom vfio-pci.prom nvidia-cdi.prom k8s-cp-file-drift.prom)
+METRICS_FILES=(kernel-args.prom vfio-pci.prom kubelet-policy.prom nvidia-cdi.prom k8s-cp-file-drift.prom)
 
 ki_opt_root_path=""
 ki_opt_scripts_path=""

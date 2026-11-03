@@ -11,9 +11,9 @@ Available options:
 -v, --verbose   Print script debug info
 --vars-path     File path
 --reset-cpu-manager-state
-                Take the checkpoint of the cpu manager away while kubelet is
-                stopped. Required when the cpu manager policy changed, and
-                refused by kubelet otherwise
+                Take the checkpoints of the cpu manager and the memory manager
+                away while kubelet is stopped. Required when either policy
+                changed, and refused by kubelet otherwise
 EOF
   exit
 }
@@ -88,8 +88,15 @@ ki_etc_kubeadm_path=""
 ki_tmp_root_path=""
 
 # Where kubelet records the cpu manager policy it last ran under, along with the
-# assignments it made. Fixed by kubelet
+# assignments it made, and where the memory manager records the same about
+# itself: its policy, the memory it was told to reserve on each numa node and
+# what it handed out. Both fixed by kubelet, and both go together under one flag,
+# because the flag means "the policies of this node changed" rather than naming
+# a file. The memory manager refuses a checkpoint written under the other policy
+# the way the cpu manager does, naming its file and telling the operator to
+# drain the node and delete it (see docs/impl-notes.adoc for what it says)
 CPU_MANAGER_STATE_PATH=/var/lib/kubelet/cpu_manager_state
+MEMORY_MANAGER_STATE_PATH=/var/lib/kubelet/memory_manager_state
 
 # How long the unit is watched after it has been asked to run. systemctl returns
 # as soon as a unit has been started, and kubelet carries Restart=always, so a
@@ -126,6 +133,13 @@ main() {
 
   create_kubelet_config_patch_file
   apply_kubelet_config
+  # The unit as well as the configuration, so that a cluster built before the
+  # drop in existed is given it by the first update-cluster.yml that writes its
+  # kubelet configuration again. The setup also marks this boot as started, so
+  # the restart below is a restart to the drop in and not the first start of a
+  # boot: the checkpoints of a running kubelet stay unless the flag below says
+  # otherwise
+  "$ki_opt_scripts_path"/k8s-node/kubelet-policy/setup-kubelet-policy-state.sh --vars-path "$vars_path"
 
   if [[ $reset_cpu_manager_state = "true" ]]; then
     replace_kubelet_with_state_reset
@@ -138,24 +152,31 @@ main() {
   return 0
 }
 
-# The checkpoint holds the policy kubelet last ran under, and kubelet refuses to
-# start when the configuration it reads disagrees with it - it says so and names
-# this file. So the file goes while nothing is running to write it again, which
-# is why this is a stop and a start rather than a restart.
+# Each checkpoint holds the policy kubelet last ran under, and kubelet refuses
+# to start when the configuration it reads disagrees with either - it says so
+# and names the file. So the files go while nothing is running to write them
+# again, which is why this is a stop and a start rather than a restart.
 #
-# The assignments in it go with it. That is what the caller drained the node for:
-# a container that held an exclusive cpu is not on the node any more, and the
-# ones that come back are allocated under the policy that is now configured
+# The assignments in them go with them. That is what the caller drained the node
+# for: a container that held an exclusive cpu or memory pinned to a numa node is
+# not on the node any more, and the ones that come back are allocated under the
+# policies that are now configured.
+#
+# Both files go whichever policy changed. The memory manager checkpoint also
+# records the memory reserved on each numa node and the size of each, so it
+# disagrees with the configuration after a reservation changed as well as after
+# the policy did, and taking a checkpoint away that already agrees costs nothing:
+# kubelet writes a fresh one from the configuration it was just given
 replace_kubelet_with_state_reset() {
-  msg "[INFO] Stopping kubelet to take the cpu manager checkpoint away"
+  msg "[INFO] Stopping kubelet to take the cpu manager and memory manager checkpoints away"
   "$ki_opt_scripts_path"/systemctl.sh stop kubelet ||
     die "[ERROR] Failed to stop kubelet"
 
-  rm -f "$CPU_MANAGER_STATE_PATH"
+  rm -f "$CPU_MANAGER_STATE_PATH" "$MEMORY_MANAGER_STATE_PATH"
 
   msg "[INFO] Starting kubelet"
   "$ki_opt_scripts_path"/systemctl.sh start kubelet ||
-    die "[ERROR] Failed to start kubelet. the cpu manager checkpoint was removed, so what it refuses now is the configuration rather than the checkpoint"
+    die "[ERROR] Failed to start kubelet. the cpu manager and memory manager checkpoints were removed, so what it refuses now is the configuration rather than a checkpoint"
 
   require_kubelet_running
 

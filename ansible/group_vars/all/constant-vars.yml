@@ -569,13 +569,15 @@ ki_var_classes:
     - kubelet_system_reserved_memory
     - kubelet_system_reserved_pid
   # Goes into the same kubelet configuration and can not be applied by writing it
-  # again. kubelet checkpoints the cpu manager policy it last ran and refuses to
-  # start when the configuration disagrees with it, so applying one of these is a
-  # node drained, a checkpoint taken away and kubelet brought back. That is an
-  # eviction rather than a restart, which is why it is not in the class above
+  # again. kubelet checkpoints the cpu manager policy and the memory manager
+  # policy it last ran and refuses to start when the configuration disagrees with
+  # either, so applying one of these is a node drained, the checkpoints taken away
+  # and kubelet brought back. That is an eviction rather than a restart, which is
+  # why it is not in the class above
   kubelet_policy:
     - kubelet_cpu_manager_full_pcpus_only
     - kubelet_cpu_manager_policy
+    - kubelet_memory_manager_policy
     - kubelet_reserved_system_cpus
     - kubelet_topology_manager_policy
     - kubelet_topology_manager_scope
@@ -691,6 +693,24 @@ ki_var_classes:
     - k8s_pod_subnet
     - k8s_service_subnet
     - ki_cp_ha_mode
+
+# The variables of class["kubelet"] that a node running the static memory manager
+# policy applies as class["kubelet_policy"] instead. These are the ones the memory
+# a node keeps for itself is calculated from, and on such a node that memory is
+# also written per numa node into reservedMemory, which the memory manager
+# checkpoints along with the policy: kubelet compares the memory reserved on every
+# numa node against /var/lib/kubelet/memory_manager_state when it starts and
+# refuses to start when the two disagree. So on that node a reservation changed
+# is a drain and a checkpoint taken away, not a restart, and diff-applied-vars.py
+# files the change under the class that does that. On every other node they
+# stay what the table above says they are
+ki_kubelet_memory_reservation_vars:
+  - kubelet_auto_memory_available_max
+  - kubelet_auto_memory_available_min
+  - kubelet_eviction_hard_memory_available
+  - kubelet_ki_cp_extra_memory
+  - kubelet_kube_reserved_memory
+  - kubelet_system_reserved_memory
 
 target_node: null
 target_node_op: null

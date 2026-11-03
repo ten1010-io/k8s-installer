@@ -70,6 +70,23 @@ cpuManagerPolicyOptions:
 topologyManagerPolicy: {{ kubelet_topology_manager_policy }}
 topologyManagerScope: {{ kubelet_topology_manager_scope }}
 {%- endif %}
+{#- kubelet spells its memory manager policies with a capital, Static and None,
+    where every other policy of this file is lower case. The variable is read in
+    lower case like the others and the spelling kubelet wants is written here.
+    reservedMemory goes with it: kubelet refuses the static policy unless the
+    memory named per numa node adds up to exactly what the three reservations
+    above take, so create-kubelet-reservations.py works the list out from those
+    three and this only writes it down. Per node like the rest of this block,
+    since the numa nodes it names are the numa nodes of this machine #}
+{%- if kubelet_memory_manager_policy == "static" %}
+memoryManagerPolicy: Static
+reservedMemory:
+{%- for reservation in kubelet_reservations['reserved_memory'] %}
+  - numaNode: {{ reservation['numa_node'] }}
+    limits:
+      memory: "{{ reservation['limits']['memory'] }}"
+{%- endfor %}
+{%- endif %}
 {%- if node_cgroup_version == "v1" %}
 # kubelet of 1.35 and newer will not start on a cgroup v1 host on its own:
 # failCgroupV1 defaults to true there and kubelet exits saying it is configured

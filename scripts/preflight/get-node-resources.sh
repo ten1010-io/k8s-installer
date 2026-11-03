@@ -79,7 +79,15 @@ parse_params "$@"
 #
 # cpu_millicores and memory_kib are obtained from the same sources kubelet uses
 # to report Capacity.cpu and Capacity.memory, so the calculated reservations
-# match what kubelet accounts for
+# match what kubelet accounts for.
+#
+# numa_nodes is the list of numa node ids the kernel exposes, which is what the
+# memory manager of kubelet wants the reserved memory spread over. Read from the
+# same sysfs directory list-pci-devices.sh reads the cpus of each node from
+
+# Where the kernel lists its numa nodes. A kernel built without numa, or a machine
+# the firmware describes as uniform, has no node* here at all
+NUMA_NODES_PATH=/sys/devices/system/node
 
 main() {
   local cpu_millicores
@@ -87,14 +95,31 @@ main() {
   local nodefs_bytes
   local imagefs_bytes
   local pid_max
+  local numa_nodes
 
   cpu_millicores=$(get_cpu_millicores)
   memory_kib=$(get_memory_kib)
   nodefs_bytes=$(get_filesystem_size_bytes "$nodefs_path")
   imagefs_bytes=$(get_filesystem_size_bytes "$imagefs_path")
   pid_max=$(get_pid_max)
+  numa_nodes=$(get_numa_nodes)
 
-  print_yaml "$cpu_millicores" "$memory_kib" "$nodefs_bytes" "$imagefs_bytes" "$pid_max"
+  print_yaml "$cpu_millicores" "$memory_kib" "$nodefs_bytes" "$imagefs_bytes" "$pid_max" "$numa_nodes"
+
+  return 0
+}
+
+# The numa node ids of this machine as a yaml flow list, sorted by number: the
+# glob puts node10 before node2. A machine with no numa sysfs is one the kernel
+# sees as a single node, and kubelet counts it as node 0, so that is what is
+# answered rather than an empty list
+get_numa_nodes() {
+  local ids
+  ids=$(compgen -G "$NUMA_NODES_PATH/node[0-9]*" 2>/dev/null | sed 's|.*/node||' | sort -n | paste -sd, -)
+
+  [[ -z $ids ]] && ids="0"
+
+  echo "[$ids]"
 
   return 0
 }
@@ -172,6 +197,7 @@ memory_kib: $2
 nodefs_bytes: $3
 imagefs_bytes: $4
 pid_max: $5
+numa_nodes: $6
 EOF
 }
 

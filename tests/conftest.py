@@ -137,13 +137,20 @@ def _build_hostvars():
             # what get-cgroup-version.sh reported, which gather-facts.yml sets
             # before anything renders a kubelet configuration
             "node_cgroup_version": "v2",
-            # what get-node-resources.sh reported: 4 cores, 16Gi, 200G
+            # what get-os-info.sh reported, which gather-facts.yml sets for the
+            # one check that is about the kernel of a node. 22.04.5 with the hwe
+            # kernel, which is what its ec2 image boots
+            "node_os": {"distribution": "ubuntu", "major_version": "22.04", "minor_version": "5",
+                        "kernel_version": "6.8"},
+            # what get-node-resources.sh reported: 4 cores, 16Gi, 200G, two numa
+            # nodes so that what is spread over them can be seen to be spread
             "node_resources": {
                 "cpu_millicores": 4000,
                 "memory_kib": 16 * 1024 * 1024,
                 "nodefs_bytes": 200 * 1024 ** 3,
                 "imagefs_bytes": 200 * 1024 ** 3,
                 "pid_max": 4194304,
+                "numa_nodes": [0, 1],
             },
             # what create-kubelet-reservations.py answered for the capacity
             # above, which gather-facts.yml sets before the validator runs

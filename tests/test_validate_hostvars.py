@@ -161,6 +161,110 @@ def test_the_connection_user_of_vars_yml_needs_no_class(hostvars, tmp_path):
     assert_accepted(hostvars)
 
 
+def give_memory_policy(node):
+    """A node set up the way a gpu virtual machine node is, with the reserved
+    memory create-kubelet-reservations.py would have added for it."""
+    node["kubelet_cpu_manager_policy"] = "static"
+    node["kubelet_topology_manager_policy"] = "single-numa-node"
+    node["kubelet_topology_manager_scope"] = "pod"
+    node["kubelet_memory_manager_policy"] = "static"
+    # 1331Mi + 1331Mi + 500Mi, over the two numa nodes the fixture reports
+    node["kubelet_reservations"]["reserved_memory"] = [
+        {"numa_node": 0, "limits": {"memory": "1581Mi"}},
+        {"numa_node": 1, "limits": {"memory": "1581Mi"}},
+    ]
+
+
+def test_a_gpu_virtual_machine_node_is_accepted(hostvars):
+    give_memory_policy(hostvars["node2"])
+
+    assert_accepted(hostvars)
+
+
+def test_the_memory_policy_without_a_topology_policy_is_refused(hostvars):
+    """The memory manager hands the topology manager a numa hint, and with the
+    topology policy at none there is no alignment for the hint to go into."""
+    give_memory_policy(hostvars["node2"])
+    hostvars["node2"]["kubelet_topology_manager_policy"] = "none"
+    hostvars["node2"]["kubelet_topology_manager_scope"] = "container"
+
+    assert_refused(hostvars, naming="kubelet_memory_manager_policy")
+
+
+def test_reserved_memory_that_does_not_add_up_is_refused(hostvars):
+    """The equality kubelet checks when it starts, checked before a node is given
+    the file: the list is derived from the three it has to equal, and this is
+    what catches the day that stops being true."""
+    give_memory_policy(hostvars["node2"])
+    hostvars["node2"]["kubelet_reservations"]["reserved_memory"][1]["limits"]["memory"] = "1580Mi"
+
+    assert_refused(hostvars, naming="reserved_memory")
+
+
+def test_the_memory_policy_without_reserved_memory_is_refused(hostvars):
+    give_memory_policy(hostvars["node2"])
+    del hostvars["node2"]["kubelet_reservations"]["reserved_memory"]
+
+    assert_refused(hostvars, naming="reserved_memory")
+
+
+def test_a_percentage_eviction_threshold_under_the_memory_policy_is_refused(hostvars):
+    give_memory_policy(hostvars["node2"])
+    hostvars["node2"]["kubelet_eviction_hard_memory_available"] = "5%"
+    hostvars["node2"]["kubelet_reservations"]["eviction_hard"]["memory.available"] = "5%"
+
+    assert_refused(hostvars, naming="kubelet_eviction_hard_memory_available")
+
+
+RHEL_8 = {"distribution": "rhel", "major_version": "8", "minor_version": "10", "kernel_version": "4.18"}
+RHEL_9 = {"distribution": "rhel", "major_version": "9", "minor_version": "6", "kernel_version": "5.14"}
+UBUNTU_22_04_GA_KERNEL = {"distribution": "ubuntu", "major_version": "22.04", "minor_version": "5",
+                          "kernel_version": "5.15"}
+PER_NUMA_NODE_HUGEPAGES = ["hugepagesz=1G", "hugepages=0:4,1:4"]
+
+
+def test_per_numa_node_hugepages_on_rhel_8_are_refused(hostvars):
+    """Linux 5.16 added hugepages=<node>:<count>, and the 4.18 kernel of rhel 8
+    reads the whole argument as a bad number: the node boots with no pages."""
+    hostvars["node2"]["node_os"] = RHEL_8
+    hostvars["node2"]["kernel_cmdline_extra_args"] = PER_NUMA_NODE_HUGEPAGES
+
+    assert_refused(hostvars, naming="kernel_cmdline_extra_args")
+
+
+def test_per_numa_node_hugepages_on_the_ga_kernel_of_ubuntu_22_04_are_refused(hostvars):
+    """The same release boots a 5.15 or a 6.8 depending on the kernel package,
+    and 5.15 is a kernel before the form like the 4.18 of rhel 8 is. What is
+    refused is the kernel, not the distribution."""
+    hostvars["node2"]["node_os"] = UBUNTU_22_04_GA_KERNEL
+    hostvars["node2"]["kernel_cmdline_extra_args"] = PER_NUMA_NODE_HUGEPAGES
+
+    assert_refused(hostvars, naming="kernel_cmdline_extra_args")
+
+
+def test_per_numa_node_hugepages_on_a_kernel_that_reads_them_are_accepted(hostvars):
+    """The fixture is ubuntu 22.04 on the 6.8 hwe kernel, which is past 5.16."""
+    hostvars["node2"]["kernel_cmdline_extra_args"] = PER_NUMA_NODE_HUGEPAGES
+
+    assert_accepted(hostvars)
+
+
+def test_per_numa_node_hugepages_on_rhel_9_are_accepted_as_a_backport(hostvars):
+    """5.14 is before the form by number and reads it anyway: rhel 9 carries the
+    change as a backport, so it is let through by name rather than by number."""
+    hostvars["node2"]["node_os"] = RHEL_9
+    hostvars["node2"]["kernel_cmdline_extra_args"] = PER_NUMA_NODE_HUGEPAGES
+
+    assert_accepted(hostvars)
+
+
+def test_one_count_of_hugepages_on_rhel_8_is_accepted(hostvars):
+    hostvars["node2"]["node_os"] = RHEL_8
+    hostvars["node2"]["kernel_cmdline_extra_args"] = ["hugepagesz=1G", "hugepages=8"]
+
+    assert_accepted(hostvars)
+
+
 def test_a_local_ntp_fallback_that_is_not_a_bool_is_refused(hostvars):
     hostvars["localhost"]["ki_cp_ntp_server_local_fallback"] = "sometimes"
 

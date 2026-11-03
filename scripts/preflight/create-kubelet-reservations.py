@@ -29,6 +29,14 @@ Precedence of values, highest first
     1. Explicit kubelet_* variable set in inventory.yml or vars.yml
     2. Extra amount added when the node belongs to the ki_cp_node group
     3. The value calculated from the resources of the node
+
+On a node whose kubelet_memory_manager_policy is static the result also carries
+reserved_memory, the memory kept back from each numa node. kubelet refuses that
+policy unless the memory named there adds up to exactly
+systemReserved.memory + kubeReserved.memory + evictionHard["memory.available"],
+so the three are summed after the overrides above have been applied - whatever
+the operator wrote is what has to add up - and the sum is spread evenly over the
+numa nodes the machine reported, with what does not divide going to the last one.
 """
 from __future__ import annotations
 
@@ -78,7 +86,8 @@ BINARY_SUFFIXES = {
     "Ei": GIB * 1024 ** 3,
 }
 
-NODE_RESOURCES_KEYS = ["cpu_millicores", "memory_kib", "nodefs_bytes", "imagefs_bytes", "pid_max"]
+NODE_RESOURCES_KEYS = ["cpu_millicores", "memory_kib", "nodefs_bytes", "imagefs_bytes", "pid_max",
+                       "numa_nodes"]
 
 
 def die(msg):
@@ -128,6 +137,21 @@ def format_mib(value_bytes):
 
 def format_millicores(value_millicores):
     return str(max(1, value_millicores)) + "m"
+
+
+def format_exact(value_bytes):
+    """Formats bytes in the largest binary unit that divides them exactly.
+
+    The reserved memory of a numa node has to add up with the others to the
+    byte, so unlike format_mib this may not round. Every value it is given is a
+    whole number of Ki, because the reservations it is derived from are written
+    with a binary suffix and the split below is done in Ki
+    """
+    for suffix in ("Gi", "Mi", "Ki"):
+        if value_bytes % BINARY_SUFFIXES[suffix] == 0:
+            return str(value_bytes // BINARY_SUFFIXES[suffix]) + suffix
+
+    return str(value_bytes)
 
 
 def clamp(value, minimum, maximum):
@@ -285,11 +309,68 @@ def build_reservations(host_vars, ih):
 
     apply_overrides(host_vars, system_reserved, kube_reserved, eviction_hard)
 
-    return {
+    reservations = {
         "system_reserved": system_reserved,
         "kube_reserved": kube_reserved,
         "eviction_hard": eviction_hard,
     }
+
+    if require_var(host_vars, ih, "kubelet_memory_manager_policy") == "static":
+        reservations["reserved_memory"] = build_reserved_memory(
+            host_vars, ih, node_resources, system_reserved, kube_reserved, eviction_hard)
+
+    return reservations
+
+
+def build_reserved_memory(host_vars, ih, node_resources, system_reserved, kube_reserved, eviction_hard):
+    """The memory kept back from each numa node, for the static memory manager.
+
+    What kubelet checks is the total: the memory of every entry here, added up,
+    has to equal what systemReserved, kubeReserved and the memory.available
+    eviction threshold reserve between them, to the byte, or kubelet refuses to
+    start. So this is derived from those three after the overrides, never
+    calculated on its own, and there is nothing for an operator to set here.
+
+    Spread evenly rather than put on one node. The memory manager takes what is
+    reserved on a numa node out of what that node can give a Guaranteed pod, and a
+    reservation that all landed on node 0 would leave node 0 with less to pin to
+    than node 1 for no reason the machine knows about.
+
+    A percentage memory.available is refused by validate-hostvars.py on these
+    nodes rather than resolved here: kubelet resolves it against the capacity it
+    measures itself, and a sum that has to match to the byte can not be written
+    against a number this script would be guessing at
+    """
+    memory_available = eviction_hard["memory.available"]
+    if str(memory_available).endswith("%"):
+        die("[ERROR] Variable[\"kubelet_eviction_hard_memory_available\"] of node[\"" + ih
+            + "\"] is a percentage, and the static memory manager policy of this node needs the"
+            + " memory it reserves written per numa node to the byte. Give it a quantity")
+
+    total_bytes = (parse_bytes(system_reserved["memory"], "kubelet_system_reserved_memory")
+                   + parse_bytes(kube_reserved["memory"], "kubelet_kube_reserved_memory")
+                   + parse_bytes(memory_available, "kubelet_eviction_hard_memory_available"))
+
+    numa_nodes = [int(numa_node) for numa_node in node_resources["numa_nodes"]]
+    if len(numa_nodes) == 0:
+        die("[ERROR] Variable[\"hostvars[\"" + ih + "\"][\"node_resources\"][\"numa_nodes\"]\"]"
+            + " is empty. a machine has at least numa node 0")
+
+    # In Ki, so that every share is a quantity the binary suffixes can spell and
+    # the shares still add up to the total exactly
+    total_kib = total_bytes // KIB
+    share_kib = total_kib // len(numa_nodes)
+    remainder_kib = total_kib - share_kib * (len(numa_nodes) - 1)
+
+    reserved_memory = []
+    for idx, numa_node in enumerate(numa_nodes):
+        kib = remainder_kib if idx == len(numa_nodes) - 1 else share_kib
+        reserved_memory.append({
+            "numa_node": numa_node,
+            "limits": {"memory": format_exact(kib * KIB)},
+        })
+
+    return reserved_memory
 
 
 def apply_overrides(host_vars, system_reserved, kube_reserved, eviction_hard):

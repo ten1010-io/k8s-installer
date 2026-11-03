@@ -105,6 +105,87 @@ def test_what_the_inventory_says_wins_over_what_was_calculated(hostvars):
     assert reserved["system_reserved"]["cpu"] == "750m"
 
 
+def reserved_memory_total(reserved):
+    return sum(bytes_of(entry["limits"]["memory"]) for entry in reserved["reserved_memory"])
+
+
+def reservation_total(reserved):
+    return (bytes_of(reserved["system_reserved"]["memory"])
+            + bytes_of(reserved["kube_reserved"]["memory"])
+            + bytes_of(reserved["eviction_hard"]["memory.available"]))
+
+
+def test_a_node_running_no_memory_policy_reserves_nothing_per_numa_node(hostvars):
+    """The list is only read under the static policy, and a node that is not
+    running it has nothing for the key to mean."""
+    assert "reserved_memory" not in reservations(hostvars, "node2")
+
+
+def test_the_memory_reserved_per_numa_node_adds_up_to_what_kubelet_checks(hostvars):
+    """kubelet refuses the static policy unless the memory named per numa node
+    equals systemReserved + kubeReserved + memory.available, to the byte."""
+    hostvars["node2"]["kubelet_memory_manager_policy"] = "static"
+
+    reserved = reservations(hostvars, "node2")
+
+    assert reserved_memory_total(reserved) == reservation_total(reserved)
+
+
+def test_the_sum_still_holds_when_the_inventory_overrides_a_part_of_it(hostvars):
+    """What the operator wrote is what has to add up, so the list is built after
+    the overrides and not before them."""
+    hostvars["node2"]["kubelet_memory_manager_policy"] = "static"
+    hostvars["node2"]["kubelet_system_reserved_memory"] = "3Gi"
+    hostvars["node2"]["kubelet_eviction_hard_memory_available"] = "750Mi"
+
+    reserved = reservations(hostvars, "node2")
+
+    assert reserved["system_reserved"]["memory"] == "3Gi"
+    assert reserved_memory_total(reserved) == reservation_total(reserved)
+
+
+def test_the_reservation_is_spread_over_the_numa_nodes_the_machine_reported(hostvars):
+    """Evenly, with what does not divide on the last node, so that no numa node
+    is left with less to pin to than the others for no reason the machine knows."""
+    hostvars["node2"]["kubelet_memory_manager_policy"] = "static"
+    hostvars["node2"]["node_resources"]["numa_nodes"] = [0, 1]
+    hostvars["node2"]["kubelet_system_reserved_memory"] = "1Gi"
+    hostvars["node2"]["kubelet_kube_reserved_memory"] = "1Gi"
+    hostvars["node2"]["kubelet_eviction_hard_memory_available"] = "1025Ki"
+
+    reserved = reservations(hostvars, "node2")["reserved_memory"]
+
+    assert [entry["numa_node"] for entry in reserved] == [0, 1]
+    # 2098177Ki over two: 1049088Ki and the 1049089Ki that carries the odd Ki.
+    # Spelled in Ki because neither share is a whole number of Mi, and a value
+    # rounded to Mi would not add up any more
+    assert [entry["limits"]["memory"] for entry in reserved] == ["1049088Ki", "1049089Ki"]
+
+
+def test_a_machine_with_one_numa_node_reserves_it_all_on_node_zero(hostvars):
+    hostvars["node2"]["kubelet_memory_manager_policy"] = "static"
+    hostvars["node2"]["node_resources"]["numa_nodes"] = [0]
+
+    reserved = reservations(hostvars, "node2")
+
+    assert [entry["numa_node"] for entry in reserved["reserved_memory"]] == [0]
+    assert reserved_memory_total(reserved) == reservation_total(reserved)
+
+
+def test_a_percentage_eviction_threshold_is_refused_under_the_memory_policy(hostvars):
+    """kubelet resolves a percentage against a capacity only it measures, and a
+    sum that has to match to the byte can not be written against a guess."""
+    hostvars["node2"]["kubelet_memory_manager_policy"] = "static"
+    hostvars["node2"]["kubelet_eviction_hard_memory_available"] = "5%"
+
+    result = subprocess.run(
+        [sys.executable, str(PREFLIGHT / "create-kubelet-reservations.py"), "node2"],
+        input=yaml.safe_dump(hostvars), capture_output=True, text=True, check=False)
+
+    assert result.returncode != 0
+    assert "kubelet_eviction_hard_memory_available" in result.stderr
+
+
 def test_an_eviction_threshold_is_not_larger_than_the_disk_it_is_on(hostvars):
     """The lower bounds are sized for an ordinary node, and on a small one they
     would put the node in permanent disk pressure."""

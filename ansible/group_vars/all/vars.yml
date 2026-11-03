@@ -396,6 +396,37 @@ kubelet_topology_manager_policy: "none"
 # workload rather than several
 kubelet_topology_manager_scope: "container"
 
+# Whether kubelet counts the memory and the hugepages of a node per numa node
+# and hands them out that way, so that the topology manager above has a memory
+# hint to line up with the cpus and the devices.
+#
+# none, the default, leaves memory where it has always been - one pool, placed by
+# the kernel. static counts the memory and the hugepages of every numa node,
+# gives a Guaranteed container memory from the numa node its cpus and its device
+# were lined up with, and refuses what it can not place. It is what kubevirt
+# needs for a guest to see the numa topology of the host (guestMappingPassthrough),
+# which in turn is what a virtual machine with a passed through gpu wants: the
+# guest memory on hugepages of the numa node the gpu sits on.
+#
+# Only the memory the node keeps for itself is decided here. kubelet asks that the
+# memory named per numa node add up to exactly what systemReserved, kubeReserved
+# and the memory.available eviction threshold reserve, so
+# create-kubelet-reservations.py takes the three it already calculated and
+# spreads their sum over the numa nodes of the machine. The hugepages themselves
+# are the kernel's to allocate and the site's to size: declared in
+# kernel_cmdline_extra_args, in force at a boot, and counted by
+# check-kernel-args.sh against what the kernel actually took.
+#
+# Read with the topology manager. With kubelet_topology_manager_policy at none
+# there is nothing for the memory hint to be lined up with, so the pair is refused.
+# And it costs what the cpu policy costs: kubelet checkpoints this too, in
+# /var/lib/kubelet/memory_manager_state, and refuses to start when the
+# configuration disagrees with the checkpoint - so changing it is the same drain,
+# the same checkpoint taken away and the same restart, one node at a time. A
+# memory reservation changed on a node that runs static goes the same way, since
+# the checkpoint records what was reserved
+kubelet_memory_manager_policy: "none"
+
 # The cpus kept for the system and for kubelet, named rather than counted.
 #
 # Left null, kubelet reserves as much cpu as the reservations below ask for and

@@ -106,6 +106,9 @@ main() {
   mkdir -p "$ki_etc_kubeadm_path"
 
   systemctl enable kubelet
+  # Before the join starts kubelet, so that the first kubelet of this node
+  # already runs under the unit it will boot with
+  "$ki_opt_scripts_path"/k8s-node/kubelet-policy/setup-kubelet-policy-state.sh --vars-path "$vars_path"
   $jinja2_cmd -D node_name="$node_name" \
               -D token="$token" \
               -D discovery_token_ca_cert_hash="$discovery_token_ca_cert_hash" \

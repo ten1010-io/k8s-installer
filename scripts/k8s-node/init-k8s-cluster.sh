@@ -102,6 +102,7 @@ main() {
   mkdir -p "$ki_tmp_root_path"
 
   systemctl enable kubelet
+  "$ki_opt_scripts_path"/k8s-node/kubelet-policy/setup-kubelet-policy-state.sh --vars-path "$vars_path"
 
   $jinja2_cmd --format yaml -o "$ki_etc_kubeadm_path""/kubeadm-cluster-config.yml" "$SCRIPT_DIR_PATH"/templates/kubeadm-cluster-config.yml.j2 "$vars_path"
   $jinja2_cmd -D node_name="$node_name" --format yaml -o "$ki_etc_kubeadm_path""/kubeadm-init-config.yml" "$SCRIPT_DIR_PATH"/templates/kubeadm-init-config.yml.j2 "$vars_path"

@@ -22,6 +22,7 @@ Type=oneshot
 {%- if "k8s_node" in group_names %}
 ExecStart=-{{ ki_opt_scripts_path }}/k8s-node/kernel-args/check-kernel-args.sh --node "{{ inventory_hostname }}" --metrics-path "{{ metrics }}/kernel-args.prom"
 ExecStart=-{{ ki_opt_scripts_path }}/k8s-node/vfio-pci/check-vfio-pci.sh --node "{{ inventory_hostname }}" --metrics-path "{{ metrics }}/vfio-pci.prom"{% if vfio_pci_device_ids %} {{ vfio_pci_device_ids | join(" ") }}{% endif %}
+ExecStart=-{{ ki_opt_scripts_path }}/k8s-node/kubelet-policy/check-kubelet-policy.sh --node "{{ inventory_hostname }}" --metrics-path "{{ metrics }}/kubelet-policy.prom"
 {%- endif %}
 ExecStart=-{{ ki_opt_scripts_path }}/all-node/nvidia-cdi/check-nvidia-cdi.sh --node "{{ inventory_hostname }}" --gpu-passthrough {{ gpu_passthrough | lower }} --metrics-path "{{ metrics }}/nvidia-cdi.prom"
 {%- if k8s_cp %}

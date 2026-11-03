@@ -169,6 +169,61 @@ def test_the_reserved_cpus_and_the_pod_ceiling_are_rendered_when_named(hostvars)
     assert document["maxPods"] == 250
 
 
+RESERVED_MEMORY = [
+    {"numa_node": 0, "limits": {"memory": "1581Mi"}},
+    {"numa_node": 1, "limits": {"memory": "1581Mi"}},
+]
+
+
+def with_reserved_memory(hostvars):
+    """What create-kubelet-reservations.py adds on a node running static."""
+    reservations = dict(hostvars["node1"]["kubelet_reservations"])
+    reservations["reserved_memory"] = RESERVED_MEMORY
+    return reservations
+
+
+def test_a_node_given_the_memory_policy_renders_it_in_the_spelling_kubelet_wants(hostvars):
+    """The variable is lower case like the other policies and kubelet wants
+    Static, with a capital, where it takes static for the cpu manager."""
+    document = render(hostvars, kubelet_memory_manager_policy="static",
+                      kubelet_reservations=with_reserved_memory(hostvars))
+
+    assert document["memoryManagerPolicy"] == "Static"
+
+
+def test_the_memory_policy_brings_the_memory_reserved_per_numa_node(hostvars):
+    """kubelet refuses the policy without the list, so the two go together, and
+    the list is what the reservations script worked out rather than anything
+    the template decides."""
+    document = render(hostvars, kubelet_memory_manager_policy="static",
+                      kubelet_reservations=with_reserved_memory(hostvars))
+
+    assert document["reservedMemory"] == [
+        {"numaNode": 0, "limits": {"memory": "1581Mi"}},
+        {"numaNode": 1, "limits": {"memory": "1581Mi"}},
+    ]
+
+
+def test_a_node_naming_no_memory_policy_renders_neither_key(hostvars):
+    """Default off means not written: a merge could never take the key back."""
+    document = render(hostvars)
+
+    assert "memoryManagerPolicy" not in document
+    assert "reservedMemory" not in document
+
+
+def test_the_baseline_carries_no_memory_policy_whatever_its_node_runs(hostvars):
+    """1b5b862 again, for the key added after it: the node that uploads the
+    baseline may run static, and the reserved memory it would hand to every
+    other node is sized for its own numa nodes."""
+    baseline = render(hostvars, kubelet_memory_manager_policy="static",
+                      kubelet_reservations=with_reserved_memory(hostvars),
+                      **{baseline_flag_gated_on(): True})
+
+    assert "memoryManagerPolicy" not in baseline
+    assert "reservedMemory" not in baseline
+
+
 def test_the_resolver_file_is_the_one_the_installer_writes(hostvars):
     """Given no value kubeadm picks one by looking at the node it runs on, and
     the node that uploads the baseline would be picking for every node."""

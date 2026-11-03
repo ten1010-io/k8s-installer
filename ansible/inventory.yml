@@ -76,6 +76,21 @@ k8s_node:
       # The device given here holds everything kubelet accounts as ephemeral
       # storage. It gets formatted, so it has to be a disk with nothing on it
       #ephemeral_storage_device: "/dev/disk/by-id/nvme-eui.0123456789abcdef"
+      # A node that runs virtual machines with a passed through gpu lines the
+      # vcpus, the memory and the gpu of a guest up on one numa node, and puts
+      # the guest memory on hugepages reserved at boot. The policies are per
+      # node; the hugepage count is the site's, sized from the memory each gpu
+      # is sold with. On a kernel older than 5.16 - rhel 8, ubuntu 22.04 without
+      # the hwe kernel - the count is one number, since that kernel does not
+      # read the per numa node form (hugepages=0:224,1:224)
+      #kubelet_cpu_manager_policy: "static"
+      #kubelet_topology_manager_policy: "single-numa-node"
+      #kubelet_topology_manager_scope: "pod"
+      #kubelet_memory_manager_policy: "static"
+      #kernel_cmdline_extra_args:
+      #  - "default_hugepagesz=1G"
+      #  - "hugepagesz=1G"
+      #  - "hugepages=448"
 
 # Nodes that can no longer be reached. Every playbook leaves them alone, so that
 # losing one node does not stop the installer from working on the others. A node

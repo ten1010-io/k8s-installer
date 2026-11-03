@@ -29,6 +29,7 @@ def main():
     hostvars = yaml.safe_load(sys.stdin)
     var_classes = hostvars["localhost"]["ki_var_classes"]
     class_of = {name: cls for cls, names in var_classes.items() for name in names}
+    memory_reservation_vars = set(hostvars["localhost"].get("ki_kubelet_memory_reservation_vars") or [])
 
     changes: Dict[str, List[dict]] = {cls: [] for cls in var_classes}
     baseline_ihs: List[str] = []
@@ -66,7 +67,7 @@ def main():
             if applied[name] == current:
                 continue
 
-            changes[cls].append({
+            changes[class_on_node(cls, name, node_hostvars, applied, memory_reservation_vars)].append({
                 "ih": ih,
                 "name": name,
                 "applied": applied[name],
@@ -88,6 +89,34 @@ def main():
         "summary": build_summary(changes),
     }, sys.stdout, default_flow_style=False)
     exit(0)
+
+
+def class_on_node(cls: str, name: str, node_hostvars: dict, applied: dict,
+                  memory_reservation_vars: Set[str]) -> str:
+    """The class a change has on this node, which is the table's answer but once.
+
+    The memory a node keeps for itself is written into its kubelet configuration
+    twice on a node running the static memory manager policy: as the reservations
+    every node has, and again per numa node as reservedMemory, which the memory
+    manager checkpoints along with its policy and compares against when kubelet
+    starts. So on that node the variables those reservations are calculated from
+    can not be applied by a restart - kubelet would read the new value, find the
+    checkpoint saying the old one and refuse to start - and the change is filed
+    under class["kubelet_policy"], whose apply drains the node and takes the
+    checkpoints away first. constant-vars.yml says which variables those are.
+
+    Whether the node ran static before or runs it now: a node that is leaving the
+    policy still has the checkpoint that disagrees, and a node that is entering it
+    is already being drained for the policy itself
+    """
+    if cls != "kubelet" or name not in memory_reservation_vars:
+        return cls
+
+    policy_name = "kubelet_memory_manager_policy"
+    if node_hostvars.get(policy_name) == "static" or applied.get(policy_name) == "static":
+        return "kubelet_policy"
+
+    return cls
 
 
 def build_summary(changes: Dict[str, List[dict]]) -> List[str]:

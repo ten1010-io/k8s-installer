@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Literal, Optional, Annotated, Union
 
 import yaml
 from pydantic import BaseModel, ValidationError, StringConstraints, ConfigDict, field_validator, Field, \
-    PositiveInt
+    PositiveInt, NonNegativeInt
 
 FQDN_PATTERN = r"^((?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,}$"
 K8S_MINOR_VERSION_PATTERN = r"^[0-9]+\.[0-9]+$"
@@ -110,6 +110,43 @@ USER_NAME_PATTERN = r"^[a-z_]([a-z0-9_-]{0,31}|[a-z0-9_-]{0,30}\$)$"
 # node asking for two page sizes repeats both names on purpose and the order of
 # the list is what carries the meaning. Every other argument is taken once
 POSITIONAL_KERNEL_ARGS = frozenset({"hugepagesz", "hugepages"})
+
+# hugepages=<node>:<count>[,<node>:<count>], which allocates the pages of a size
+# on named numa nodes rather than spread over all of them. Linux 5.16 added it
+# (mm/hugetlb.c, "hugetlbfs: extend the definition of hugepages parameter to
+# support node allocation", b5389086ad7b, 2021-11-06; the entry for hugepages=
+# in Documentation/admin-guide/kernel-parameters.txt gains "Format: <integer> or
+# (node format)" in v5.16 and has only the integer in v5.15). A kernel that does
+# not know the form takes the whole argument as a bad number: the node boots
+# with no pages of that size and nothing says why. So the form is refused on a
+# kernel older than that, which is the 4.18 of rhel 8 and the 5.15 the ga kernel
+# of ubuntu 22.04 is - the same release boots a 6.8 with the hwe kernel, which is
+# why the kernel is read rather than the distribution. The one kernel older
+# than 5.16 that does read it is the 5.14 of rhel 9, which carries it as a
+# backport, and it is let through by name
+HUGEPAGES_NODE_FORMAT_PATTERN = re.compile(r"^hugepages=[0-9]+:")
+HUGEPAGES_NODE_FORMAT_KERNEL = (5, 16)
+
+
+def kernel_reads_hugepages_node_format(node_os: dict) -> Optional[bool]:
+    """Whether the kernel node_os describes reads hugepages=<node>:<count>.
+
+    None when node_os carries no kernel version to decide by, which is a node
+    the facts were not gathered from; nothing is refused on a guess
+    """
+    kernel_version = str(node_os.get("kernel_version") or "")
+    if not re.match(r"^[0-9]+\.[0-9]+", kernel_version):
+        return None
+
+    major, minor = (int(part) for part in kernel_version.split(".")[:2])
+    if (major, minor) >= HUGEPAGES_NODE_FORMAT_KERNEL:
+        return True
+
+    # The backport of rhel 9. rhel 10 is on 6.12 and is already past the line
+    if node_os.get("distribution") == "rhel" and str(node_os.get("major_version")) == "9":
+        return True
+
+    return False
 
 # Variables that describe the cluster rather than a node, and so may only be set
 # in vars.yml. ki_var_classes covers both files, so a name in it is a name the
@@ -791,7 +828,12 @@ def validate_kernel_cmdline_extra_args(hostvars_errors: List[HostvarsError], hos
     is the exception the kernel itself makes - a hugepages= belongs to the
     hugepagesz= before it, so repeating both is how a node is given two page
     sizes, and setup-kernel-args.sh hands the whole list to grubby in one call
-    so that rhel8 keeps the repetition too
+    so that rhel8 keeps the repetition too.
+
+    The per numa node form of hugepages= is refused on a kernel that predates the
+    form (see HUGEPAGES_NODE_FORMAT_PATTERN). Which kernel a node runs is read
+    off node_os, which gather-facts.yml asks every node for, the way the node
+    scripts ask get-os-info.sh for themselves
     """
     for ih in sorted(hostvars):
         if ih == "localhost":
@@ -800,6 +842,22 @@ def validate_kernel_cmdline_extra_args(hostvars_errors: List[HostvarsError], hos
         extra_args = [arg for arg in (hostvars[ih].get("kernel_cmdline_extra_args") or [])
                       if isinstance(arg, str)]
         names = [arg.split("=")[0] for arg in extra_args]
+
+        node_os = hostvars[ih].get("node_os") or {}
+        if kernel_reads_hugepages_node_format(node_os) is False:
+            for arg in extra_args:
+                if not HUGEPAGES_NODE_FORMAT_PATTERN.match(arg):
+                    continue
+
+                error = HostvarsError(ih,
+                                      ("kernel_cmdline_extra_args",),
+                                      str(arg),
+                                      f"Variable[\"kernel_cmdline_extra_args\"] carries argument[{arg}] in the"
+                                      f" per numa node form, which linux 5.16 added and the"
+                                      f" {node_os.get('kernel_version')} kernel this node runs does not read:"
+                                      " the node would boot with no pages of that size. Give this node one"
+                                      " count, which the kernel spreads over its numa nodes")
+                hostvars_errors.append(error)
 
         for arg, name in zip(extra_args, names):
             if name not in VFIO_PCI_OWNED_KERNEL_ARGS:
@@ -1131,12 +1189,43 @@ def validate_kubelet_policy(hostvars_errors: List[HostvarsError], hostvars):
                                   " is not static, so there is no exclusive allocation for it to be an option of")
             hostvars_errors.append(error)
 
+        if node_hostvars.get("kubelet_memory_manager_policy") != "static":
+            continue
+
+        if node_hostvars.get("kubelet_topology_manager_policy") == "none":
+            error = HostvarsError(ih,
+                                  ("kubelet_memory_manager_policy",),
+                                  "static",
+                                  "Variable[\"kubelet_memory_manager_policy\"] is static on a node whose variable"
+                                  "[\"kubelet_topology_manager_policy\"] is none. There is no alignment for its"
+                                  " numa hint to go into, so the memory is pinned to nothing in particular")
+            hostvars_errors.append(error)
+
+        memory_available = node_hostvars.get("kubelet_eviction_hard_memory_available")
+        if memory_available is not None and str(memory_available).endswith("%"):
+            error = HostvarsError(ih,
+                                  ("kubelet_eviction_hard_memory_available",),
+                                  str(memory_available),
+                                  "Variable[\"kubelet_eviction_hard_memory_available\"] is a percentage on a node"
+                                  " whose variable[\"kubelet_memory_manager_policy\"] is static. kubelet wants the"
+                                  " memory that policy reserves written per numa node to the byte, and a percentage"
+                                  " is resolved against a capacity only kubelet measures. Give it a quantity")
+            hostvars_errors.append(error)
+
 
 def validate_kubelet_reservations(hostvars_errors: List[HostvarsError], hostvars):
     """Validates the values calculated by create-kubelet-reservations.py.
 
     A wrong value here makes kubelet fail to start, which is hard to diagnose
-    afterwards, so it is caught before kubeadm is run
+    afterwards, so it is caught before kubeadm is run.
+
+    On a node running the static memory manager policy the memory reserved per
+    numa node has to add up to exactly systemReserved.memory + kubeReserved.memory
+    + evictionHard["memory.available"], or kubelet refuses to start saying the
+    reserved memory and the node allocatable reservation differ. The script
+    derives the list from those three, so the sum holds by construction, and this
+    is what catches the day it stops holding - an override applied after the
+    list was built, a unit the parser rounds - before a node is given the file
     """
     broken_node_ihs = get_broken_node_ihs(hostvars)
 
@@ -1155,11 +1244,74 @@ def validate_kubelet_reservations(hostvars_errors: List[HostvarsError], hostvars
             hostvars_errors.append(error)
             continue
 
+        reservations = hostvars[ih]["kubelet_reservations"]
         try:
-            KubeletReservationsModel.model_validate(hostvars[ih]["kubelet_reservations"])
+            KubeletReservationsModel.model_validate(reservations)
         except ValidationError as e:
             for error in e.errors():
                 hostvars_errors.append(build_hostvars_error(ih, error))
+            continue
+
+        validate_reserved_memory_sum(hostvars_errors, ih, hostvars[ih], reservations)
+
+
+def validate_reserved_memory_sum(hostvars_errors: List[HostvarsError], ih: str, node_hostvars: dict,
+                                 reservations: dict):
+    """The equality kubelet checks at startup, checked here first."""
+    reserved_memory = reservations.get("reserved_memory")
+    is_static = node_hostvars.get("kubelet_memory_manager_policy") == "static"
+
+    if reserved_memory is None:
+        if is_static:
+            error = HostvarsError(ih,
+                                  ("kubelet_reservations", "reserved_memory"),
+                                  "None",
+                                  "Variable[\"kubelet_reservations\"] carries no reserved_memory on a node whose"
+                                  " variable[\"kubelet_memory_manager_policy\"] is static. it must be gathered by"
+                                  " gather-facts")
+            hostvars_errors.append(error)
+        return
+
+    memory_available = reservations["eviction_hard"]["memory.available"]
+    if str(memory_available).endswith("%"):
+        # validate_kubelet_policy has already said why a percentage is refused
+        # here, and a sum can not be checked against it
+        return
+
+    expected = (bytes_of_quantity(reservations["system_reserved"]["memory"])
+                + bytes_of_quantity(reservations["kube_reserved"]["memory"])
+                + bytes_of_quantity(memory_available))
+    actual = sum(bytes_of_quantity(entry["limits"]["memory"]) for entry in reserved_memory)
+
+    if actual == expected:
+        return
+
+    error = HostvarsError(ih,
+                          ("kubelet_reservations", "reserved_memory"),
+                          str(reserved_memory),
+                          f"Variable[\"kubelet_reservations\"] reserves {actual} bytes of memory over its numa"
+                          f" nodes and {expected} bytes in systemReserved, kubeReserved and memory.available"
+                          " together. kubelet refuses the static memory manager policy unless the two are"
+                          " equal")
+    hostvars_errors.append(error)
+
+
+BINARY_SUFFIX_BYTES = {"Ki": 1024, "Mi": 1024 ** 2, "Gi": 1024 ** 3, "Ti": 1024 ** 4, "Pi": 1024 ** 5,
+                       "Ei": 1024 ** 6}
+
+
+def bytes_of_quantity(quantity) -> int:
+    """A binary quantity as kubelet reads one, 1331Mi or 2Gi, in bytes.
+
+    Only the binary suffixes, because that is all the patterns above let through
+    for a memory value, and only whole numbers for the same reason
+    """
+    text = str(quantity)
+    for suffix, factor in BINARY_SUFFIX_BYTES.items():
+        if text.endswith(suffix):
+            return int(text[: -len(suffix)]) * factor
+
+    return int(text)
 
 
 def print_hostvars_errors(errors: List[HostvarsError]):
@@ -1320,9 +1472,11 @@ class VarsModel(BaseModel):
     kubelet_ki_cp_extra_cpu: Annotated[str, StringConstraints(pattern=CPU_QUANTITY_PATTERN)]
     kubelet_ki_cp_extra_memory: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
 
-    # How kubelet hands out the cpus of a node, and what it lines them up with
+    # How kubelet hands out the cpus and the memory of a node, and what it lines
+    # them up with
     kubelet_cpu_manager_policy: Literal["none", "static"]
     kubelet_cpu_manager_full_pcpus_only: bool
+    kubelet_memory_manager_policy: Literal["none", "static"]
     kubelet_topology_manager_policy: Literal[
         "none", "best-effort", "restricted", "single-numa-node"]
     kubelet_topology_manager_scope: Literal["container", "pod"]
@@ -1569,12 +1723,28 @@ class KubeletEvictionHardModel(BaseModel):
         str, StringConstraints(pattern=EVICTION_THRESHOLD_PATTERN)] = Field(alias="nodefs.inodesFree")
 
 
+class KubeletReservedMemoryLimitsModel(BaseModel):
+    model_config = ConfigDict(regex_engine='python-re')
+
+    memory: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
+
+
+class KubeletReservedMemoryModel(BaseModel):
+    model_config = ConfigDict(regex_engine='python-re')
+
+    numa_node: NonNegativeInt
+    limits: KubeletReservedMemoryLimitsModel
+
+
 class KubeletReservationsModel(BaseModel):
     model_config = ConfigDict(regex_engine='python-re')
 
     system_reserved: KubeletReservedModel
     kube_reserved: KubeletReservedModel
     eviction_hard: KubeletEvictionHardModel
+    # Only on a node whose memory manager policy is static. See
+    # validate_kubelet_reservations for what it has to add up to
+    reserved_memory: Optional[List[KubeletReservedMemoryModel]] = None
 
 
 main()

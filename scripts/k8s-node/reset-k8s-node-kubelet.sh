@@ -96,6 +96,7 @@ main() {
   fi
   remove_kubeconfig
   rm -rf "$ki_etc_kubeadm_path"
+  "$ki_opt_scripts_path"/k8s-node/kubelet-policy/reset-kubelet-policy-state.sh --vars-path "$vars_path"
   clear_pod_logs
 
   return 0

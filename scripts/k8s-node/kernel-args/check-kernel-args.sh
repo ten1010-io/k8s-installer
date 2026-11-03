@@ -5,12 +5,17 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 print_usage() {
   cat <<EOF
 Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--node name] [--metrics-path path]
+                                  [--report-hugepages]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
 --node          Name to report this node under
 --metrics-path  Also write what was measured to this file, in the prometheus text
                 format a node exporter textfile collector reads
+--report-hugepages
+                Also say when the kernel allocated fewer hugepages of a size than
+                this node declared. Left out, what is printed is only what a
+                reboot would change
 EOF
   exit
 }
@@ -18,6 +23,7 @@ EOF
 parse_params() {
   node=""
   metrics_path=""
+  report_hugepages="false"
 
   while :; do
     case "${1-}" in
@@ -34,6 +40,7 @@ parse_params() {
       metrics_path="${2-}"
       shift
       ;;
+    --report-hugepages) report_hugepages="true" ;;
     -?*) die "[ERROR] Unknown option: $1" ;;
     *) break ;;
     esac
@@ -81,6 +88,15 @@ parse_params "$@"
 # against. Absent on a node that was never given any
 RECORD_PATH=/etc/k8s-installer/kernel-args
 
+# Where the kernel says how many pages of each size it is holding, one directory
+# per size it supports: hugepages-2048kB, hugepages-1048576kB
+HUGEPAGES_SYSFS_PATH=/sys/kernel/mm/hugepages
+
+# The sizes this node declared and the sizes the kernel allocated, as kB keyed
+# associative arrays. Filled by count_hugepages and read by whatever reports
+declare -A declared_hugepages=()
+declare -A allocated_hugepages=()
+
 # Says whether this node is booted with the kernel command line arguments it was
 # configured with, and prints nothing when it is.
 #
@@ -103,12 +119,29 @@ main() {
   local missing
   missing=$(missing_args)
 
+  count_hugepages
+
   [[ -n $metrics_path ]] && write_metrics_file "$missing"
 
   # A node that was given no argument has nothing to take, which is most of them
   [[ -f $RECORD_PATH ]] || exit 0
 
   report_missing_args "$missing"
+
+  # Only when asked, and only once the node is booted with its arguments.
+  #
+  # What this script prints is read as "this node needs a reboot": reboot-k8s-nodes.yml
+  # reboots a node that says anything here and refuses one that still says
+  # something after its reboot, and setup-boot-config.yml decides the same way.
+  # Pages the kernel could not find are not that - a reboot is what just failed to
+  # allocate them, and a node that reported them on this line would be rebooted at
+  # every run and refused after each one. So the report of a shortfall goes to the
+  # metrics always and to stdout only for the caller that prints rather than
+  # decides, which is check-kernel-args.yml at the end of a run.
+  #
+  # And not before the node is booted with its arguments: then the pages are short
+  # because the line never reached the kernel, which the report above already says
+  [[ -z $missing && $report_hugepages = "true" ]] && report_short_hugepages
 
   exit 0
 }
@@ -145,6 +178,142 @@ report_missing_args() {
   return 0
 }
 
+# What the node declared and what it got, per page size.
+#
+# Declared is read out of the record the way the kernel reads the command line:
+# a hugepages= belongs to the hugepagesz= before it, and one that comes before
+# any hugepagesz= belongs to the default size, which is default_hugepagesz= if
+# the node names one and what the kernel booted with otherwise. The per numa node
+# form, hugepages=0:32,1:32, is the sum of its counts: the question here is how
+# many pages the node has, not where.
+#
+# Allocated is what the kernel says, which is the whole point of counting both.
+# Asking for pages at boot is not getting them - a 1G page wants a gigabyte of
+# physically contiguous memory, and a kernel that can not find enough of them
+# takes what it can and says so once, early in dmesg, where nothing reads it. The
+# node comes up, kubelet reports the pages it found, and a virtual machine that
+# was sized for the declared count is refused or lands on the other numa node.
+# The two numbers side by side are what lets a monitoring system say that
+count_hugepages() {
+  local path
+  local kb
+
+  for path in "$HUGEPAGES_SYSFS_PATH"/hugepages-*kB; do
+    [[ -f $path/nr_hugepages ]] || continue
+    kb=${path##*/hugepages-}
+    kb=${kb%kB}
+    allocated_hugepages[$kb]=$(cat "$path/nr_hugepages")
+  done
+
+  [[ -f $RECORD_PATH ]] || return 0
+
+  local default_kb
+  default_kb=$(booted_default_hugepage_kb)
+  local size_kb=""
+  local arg
+  local value
+
+  while IFS= read -r arg; do
+    value=${arg#*=}
+    case "$arg" in
+      default_hugepagesz=*) default_kb=$(hugepage_size_kb "$value") ;;
+      hugepagesz=*) size_kb=$(hugepage_size_kb "$value") ;;
+      hugepages=*)
+        kb=${size_kb:-$default_kb}
+        declared_hugepages[$kb]=$(( ${declared_hugepages[$kb]:-0} + $(hugepage_count "$value") ))
+        ;;
+    esac
+  done < "$RECORD_PATH"
+
+  return 0
+}
+
+# The default huge page size of the running kernel, in kB. 2048 on x86 unless
+# the node booted with default_hugepagesz=, and that is what /proc/meminfo says
+booted_default_hugepage_kb() {
+  local kb
+  kb=$(grep -oP "^Hugepagesize:\s+\K[0-9]+" /proc/meminfo || true)
+
+  echo "${kb:-2048}"
+
+  return 0
+}
+
+# A size as the command line spells it - 2M, 1G, 2048K, 1024M - in kB
+hugepage_size_kb() {
+  local value=$1
+  local number=${value%%[KkMmGg]*}
+  local unit=${value#"$number"}
+
+  case "$unit" in
+    [Gg]*) echo $(( number * 1024 * 1024 )) ;;
+    [Mm]*) echo $(( number * 1024 )) ;;
+    [Kk]*) echo "$number" ;;
+    *) echo $(( number / 1024 )) ;;
+  esac
+
+  return 0
+}
+
+# A count as the command line spells it: 64, or 0:32,1:32 summed
+hugepage_count() {
+  local value=$1
+  local total=0
+  local parts
+  local part
+
+  IFS=, read -ra parts <<< "$value"
+  for part in "${parts[@]}"; do
+    total=$(( total + ${part#*:} ))
+  done
+
+  echo "$total"
+
+  return 0
+}
+
+# A size in kB as the label of its metric: 2M, 1G, and the kB figure for a size
+# that is a whole number of neither
+hugepage_size_label() {
+  local kb=$1
+
+  if (( kb % (1024 * 1024) == 0 )); then
+    echo "$(( kb / 1024 / 1024 ))G"
+  elif (( kb % 1024 == 0 )); then
+    echo "$(( kb / 1024 ))M"
+  else
+    echo "${kb}K"
+  fi
+
+  return 0
+}
+
+# Every size either side knows about, sorted, so that a size the node declared
+# and the kernel does not support is reported with nothing allocated and a size
+# the kernel supports and the node never asked for is reported with nothing
+# declared
+hugepage_sizes_kb() {
+  printf '%s\n' "${!declared_hugepages[@]}" "${!allocated_hugepages[@]}" | grep . | sort -nu
+
+  return 0
+}
+
+report_short_hugepages() {
+  local kb
+  local declared
+  local allocated
+
+  for kb in $(hugepage_sizes_kb); do
+    declared=${declared_hugepages[$kb]:-0}
+    allocated=${allocated_hugepages[$kb]:-0}
+    [[ $declared -gt $allocated ]] || continue
+
+    echo "[WARN] node[\"$node\"] declared $declared hugepages of size[\"$(hugepage_size_label "$kb")\"] and the kernel allocated $allocated. a page of that size needs that much contiguous memory at boot, and the kernel takes what it finds and says so only in dmesg"
+  done
+
+  return 0
+}
+
 # Writes what was measured where a node exporter textfile collector reads it, so
 # that the answer is there between playbook runs as well as at the end of one.
 #
@@ -164,7 +333,19 @@ write_metrics_file() {
 # HELP ki_node_kernel_args_missing Kernel command line arguments this node was given and is not booted with
 # TYPE ki_node_kernel_args_missing gauge
 ki_node_kernel_args_missing $count
+# HELP ki_node_hugepages_declared Hugepages of each size this node was told to allocate at boot
+# TYPE ki_node_hugepages_declared gauge
+# HELP ki_node_hugepages_allocated Hugepages of each size the kernel of this node is holding
+# TYPE ki_node_hugepages_allocated gauge
 EOF
+
+  local kb
+  local label
+  for kb in $(hugepage_sizes_kb); do
+    label=$(hugepage_size_label "$kb")
+    echo "ki_node_hugepages_declared{size=\"$label\"} ${declared_hugepages[$kb]:-0}" >> "$metrics_path".tmp
+    echo "ki_node_hugepages_allocated{size=\"$label\"} ${allocated_hugepages[$kb]:-0}" >> "$metrics_path".tmp
+  done
 
   chmod 0644 "$metrics_path".tmp
   mv -f "$metrics_path".tmp "$metrics_path"
