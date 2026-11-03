@@ -103,10 +103,10 @@ ki_etc_pki_path: "{{ ki_etc_root_path }}/pki"
 # which lays a file down with the umask of the far side unless told otherwise,
 # and a private key with the mode of a certificate is what that would give
 ki_pki_files:
-  - { name: "ki-ca.crt", mode: "0644" }
-  - { name: "ki-ca.key", mode: "0600" }
-  - { name: "ki-cp-tls.crt", mode: "0644" }
-  - { name: "ki-cp-tls.key", mode: "0600" }
+  - {name: "ki-ca.crt", mode: "0644"}
+  - {name: "ki-ca.key", mode: "0600"}
+  - {name: "ki-cp-tls.crt", mode: "0644"}
+  - {name: "ki-cp-tls.key", mode: "0600"}
 ki_etc_services_path: "{{ ki_etc_root_path }}/services"
 ki_etc_kubeadm_path: "{{ ki_etc_root_path }}/kubeadm"
 # What every node of the inventory reported the last time gather-facts reached

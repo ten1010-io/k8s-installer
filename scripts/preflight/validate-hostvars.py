@@ -1338,25 +1338,25 @@ class VarsModel(BaseModel):
         "ki_var_root_path",
         "docker_root_path")
     @classmethod
-    def must_be_absolute(cls, path: Path) -> Path:
+    def must_be_absolute(cls, path: PurePosixPath) -> PurePosixPath:
         if not path.is_absolute():
             raise ValueError("path must be absolute")
         return path
 
     @field_validator("ephemeral_storage_device")
     @classmethod
-    def must_be_absolute_when_set(cls, path: Optional[Path]) -> Optional[Path]:
+    def must_be_absolute_when_set(cls, path: Optional[PurePosixPath]) -> Optional[PurePosixPath]:
         if path is not None and not path.is_absolute():
             raise ValueError("path must be absolute")
         return path
 
     model_config = ConfigDict(regex_engine='python-re')
 
-    ki_var_root_path: Path
-    docker_root_path: Path
+    ki_var_root_path: PurePosixPath
+    docker_root_path: PurePosixPath
 
     # None means the node keeps its ephemeral storage on the root filesystem
-    ephemeral_storage_device: Optional[Path] = None
+    ephemeral_storage_device: Optional[PurePosixPath] = None
 
     internal_network_subnets: list[IPv4Network]
 
@@ -1504,7 +1504,7 @@ class ConstantVarsModel(BaseModel):
         "ki_etc_services_path",
         "ki_etc_kubeadm_path")
     @classmethod
-    def must_be_absolute(cls, path: Path) -> Path:
+    def must_be_absolute(cls, path: PurePosixPath) -> PurePosixPath:
         if not path.is_absolute():
             raise ValueError("path must be absolute")
         return path
@@ -1522,7 +1522,7 @@ class ConstantVarsModel(BaseModel):
 
     model_config = ConfigDict(regex_engine='python-re')
 
-    ansible_python_interpreter: Path
+    ansible_python_interpreter: PurePosixPath
     ansible_port: int = Field(ge=0, le=65535)
     # The user to log in as may be left unset, in which case ansible logs in as
     # the user running it; ki_ssh_user is that choice resolved, and is what the
@@ -1532,22 +1532,22 @@ class ConstantVarsModel(BaseModel):
         Annotated[str, StringConstraints(pattern=USER_NAME_PATTERN)]] = None
     ki_ssh_user: Annotated[str, StringConstraints(pattern=USER_NAME_PATTERN)]
 
-    ki_opt_root_path: Path
-    ki_opt_scripts_path: Path
-    ki_opt_bundle_path: Path
-    ki_opt_venv_path: Path
+    ki_opt_root_path: PurePosixPath
+    ki_opt_scripts_path: PurePosixPath
+    ki_opt_bundle_path: PurePosixPath
+    ki_opt_venv_path: PurePosixPath
 
-    ki_tmp_root_path: Path
-    ki_tmp_localhost_vars_path: Path
-    ki_tmp_vars_path: Path
-    ki_tmp_pki_path: Path
-    ki_tmp_ki_ca_crt_path: Path
-    ki_tmp_join_credentials_path: Path
+    ki_tmp_root_path: PurePosixPath
+    ki_tmp_localhost_vars_path: PurePosixPath
+    ki_tmp_vars_path: PurePosixPath
+    ki_tmp_pki_path: PurePosixPath
+    ki_tmp_ki_ca_crt_path: PurePosixPath
+    ki_tmp_join_credentials_path: PurePosixPath
 
-    ki_etc_root_path: Path
-    ki_etc_pki_path: Path
-    ki_etc_services_path: Path
-    ki_etc_kubeadm_path: Path
+    ki_etc_root_path: PurePosixPath
+    ki_etc_pki_path: PurePosixPath
+    ki_etc_services_path: PurePosixPath
+    ki_etc_kubeadm_path: PurePosixPath
 
     internal_network_ip: IPv4Address | None
     internal_network_zone: Annotated[str, StringConstraints(pattern=FQDN_PATTERN)]
@@ -1617,7 +1617,7 @@ class ARecordModel(BaseModel):
 class CpExtraFileModel(BaseModel):
     @field_validator("src")
     @classmethod
-    def must_be_relative_and_contained(cls, path: Path) -> Path:
+    def must_be_relative_and_contained(cls, path: PurePosixPath) -> PurePosixPath:
         if path.is_absolute():
             raise ValueError("src is a path under the files directory of this installer, not an absolute path")
         if ".." in path.parts:
@@ -1626,15 +1626,15 @@ class CpExtraFileModel(BaseModel):
 
     @field_validator("dest")
     @classmethod
-    def must_be_absolute(cls, path: Path) -> Path:
+    def must_be_absolute(cls, path: PurePosixPath) -> PurePosixPath:
         if not path.is_absolute():
             raise ValueError("path must be absolute")
         return path
 
     model_config = ConfigDict(regex_engine='python-re')
 
-    src: Path
-    dest: Path
+    src: PurePosixPath
+    dest: PurePosixPath
     mode: Annotated[str, StringConstraints(pattern=FILE_MODE_PATTERN)] = "0644"
 
 
@@ -1686,7 +1686,7 @@ class ExtraVolumeModel(BaseModel):
 
     @field_validator("hostPath", "mountPath")
     @classmethod
-    def must_be_absolute(cls, path: Path) -> Path:
+    def must_be_absolute(cls, path: PurePosixPath) -> PurePosixPath:
         if not path.is_absolute():
             raise ValueError("path must be absolute")
         return path
@@ -1694,8 +1694,8 @@ class ExtraVolumeModel(BaseModel):
     model_config = ConfigDict(regex_engine='python-re', extra='forbid')
 
     name: str
-    hostPath: Path
-    mountPath: Path
+    hostPath: PurePosixPath
+    mountPath: PurePosixPath
     readOnly: bool = False
     pathType: Optional[Literal["DirectoryOrCreate", "Directory", "FileOrCreate", "File"]] = None
 

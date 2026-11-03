@@ -40,7 +40,9 @@
       become: yes
 
     - name: Execute push-user-registry-artifacts.sh
-      shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/user-registry/push-user-registry-artifacts.sh {{ vars_path_arg }} --archive-path {{ node_archive_path }}"
+      shell: >-
+        sudo {{ ki_opt_scripts_path }}/ki-cp-node/user-registry/push-user-registry-artifacts.sh
+        {{ vars_path_arg }} --archive-path {{ node_archive_path }}
 
     - name: Delete the archive from the node
       shell: "sudo rm -f {{ node_archive_path }}"
