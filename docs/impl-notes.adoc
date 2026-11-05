@@ -4510,6 +4510,16 @@ scp 둘과 ssh 하나가 쓰는 `ki_ssh_user` 도 같은 기본값을 따릅니�
 가 아니라 `map(select(. == "x")) | length` 로 묻습니다. `contains` 는 문자열에 대해 부분 일치라
 `["node10"] | contains(["node1"])` 이 참입니다.
 
+ansible-core 2.19 가 가르쳐 준 것 둘. 첫째, `when` 이 거짓인 블록 안의 `loop` 도 먼저 평가되고
+null 이면 오류입니다 (`The loop value must resolve to a 'list', not 'NoneType'`). `target_nodes` 는
+노드를 지목하지 않는 플레이북에서 null 이라 preflight 의 `loop` 는 `default([], true)` 를 답니다.
+둘째, `gather-facts.yml` 의 첫 태스크가 `hostvars | to_yaml` 로 모든 hostvar 를 렌더링하는데, 그
+시점에는 `k8s_cp_nodes` 가 아직 없습니다. 2.17 은 undefined 를 남기고 지나갔고 2.19 는 오류입니다.
+그래서 `ki_standing_k8s_cp_nodes` 와 `ki_target_k8s_cp_nodes` 는 그 두 fact 에 `default([])` 를
+답니다. 둘 다 node-232 에서 5477102 로 처음부터 세우다가 나왔습니다. 문법 검사와 add-node 만 돌린
+시뮬레이션은 둘 다 잡지 못합니다 — 노드를 지목하지 않는 플레이북과 facts 전 렌더링이 그 둘의
+조건입니다.
+
 뺄셈 둘을 잇는 자리는 괄호를 칩니다: `(.groups.ki_cp_node - .ki_broken_nodes) - $target_nodes`.
 yq 4.53 은 `a - b - c` 를 `a - (b - c)` 로 묶어서, `["a","b","c"] - ["b"] - ["c"]` 가
 `["a","c"]` 입니다. 괄호 없이 쓴 원래의 remove 분기는 `broken_node` 가 비어 있으면

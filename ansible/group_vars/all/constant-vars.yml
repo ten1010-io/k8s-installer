@@ -741,11 +741,18 @@ ki_is_target_node: "{{ target_nodes is none or inventory_hostname in target_node
 # The ki cp nodes and the k8s cp nodes that are neither broken nor being
 # added or removed by this run: the ones a play may delegate to, fetch the pki
 # from or ask for a join token. A node being added has none of that yet and a
-# node being removed is about to lose it
+# node being removed is about to lose it.
+#
+# k8s_cp_nodes and k8s_cp_nodes_in_inventory are facts gather-facts.yml sets,
+# and that play renders every hostvar on its way to setting them: its first
+# task writes hostvars | to_yaml, which resolves these templates while the
+# facts do not exist yet. On ansible-core 2.19 that is an error rather than an
+# undefined left in the output, so the two names default to empty here. Read
+# before gather-facts.yml these lists are empty, which no play does
 ki_standing_ki_cp_nodes: "{{ groups['ki_cp_node'] | reject('in', ki_broken_nodes) | reject('in', target_nodes | default([], true)) | list }}"
-ki_standing_k8s_cp_nodes: "{{ k8s_cp_nodes | reject('in', target_nodes | default([], true)) | list }}"
+ki_standing_k8s_cp_nodes: "{{ k8s_cp_nodes | default([]) | reject('in', target_nodes | default([], true)) | list }}"
 
 # The targets of this run that the inventory declares as control plane nodes.
 # Read where a play has to know whether the control plane is changing shape:
 # the load balancer backends, the etcd member a removal takes out
-ki_target_k8s_cp_nodes: "{{ (target_nodes | default([], true)) | select('in', k8s_cp_nodes_in_inventory) | list }}"
+ki_target_k8s_cp_nodes: "{{ (target_nodes | default([], true)) | select('in', k8s_cp_nodes_in_inventory | default([])) | list }}"

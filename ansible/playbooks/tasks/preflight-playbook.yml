@@ -74,13 +74,13 @@
         - name: Validate variable[\"node\"]
           fail:
             msg: "Node[\"{{ item }}\"] not belong to all group"
-          loop: "{{ target_nodes }}"
+          loop: "{{ target_nodes | default([], true) }}"
           when: item not in groups['all']
 
         - name: Validate variable[\"node\"]
           fail:
             msg: "Node[\"{{ item }}\"] must belong to ki_cp_node or k8s_node group"
-          loop: "{{ target_nodes }}"
+          loop: "{{ target_nodes | default([], true) }}"
           when:
             - item not in groups['ki_cp_node']
             - item not in groups['k8s_node']
@@ -98,7 +98,7 @@
               {% else %}
               Rebuild it and take it out of the broken_node group of inventory.yml first
               {% endif %}
-          loop: "{{ target_nodes }}"
+          loop: "{{ target_nodes | default([], true) }}"
           when: item in ki_broken_nodes
 
         # Joining a control plane node adds an etcd member, and kubeadm wants those
