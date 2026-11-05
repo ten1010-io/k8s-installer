@@ -29,31 +29,70 @@
         allow_upgrading_from_snapshot: ""
       when: aus is defined
 
+    # node names the nodes the playbook works on. add-node takes several at once,
+    # as one argument with commas between the names, and remove-node takes one:
+    # taking several out at once shrinks the etcd quorum and the keepalived peers
+    # in one step, and remove-broken-node refuses the same thing for the same
+    # reason. Either way what the plays read is target_nodes, a list, so that a
+    # task asks "is this node one of them" whether there is one or five
     - when: playbook == "add-node" or playbook == "remove-node"
       block:
         - name: Validate variable[\"node\"]
           fail:
-            msg: "Variable[\"node\"] is not defined"
+            msg: >-
+              Variable["node"] is not defined. Name the node to work on with -e node=<name>
+              {% if playbook == "add-node" %}
+              or several of them with -e node=<name>,<name>
+              {% endif %}
           when: node is not defined
 
-        - name: Validate variable[\"node\"]
-          fail:
-            msg: "Node[\"{{ node }}\"] not belong to all group"
-          when: node not in groups['all']
+        # A yaml list on the command line is taken as it is, and the usual form, a
+        # string, is split on commas. Names are trimmed because "node4, node5" is
+        # what a person types, and repeated names are collapsed because a node
+        # named twice would be built twice by every task below
+        - name: Set_fact variable[\"target_nodes\"] and variable[\"target_node_op\"]
+          set_fact:
+            target_nodes: >-
+              {{ ((node if node is not string else node.split(','))
+                  | map('trim') | reject('equalto', '') | unique | list) }}
+            target_node_op: "{{ 'add' if playbook == 'add-node' else 'remove' }}"
 
         - name: Validate variable[\"node\"]
           fail:
-            msg: "Node[\"{{ node }}\"] must belong to ki_cp_node or k8s_node group"
+            msg: "Variable[\"node\"] names no node"
+          when: target_nodes | length == 0
+
+        - name: Validate variable[\"node\"]
+          fail:
+            msg: >-
+              remove-node takes one node and was given {{ target_nodes | length }}:
+              {{ target_nodes | join(', ') }}. Nodes are removed one at a time, because
+              each removal takes the etcd quorum and the ki cp services of the nodes that
+              are left through a change
           when:
-            - node not in groups['ki_cp_node']
-            - node not in groups['k8s_node']
+            - playbook == "remove-node"
+            - target_nodes | length != 1
+
+        - name: Validate variable[\"node\"]
+          fail:
+            msg: "Node[\"{{ item }}\"] not belong to all group"
+          loop: "{{ target_nodes }}"
+          when: item not in groups['all']
+
+        - name: Validate variable[\"node\"]
+          fail:
+            msg: "Node[\"{{ item }}\"] must belong to ki_cp_node or k8s_node group"
+          loop: "{{ target_nodes }}"
+          when:
+            - item not in groups['ki_cp_node']
+            - item not in groups['k8s_node']
 
         # Both playbooks work on the node itself, which is the one thing a node of
         # the broken_node group can not be asked to do
         - name: Validate variable[\"node\"]
           fail:
             msg: >-
-              Node["{{ node }}"] is in the broken_node group, so this playbook can not
+              Node["{{ item }}"] is in the broken_node group, so this playbook can not
               reach it.
               {% if playbook == "remove-node" %}
               Run the remove-broken-node.yml playbook instead, which takes it out of the
@@ -61,19 +100,31 @@
               {% else %}
               Rebuild it and take it out of the broken_node group of inventory.yml first
               {% endif %}
-          when: node in ki_broken_nodes
+          loop: "{{ target_nodes }}"
+          when: item in ki_broken_nodes
 
-        - name: Set_fact variable[\"target_node\"] and variable[\"target_node_op\"]
-          set_fact:
-            target_node: "{{ node }}"
-            target_node_op: add
-          when: playbook == "add-node"
-
-        - name: Set_fact variable[\"target_node\"] and variable[\"target_node_op\"]
-          set_fact:
-            target_node: "{{ node }}"
-            target_node_op: remove
-          when: playbook == "remove-node"
+        # Joining a control plane node adds an etcd member, and kubeadm wants those
+        # one at a time. One per run rather than one at a time within the run: a
+        # run that fails after the first of two has joined leaves a cluster whose
+        # membership nobody asked for, and the record of what was applied is written
+        # only at the end. Workers join nothing but the apiserver and are not limited.
+        # Read off the inventory rather than off k8s_cp_nodes, which gather-facts.yml
+        # has not derived yet
+        - name: Validate variable[\"node\"]
+          fail:
+            msg: >-
+              {{ cp_targets | length }} of the nodes named are control plane nodes:
+              {{ cp_targets | join(', ') }}. add-node takes one control plane node per
+              run, because each one joins the etcd cluster. Add them one run at a time,
+              with any number of worker nodes beside each
+          vars:
+            cp_declared: >-
+              {{ dict(groups['k8s_node'] | zip(groups['k8s_node'] | map('extract', hostvars, 'k8s_cp')))
+                 | dict2items | selectattr('value') | map(attribute='key') | list }}
+            cp_targets: "{{ target_nodes | intersect(cp_declared) }}"
+          when:
+            - playbook == "add-node"
+            - cp_targets | length > 1
 
     # node is optional here. Named, it is the one node this reboots and nothing is
     # asked about it; left out, the playbook decides which nodes need a reboot from
@@ -134,9 +185,9 @@
                   -e node={{ node }}
               when: node == ki_control_node_ih
 
-            - name: "Set_fact variable[\"target_node\"]"
+            - name: "Set_fact variable[\"target_nodes\"]"
               set_fact:
-                target_node: "{{ node }}"
+                target_nodes: ["{{ node }}"]
 
     # The node is named by the inventory rather than by a variable on the command
     # line. It has to be in the broken_node group for the plays to leave it out,
@@ -159,7 +210,7 @@
             - ki_broken_nodes[0] not in groups['ki_cp_node']
             - ki_broken_nodes[0] not in groups['k8s_node']
 
-        - name: Set_fact variable[\"target_node\"] and variable[\"target_node_op\"]
+        - name: Set_fact variable[\"target_nodes\"] and variable[\"target_node_op\"]
           set_fact:
-            target_node: "{{ ki_broken_nodes[0] }}"
+            target_nodes: ["{{ ki_broken_nodes[0] }}"]
             target_node_op: remove

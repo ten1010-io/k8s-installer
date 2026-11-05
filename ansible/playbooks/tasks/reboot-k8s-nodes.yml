@@ -35,7 +35,7 @@
       {{ (k8s_cp_nodes | difference([inventory_hostname]) | difference(ki_broken_nodes)
           + [inventory_hostname]) | first }}
   tasks:
-    - when: target_node is none or inventory_hostname == target_node
+    - when: ki_is_target_node | bool
       block:
         # Asked even when the answer will not decide anything, because what they
         # report is worth having in the output of a run that is about to reboot
@@ -51,7 +51,7 @@
         - name: "Decide whether node[\"{{ inventory_hostname }}\"] is rebooted"
           set_fact:
             reboot_this_node: >-
-              {{ (target_node is not none)
+              {{ (target_nodes is not none)
                  or (reboot_all_nodes is defined)
                  or ((vfio_pci_result.stdout | trim | length) > 0)
                  or ((kernel_args_result.stdout | trim | length) > 0) }}

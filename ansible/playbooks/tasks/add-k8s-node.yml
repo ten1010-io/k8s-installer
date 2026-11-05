@@ -1,14 +1,26 @@
+# Joins the k8s nodes of target_nodes to the cluster.
+#
+# One set of join credentials for all of them. The token kubeadm mints is good
+# for every join made within its ttl and the certificate key is one secret in
+# the cluster, so a run adding five workers asks a control plane node once and
+# hands the same file to each.
+#
+# Workers join together and the control plane node joins after them, on its
+# own. A worker joins nothing but the apiserver, so any number of them can be
+# in flight at once. A control plane node adds an etcd member, which kubeadm
+# wants done one at a time, and preflight-playbook.yml allows one per run for
+# that reason - so the last play below is one node whenever it is any
 - hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
-    - when: inventory_hostname == k8s_cp_nodes | community.general.lists_difference([target_node]) | first
+    - when: inventory_hostname == ki_standing_k8s_cp_nodes | first
       name: Execute create-join-credentials-file.sh
       shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/create-join-credentials-file.sh {{ vars_path_arg }}"
 
-    - when: inventory_hostname == target_node
+    - when: inventory_hostname in target_nodes
       block:
         - name: Execute configure-linux.sh
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/configure-linux.sh {{ vars_path_arg }}"
@@ -36,19 +48,43 @@
         dest: "{{ ki_tmp_join_credentials_path }}"
         flat: yes
       become: yes
-      delegate_to: "{{ k8s_cp_nodes | community.general.lists_difference([target_node]) | first }}"
+      delegate_to: "{{ ki_standing_k8s_cp_nodes | first }}"
 
+# The workers of this run, all at once
 - hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
-    - when: inventory_hostname == target_node
+    - when:
+        - inventory_hostname in target_nodes
+        - not (k8s_cp | bool)
       block:
         # The token and the certificate key in it join a node to the cluster,
         # so it is readable by root alone for the minutes it exists
-        - name: "Copy join-credentials.yml to the node[\"{{ target_node }}\"]"
+        - name: "Copy join-credentials.yml to the node[\"{{ inventory_hostname }}\"]"
+          copy:
+            src: "{{ ki_tmp_join_credentials_path }}"
+            dest: "{{ ki_tmp_join_credentials_path }}"
+            mode: "0600"
+          become: yes
+
+        - name: Execute join-k8s-cluster.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/join-k8s-cluster.sh {{ vars_path_arg }}"
+
+# The control plane node of this run, if there is one, after the workers
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - when:
+        - inventory_hostname in target_nodes
+        - k8s_cp | bool
+      block:
+        - name: "Copy join-credentials.yml to the node[\"{{ inventory_hostname }}\"]"
           copy:
             src: "{{ ki_tmp_join_credentials_path }}"
             dest: "{{ ki_tmp_join_credentials_path }}"
@@ -66,7 +102,7 @@
   tasks:
     - name: Execute setup-k8s-cp-lb.sh --update
       shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh {{ vars_path_arg }} --update"
-      when: hostvars[target_node]['k8s_cp']
+      when: ki_target_k8s_cp_nodes | length > 0
 
 - hosts: all:!broken_node
   gather_facts: false

@@ -27,7 +27,7 @@
     - name: "Execute {{ script | basename }}"
       shell: "sudo {{ ki_opt_scripts_path }}/{{ script }} {{ vars_path_arg }}"
       when:
-        - target_node is none or inventory_hostname == target_node
+        - ki_is_target_node | bool
         - inventory_hostname != ki_control_node_ih
 
 - hosts: all:!localhost:!broken_node
@@ -39,5 +39,5 @@
     - name: "Execute {{ script | basename }}"
       shell: "sudo {{ ki_opt_scripts_path }}/{{ script }} {{ vars_path_arg }}"
       when:
-        - target_node is none or inventory_hostname == target_node
+        - ki_is_target_node | bool
         - inventory_hostname == ki_control_node_ih

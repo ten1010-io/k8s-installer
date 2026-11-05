@@ -24,7 +24,7 @@
   gather_facts: false
   any_errors_fatal: true
   tasks:
-    - when: target_node is none or inventory_hostname == target_node
+    - when: ki_is_target_node | bool
       block:
         - name: "Remove file[\"{{ ki_etc_applied_release_path }}\"]"
           shell: "sudo rm -f {{ ki_etc_applied_release_path }}"

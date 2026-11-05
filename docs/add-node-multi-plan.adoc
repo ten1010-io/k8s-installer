@@ -1,0 +1,512 @@
+= add-node 다중 노드 지원 플랜
+:toc:
+:toclevels: 2
+
+2026-11-05 기준 main(`a6dec39`) 을 읽고 정리한 설계 탐색 문서입니다. "한 번의 `add-node`
+실행으로 노드 두 개 이상을 넣으려면 레포를 어떻게 바꿔야 하는가" 에 대한 선택지와 추천안을
+적습니다.
+
+구현 상태 (2026-11-05, 브랜치 `feat/add-node-multi`): 로드맵 0~2단계를 한 커밋으로 구현했습니다.
+구현에서 정착한 판단은 `impl-notes.adoc` 의 "add-node 가 노드 여럿을 받는 방식" 에 있고, 이 문서는
+탐색 기록으로 남깁니다. 3단계(ki cp 2개 동시 추가)는 실제 클러스터 검증이 남았고, 4단계(인벤토리
+차분 자동 계산)는 preflight 가 도는 시점에 클러스터 멤버십을 알 수 없어 보류했습니다 — 아래
+<<결정 (2026-11-05)>> 의 플랜 C 채택은 그 설계가 나오면 다시 봅니다.
+
+== 결론
+
+* 지금은 **한 번에 한 노드만** 됩니다. `-e node=` 가 단일 문자열이고, 플레이북과 스크립트
+  양쪽이 `inventory_hostname == target_node` 단일 비교로 짜여 있습니다.
+* ansible-playbook 프로세스를 두 개 띄워 병렬로 돌리는 것은 **지원 불가**입니다.
+  제어 노드와 모든 노드가 `/tmp/k8s-installer` 아래 같은 임시 파일을 쓰고 지웁니다.
+* 추천은 **플랜 B: `target_node` 를 `target_nodes` 리스트로 바꾸는 것**입니다.
+  공통 구축 단계는 대상 노드 전체에 병렬로 돌고, kubeadm join 과 ki cp 서비스 재구성은
+  이미 레포가 쓰는 `serial: 1` 패턴으로 직렬화합니다. 단계를 나누면 첫 단계는 동작 변경
+  없는 리팩토링이라 위험이 낮습니다.
+* 당장 필요하면 **플랜 A: 셸에서 순차 반복**이 유일한 안전한 경로이고, README 에
+  적어 두는 것만으로 끝납니다.
+
+== 현재 구조
+
+=== 변수 모델
+
+`preflight-playbook.yml` 이 `-e node=` 를 받아 `target_node`(문자열) 와
+`target_node_op`(`add` | `remove`) 를 모든 호스트에 `set_fact` 합니다. 기본값은
+`group_vars/all/constant-vars.yml` 의 `target_node: null` 이고, `setup-cluster` 처럼
+노드를 지목하지 않는 플레이북은 null 그대로 돕니다.
+
+이 두 값은 `setup-vars-file.yml` 이 각 노드에 쓰는 vars 파일(`/tmp/k8s-installer/vars.yml`)
+에 그대로 들어가서, **플레이북뿐 아니라 셸 스크립트도** yq 로 읽습니다. 그래서 변경 범위가
+ansible 디렉토리에서 끝나지 않습니다.
+
+=== 세 가지 판정식
+
+[cols="2,3,3"]
+|===
+|판정식 |의미 |쓰는 곳
+
+|`target_node is none or inventory_hostname == target_node`
+|"지목된 노드이거나, 지목이 없으면 모든 노드"
+|`run-all-node-script.yml`, `setup-boot-config.yml`, `setup-ki-ca-crt.yml`,
+ `setup-ephemeral-storage.yml`, `apply-k8s-cp-extra-files.yml`,
+ `apply-node-metadata.yml`, `apply-node-kernel-config.yml`, reset 계열
+
+|`inventory_hostname == target_node` / `!= target_node`
+|"새 노드는 setup, 기존 노드는 `--update`"
+|`add-ki-cp-node.yml`, `add-k8s-node.yml`, `sync-pki.yml`
+
+|`k8s_cp_nodes \| lists_difference([target_node]) \| first`
+|"대상이 아닌 살아 있는 cp 노드 하나" (join 토큰 발급, PKI 복사 원본)
+|`add-k8s-node.yml`, `sync-pki.yml`, `remove-k8s-node.yml`
+|===
+
+`add-node.yml` 자체도 `when: target_node in groups['ki_cp_node']` 로 태스크 파일 import 를
+걸러냅니다.
+
+=== 스크립트가 읽는 곳
+
+[cols="3,4"]
+|===
+|스크립트 |무엇을 하는가
+
+|`scripts/all-node/check-node-state.sh`
+|대상 노드면 "패키지 미설치" 요구, 나머지는 역할 일치와 인벤토리↔클러스터 일치 검사.
+ `exempt_ih_list` 에 대상 노드를 넣어 "아직 클러스터에 없는 것" 을 허용하고,
+ 반대로 클러스터에 이미 있으면 `already has node` 로 거부
+
+|`scripts/all-node/resolv-conf/setup-resolv-conf.sh`
+|DNS 를 물을 ki cp 마스터 노드 선택. remove 일 때만 대상 노드를 뺌
+
+|`scripts/ki-cp-node/dns-server/setup-dns-server.sh`
+|같은 마스터 노드 선택 로직
+
+|`scripts/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh`
+|haproxy 백엔드 목록. remove 일 때만 대상 노드를 뺌
+
+|`scripts/ki-cp-node/keepalived/setup-keepalived.sh`
+|unicast peer 목록. remove 일 때만 대상 노드를 뺌
+
+|`scripts/ki-cp-node/user-registry/sync-user-registry.sh`
+|새 ki cp 노드의 레지스트리를 채울 원본 피어 선택. **add 모드에서는 대상 노드를 빼지 않음**
+
+|`scripts/k8s-node/delete-node.sh`
+|remove 전용. 노드 오브젝트 삭제
+
+|`scripts/preflight/validate-hostvars.py`
+|pydantic 모델에 `target_node: str \| None`, 제어 노드 제거 거부 검사
+|===
+
+=== 공유 임시 파일
+
+한 실행이 제어 노드와 모든 노드에 만들고 끝에 지우는 파일입니다. 병렬 프로세스가 불가능한
+직접적인 이유입니다.
+
+* `/tmp/k8s-installer/vars.yml`, `localhost-vars.yml` — 모든 노드, 실행 끝에 삭제
+* `/tmp/k8s-installer/join-credentials.yml` — 제어 노드에 fetch 후 대상 노드에 copy, 전 노드에서 삭제
+* `/tmp/k8s-installer/pki/` — ki cp 노드 추가 시
+* `/tmp/k8s-installer/ki-ca.crt`
+
+여기에 `setup-resolv-conf.sh` 가 `every_node: true` 로 **기존 노드 전부**에서 돌고,
+`setup-k8s-cp-lb.sh --update`, `record-applied-state.yml` 도 기존 노드 전부를 씁니다.
+두 실행이 겹치면 같은 노드의 같은 파일을 동시에 씁니다.
+
+=== 이미 직렬화되어 있는 것
+
+`add-ki-cp-node.yml` 의 keepalived 플레이는 `serial: 1` 입니다. vip 를 들고 있는 노드가
+동시에 재시작되면 vip 가 비는 시간이 생기기 때문이고, 이 패턴은
+`apply-control-plane-changes.yml`, `renew-k8s-certs.yml`, `reboot-k8s-nodes.yml` 등
+10곳에서 쓰입니다. 다중 노드 지원도 이 패턴 위에 얹는 것이 레포의 결을 따르는 길입니다.
+
+== 선택지
+
+=== 플랜 A. 순차 반복 래퍼 (코드 변경 없음)
+
+[source,shell]
+----
+for n in node4 node5 node6; do
+  ansible-playbook -i inventory.yml playbooks/add-node.yml -e node=$n || break
+done
+----
+
+* 장점: 지금 당장 됨. 레포 변경은 README 한 단락.
+* 단점: 노드마다 `begin-playbook`(설치 확인, ansible 동기화), 전 노드 `check-node-state`,
+  ki cp 서비스 `--update` 전체, `record-applied-state` 전체가 반복됨. 노드 N 개면 기존 노드가
+  N 번 재구성됨. 레지스트리 동기화는 ki cp 노드마다 어차피 한 번이라 손해 없음.
+* 결정: 플랜 B 와 무관하게 **README 에 적는다**. 플랜 B 가 들어와도 "한 번에 하나" 를
+  선호하는 운영자에게 유효한 경로.
+
+=== 플랜 B. `target_nodes` 리스트 모델 (추천)
+
+`target_node: str | None` 을 `target_nodes: list | None` 으로 바꾸고, 세 판정식을 리스트
+멤버십으로 바꿉니다. 공통 구축 단계는 ansible 이 호스트 단위로 병렬 실행하므로 자동으로
+동시에 돌고, 직렬이어야 하는 단계만 `serial: 1` 로 묶습니다.
+
+세부 설계는 <<플랜 B 세부 설계>> 에 있습니다.
+
+=== 플랜 C. 인벤토리 차분 자동 추가 (B 의 확장)
+
+`-e node=` 를 생략하면 "인벤토리에 있는데 클러스터에 없는 노드 전부" 를 대상으로 삼는
+모드입니다. 운영자가 inventory.yml 에 노드를 여럿 적고 `add-node.yml` 한 번으로 끝냅니다.
+
+* 장점: 인터페이스가 가장 단순. `setup-cluster` 와 대칭.
+* 단점: 인벤토리 오타가 곧 프로비저닝이 됨. `check-node-state.sh` 가 지금 "인벤토리와
+  클러스터는 대상 노드 하나만 빼고 일치해야 한다" 를 안전장치로 삼고 있는데, 이 모드는 그
+  안전장치를 뒤집어 "불일치가 곧 할 일" 로 만듦. `broken_node` 그룹과의 상호작용(재설치
+  후 그룹에서 뺀 노드가 자동 대상이 되는 것은 의도일 수도, 사고일 수도)도 정해야 함.
+* 결정: B 가 안정된 뒤 별도 판단. B 의 `target_nodes` 계산을 preflight 한 곳에 모아 두면
+  C 는 그 한 곳에 분기 하나 더하는 일이 됨.
+
+=== 플랜 D. 병렬 프로세스 허용 (기각)
+
+실행마다 임시 디렉토리를 분리(`/tmp/k8s-installer/<run-id>/`)해서 ansible-playbook 두 개를
+동시에 띄우는 방식입니다.
+
+* 임시 파일 충돌은 풀리지만, 기존 노드 전체를 쓰는 단계(`resolv-conf`, lb `--update`,
+  `record-applied-state`, keepalived 재시작)의 충돌은 그대로 남음. 그 충돌은 임시 경로가
+  아니라 노드의 실제 설정 파일에서 남.
+* `check-node-state.sh` 의 인벤토리↔클러스터 일치 검사가 "상대 실행이 넣는 중인 노드" 를
+  모르므로 거부하거나, 거부를 풀면 안전장치가 사라짐.
+* ki cp 노드 두 개가 각자 다른 실행에서 join 하면 etcd 멤버 변경이 동시에 일어남.
+* 결정: 기각. 한 실행 안에서 여러 노드를 다루는 B 가 같은 문제를 한 곳에서 풂.
+
+== 플랜 B 세부 설계
+
+=== 인터페이스
+
+[source,shell]
+----
+ansible-playbook -i inventory.yml playbooks/add-node.yml -e node=node4            # 지금과 같음
+ansible-playbook -i inventory.yml playbooks/add-node.yml -e node=node4,node5,node6
+----
+
+쉼표 구분 문자열을 preflight 가 `split(',') | map('trim') | unique | list` 로 받습니다.
+`-e '{"node": [...]}'` JSON 도 같은 코드로 받을 수 있지만(문자열이면 split, 리스트면 그대로)
+문서에는 쉼표 형식만 적습니다. 변수 이름을 `nodes` 로 새로 만들지 않는 이유는 `node=` 를
+쓰는 README 문장과 운영자 습관을 깨지 않기 위해서입니다.
+
+`remove-node` 는 **길이 1 로 제한**합니다. 노드를 여럿 빼는 것은 etcd 쿼럼과 keepalived
+피어를 한 번에 줄이는 일이고, `remove-broken-node` 가 "한 번에 하나, 남은 노드들이
+재구성을 거치기 때문" 이라고 거부하는 것과 같은 이유입니다. preflight 가 거부 메시지에
+그 이유를 적습니다.
+
+=== 변수
+
+[cols="2,2,4"]
+|===
+|변수 |타입 |설명
+
+|`target_nodes`
+|`list[str] \| null`
+|지목된 노드들. null 이면 "모든 노드" (setup-cluster, update-cluster 등). 빈 리스트는
+ preflight 가 거부
+
+|`target_node_op`
+|`"add" \| "remove" \| null`
+|그대로
+
+|`target_node`
+|삭제
+|호환 별칭으로 남기지 않음. 남기면 "하나일 때만 맞는 값" 이 생기고 그것을 읽는 코드가
+ 조용히 틀림. 한 번에 전부 바꾸고 grep 으로 잔존을 확인
+|===
+
+판정식은 Jinja 한 줄로 반복되므로, 각 태스크 파일 안에서 `vars:` 로 묶기보다
+`group_vars/all/constant-vars.yml` 에 다음을 둡니다.
+
+[source,yaml]
+----
+# 이 노드가 지금 실행의 대상인지. 지목이 없는 실행은 모든 노드가 대상이다
+ki_is_target_node: "{{ target_nodes is none or inventory_hostname in target_nodes }}"
+# 대상이 아닌, 살아 있는 k8s cp 노드들. join 토큰을 발급하고 PKI 를 내줄 쪽
+ki_standing_k8s_cp_nodes: "{{ k8s_cp_nodes | difference(target_nodes | default([], true)) }}"
+ki_standing_ki_cp_nodes: "{{ groups['ki_cp_node'] | difference(ki_broken_nodes) | difference(target_nodes | default([], true)) }}"
+----
+
+`k8s_cp_nodes` 는 `gather-facts.yml` 에서 set_fact 로 만들어지므로 lazy 템플릿으로 두면
+그 이후에만 평가됩니다. `when:` 절에서 `ki_is_target_node | bool` 로 씁니다.
+
+=== 단계별 동작
+
+add-node.yml 의 import 순서를 따라 적습니다.
+
+[cols="3,2,4"]
+|===
+|단계 |병렬/직렬 |변경
+
+|`setup-ephemeral-storage`, `setup-boot-config`, `setup-ki-ca-crt`,
+ `run-all-node-script` 계열(패키지, nfs, crictl, bin, containerd, ntp, node-metrics)
+|대상 노드 전체 **병렬**
+|`== target_node` → `ki_is_target_node`. 스크립트 자체는 노드 로컬이라 변경 없음.
+ reboot 모듈도 호스트별로 병렬이고 빈 노드라 안전
+
+|`run-all-node-script-control-node-last` (docker)
+|대상 병렬, 제어 노드 마지막
+|판정식만 교체. 제어 노드가 대상일 수는 없음(이미 클러스터 노드)
+
+|`sync-pki`
+|localhost 한 번 fetch, 대상 노드에 병렬 copy
+|원본 `src_ih` 를 `ki_standing_ki_cp_nodes \| first` 로. 대상이 둘이어도 fetch 는 한 번
+
+|`add-ki-cp-node` 서비스 setup / `--update`
+|대상 노드끼리 병렬, 기존 노드끼리 병렬
+|`==` / `!=` → 멤버십. dns, lb, keepalived 스크립트는 add 모드에서 `groups.ki_cp_node`
+ 전체를 읽으므로 **대상 노드 두 개가 한 번에 설정에 들어감**. 이것이 원하는 동작
+
+|`add-ki-cp-node` 의 `sync-user-registry.sh`
+|대상 노드 병렬
+|**피어 목록에서 `target_nodes` 를 뺀다.** 지금은 add 모드에서 빼지 않아서, 대상 노드 A 가
+ 같은 실행에서 막 올라온 B 의 빈 레지스트리를 "응답하는 첫 피어" 로 고를 수 있음. 그러면
+ A 는 비어 있는 채로 끝나고 아무 오류도 없음. 이 문서에서 찾은 **유일한 조용한 실패**
+
+|`add-ki-cp-node` keepalived
+|이미 `serial: 1`
+|판정식만 교체
+
+|`apply-k8s-cp-extra-files`
+|병렬
+|판정식만 교체
+
+|`add-k8s-node` 토큰 발급
+|기존 cp 노드 하나에서 한 번
+|`ki_standing_k8s_cp_nodes \| first`. 토큰 하나와 certificate key 하나를 대상 전체가
+ 공유. kubeadm 토큰은 TTL 안에서 재사용 가능하고 certificate key 는 2시간 secret 이므로
+ 공유해도 됨. 단 TTL 은 아래 참고
+
+|`add-k8s-node` join
+|**워커는 병렬, cp 노드는 실행당 최대 1개**
+|플레이를 둘로 나눔. `hosts: k8s_node:!broken_node` 에서 `k8s_cp` 가 false 인 대상은
+ 한 플레이로, true 인 대상(preflight 가 최대 하나로 제한)은 그 뒤 별도 플레이로.
+ kubeadm 은 control plane 동시 join 을 권장하지 않고(etcd 멤버 추가가 직렬), 실패했을 때
+ 어느 노드가 멤버를 반쯤 넣었는지 추적하기도 어려움. 상한을 1 로 둔 결정은 <<결정 (2026-11-05)>>
+
+|`add-k8s-node` lb `--update`
+|기존 ki cp 노드 병렬
+|`hostvars[target_node]['k8s_cp']` → `target_nodes \| map('extract', hostvars, 'k8s_cp') \| select \| list \| length > 0`
+
+|`apply-node-metadata`
+|병렬
+|판정식만 교체. 노드별 메타데이터 파일 이름에 `inventory_hostname` 이 이미 들어 있어
+ cp 노드 한 곳에 동시에 써도 충돌 없음(주석이 이미 그 이유를 적어 둠)
+
+|`record-applied-state`
+|전 노드 병렬
+|`"all" if inventory_hostname in target_nodes else [...]`
+
+|`check-user-registry`, `check-*` 계열
+|변경 없음
+|
+|===
+
+=== 토큰 TTL
+
+`create-join-credentials-file.sh` 가 `--ttl 30m` 으로 토큰을 만듭니다. cp 노드를 `serial: 1`
+로 join 하면 노드당 수 분이라 보통 안에 들지만, 재부팅 대기가 토큰 발급 **앞에** 있으므로
+(setup-boot-config 가 먼저) 재부팅 시간은 TTL 을 먹지 않습니다. 대상이 많아 불안하면
+preflight 가 `target_nodes | length` 로 TTL 을 늘려 넘기는 옵션이 있지만, 1단계에서는
+30m 을 유지하고 README 에 "한 번에 넣는 cp 노드는 셋 이하" 로 적는 쪽이 단순합니다.
+
+=== 스크립트 변경
+
+vars 파일의 `target_nodes` 는 `to_yaml` 로 리스트가 되고 yq 로 `.target_nodes` 를 읽으면
+JSON 배열이 됩니다. 패턴은 모두 같습니다.
+
+[source,shell]
+----
+# 전
+[[ $inventory_hostname = "$target_node" ]]
+# 후
+[[ $($yq_cmd --null-input "$target_nodes | contains([\"$inventory_hostname\"])") = "true" ]]
+
+# 전
+".groups.ki_cp_node - .ki_broken_nodes - [\"$target_node\"]"
+# 후
+".groups.ki_cp_node - .ki_broken_nodes - $target_nodes"
+----
+
+[cols="3,4"]
+|===
+|스크립트 |변경
+
+|`check-node-state.sh`
+|`exempt_ih_list` 에 `target_nodes` 를 통째로 더함. `node_is_being_set_up`,
+ `check_vip_carrier`, `require_no_etcd_alarm` 의 단일 비교를 멤버십으로.
+ `check_k8s_cluster_all_nodes` / `check_k8s_cluster_cp_nodes` 의 "already has node" 분기는
+ `diff_ih_list` 와 `target_nodes` 의 교집합이 비어 있지 않으면 그 노드들을 나열하며 거부
+
+|`setup-resolv-conf.sh`, `setup-dns-server.sh`, `setup-k8s-cp-lb.sh`, `setup-keepalived.sh`
+|remove 분기의 `- ["$target_node"]` 를 `- $target_nodes` 로. add 분기는 변경 없음
+
+|`sync-user-registry.sh`
+|`get_ki_cp_ih_list` 가 add 와 remove **양쪽**에서 `target_nodes` 를 뺌. 위 표의 조용한
+ 실패를 막는 변경이고, 하나만 넣을 때는 자기 자신을 빼는 것이라 동작이 같음
+
+|`delete-node.sh`
+|remove 전용. `target_nodes[0]` 을 읽음(preflight 가 길이 1 보장)
+
+|`validate-hostvars.py`
+|모델 `target_nodes: list[str] \| None`. 제어 노드 제거 거부 검사를 `in` 으로
+|===
+
+=== 실패 의미론
+
+모든 플레이가 `any_errors_fatal: true` 라 대상 중 하나가 실패하면 실행 전체가 그 자리에서
+멈춥니다. 이것은 바꾸지 않습니다. 바꾸면 "절반은 들어가고 절반은 안 들어간 채 성공으로
+끝난 실행" 이 생기고, 레포가 일관되게 피해 온 상태입니다.
+
+대신 **멈춘 뒤의 복구 경로**를 README 에 적어야 합니다.
+
+* join 전에 멈췄으면: 대상 노드들은 패키지와 containerd 까지 깔린 상태. 다시 `add-node`
+  를 돌리면 `check-node-state.sh` 가 `require_linux_packages_not_installed` 로 거부함.
+  경로는 실패한 노드들을 `remove-node` 로 되돌린 뒤 다시 `add-node`. `remove-node` 는
+  join 하지 않은 노드도 처리함(`delete-node.sh` 는 노드 오브젝트가 없으면 0 으로 나감)
+* 일부 join 후 멈췄으면: join 된 노드는 클러스터 멤버이고 `record-applied-state` 는 안
+  돌았음. 남은 노드만 `-e node=` 로 다시 넣으면 되지만, join 된 노드의 applied-state 기록이
+  없어서 다음 `update-cluster` 가 전부를 변경으로 볼 수 있음. 1단계에서는 "join 된 노드도
+  `remove-node` 후 다시" 로 단순하게 적고, 재개(resume) 는 하지 않음
+
+=== `forks`
+
+ansible 기본 `forks` 는 5 입니다. 대상이 다섯을 넘으면 공통 단계가 다섯 개씩 끊어 돕니다.
+`ansible.cfg` 에 올리는 것은 설치본 전체에 영향을 주므로(`setup-cluster` 도 빨라짐) 별도
+판단이고, 이 플랜의 범위가 아닙니다. README 에 한 줄 적습니다.
+
+== 로드맵
+
+[cols="1,3,3,2"]
+|===
+|단계 |내용 |완료 기준 |동작 변경
+
+|0
+|README 에 플랜 A(순차 루프) 와 "동시 실행 불가" 를 적음
+|문서
+|없음
+
+|1
+|`target_node` → `target_nodes` 리팩토링. preflight 는 길이 1 만 허용.
+ 플레이북 15개, 스크립트 7개, validate-hostvars.py, constant-vars.yml.
+ `sync-user-registry.sh` 피어 제외 포함
+|`grep -r target_node ansible scripts` 가 `target_nodes` 외에 아무것도 안 잡음.
+ add-node / remove-node / remove-broken-node / reboot-nodes 가 노드 하나로 지금과 같이 동작
+|없음 (리팩토링)
+
+|2
+|preflight 가 add-node 에서 길이 2 이상을 허용. `add-k8s-node` join 플레이를
+ 워커 병렬 / cp `serial: 1` 로 분리
+|워커 2개 동시 추가. 워커 1 + cp 1. cp 2 (serial 확인).
+ 실패 주입: 두 번째 워커의 패키지 설치를 깨뜨려 전체가 멈추고 복구 경로가 README 대로 되는지
+|add-node 다중
+
+|3
+|ki cp 노드 2개 동시 추가 검증. 레지스트리 동기화 원본이 기존 노드인지,
+ keepalived 핸드오버 횟수, dns 레코드 둘 다 들어갔는지
+|3노드 클러스터에 ki cp 2개 추가 후 `check-user-registry`, `check-k8s-cp-file-drift` 통과
+|add-node 다중 (ki cp)
+
+|4
+|플랜 C. `node` 생략 시 인벤토리 차분 자동 계산. preflight 한 곳에 분기 추가,
+ cp 상한 1 과 `broken_node` 제외는 명시 모드와 같은 코드로
+|`node` 생략으로 워커 2개 추가. 차분에 cp 2개가 있으면 거부 메시지 확인.
+ 인벤토리와 클러스터가 일치하면 "할 일 없음" 으로 성공 종료
+|add-node 인터페이스
+|===
+
+1단계와 2단계를 나누는 이유는, 1단계는 테스트가 "지금과 같은가" 하나라 리뷰가 쉽고,
+2단계는 진짜 새 동작이라 리뷰가 다르기 때문입니다. `docs/impl-notes.adoc` 에는 2단계에서
+"cp join 은 왜 직렬인가", "레지스트리 피어에서 대상을 왜 빼는가" 두 항목을 적습니다.
+
+== 변경 파일 목록 (1~2단계)
+
+[cols="4,1,3"]
+|===
+|파일 |참조 수 |비고
+
+|`ansible/group_vars/all/constant-vars.yml` |2 |`target_nodes: null`, 헬퍼 변수 추가
+|`ansible/playbooks/tasks/preflight-playbook.yml` |11 |파싱, 검증, 길이 제한
+|`ansible/playbooks/add-node.yml` |6 |import `when` 을 교집합으로
+|`ansible/playbooks/remove-node.yml` |4 |`target_nodes[0]` 또는 교집합
+|`ansible/playbooks/remove-broken-node.yml` |2 |
+|`ansible/playbooks/tasks/add-k8s-node.yml` |6 |join 플레이 분리 (2단계)
+|`ansible/playbooks/tasks/add-ki-cp-node.yml` |5 |
+|`ansible/playbooks/tasks/sync-pki.yml` |3 |
+|`ansible/playbooks/tasks/setup-boot-config.yml` |5 |
+|`ansible/playbooks/tasks/remove-k8s-node.yml` |5 |
+|`ansible/playbooks/tasks/remove-ki-cp-node.yml` |5 |
+|`ansible/playbooks/tasks/check-broken-node.yml` |7 |
+|`ansible/playbooks/tasks/report-broken-node-removed.yml` |4 |
+|`ansible/playbooks/tasks/reboot-k8s-nodes.yml` |2 |
+|`ansible/playbooks/tasks/run-all-node-script.yml` |2 |
+|`ansible/playbooks/tasks/run-all-node-script-control-node-last.yml` |2 |
+|`ansible/playbooks/tasks/apply-k8s-cp-extra-files.yml` |1 |
+|`ansible/playbooks/tasks/apply-node-kernel-config.yml` |1 |
+|`ansible/playbooks/tasks/apply-node-metadata.yml` |1 |
+|`ansible/playbooks/tasks/setup-ephemeral-storage.yml` |1 |
+|`ansible/playbooks/tasks/setup-ki-ca-crt.yml` |1 |
+|`ansible/playbooks/tasks/reset-cluster-record.yml` |1 |
+|`ansible/playbooks/tasks/reset-ephemeral-storage.yml` |1 |
+|`ansible/playbooks/tasks/reset-k8s-cp-extra-files.yml` |1 |
+|`ansible/playbooks/tasks/reset-pki.yml` |1 |
+|`scripts/all-node/check-node-state.sh` |21 |가장 큼
+|`scripts/all-node/resolv-conf/setup-resolv-conf.sh` |8 |
+|`scripts/ki-cp-node/dns-server/setup-dns-server.sh` |8 |
+|`scripts/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh` |8 |
+|`scripts/ki-cp-node/keepalived/setup-keepalived.sh` |8 |
+|`scripts/ki-cp-node/user-registry/sync-user-registry.sh` |11 |add 분기도 제외
+|`scripts/k8s-node/delete-node.sh` |14 |
+|`scripts/preflight/validate-hostvars.py` |4 |
+|`README.adoc` |- |add-node 사용법, 복구 경로, forks
+|`docs/impl-notes.adoc` |- |2단계 설계 판단 두 항목
+|===
+
+참조 수는 `grep -c target_node` 결과이고 주석 포함입니다.
+
+== 위험
+
+[cols="3,4"]
+|===
+|위험 |대응
+
+|레지스트리 동기화가 빈 피어를 원본으로 고름
+|`sync-user-registry.sh` 피어 목록에서 `target_nodes` 제외. 1단계에 포함
+
+|cp 노드 동시 join 으로 etcd 멤버 추가 충돌
+|cp join 플레이 `serial: 1`. 워커만 병렬
+
+|토큰 TTL 30분 초과
+|cp 는 직렬이라 노드당 수 분. 1단계는 그대로 두고 README 에 상한 명시
+
+|절반 구축 상태에서 재실행 거부
+|복구 경로(`remove-node` → `add-node`) 를 README 에 명시. resume 은 하지 않음
+
+|`forks` 5 로 공통 단계가 끊김
+|README 한 줄. 설정 변경은 범위 밖
+
+|`target_node` 잔존 참조가 조용히 null 을 읽음
+|변수 이름을 완전히 바꿔서 잔존은 "undefined" 로 터지게 함. grep 을 완료 기준에 포함
+
+|여러 노드 재부팅 대기가 겹쳐 한 노드의 1800초 타임아웃이 전체를 멈춤
+|지금도 같은 타임아웃. 병렬이라 전체 시간은 늘지 않음. 변경 없음
+
+|k8s-installer-tui 가 add-node 를 모르는 상태
+|TUI 는 현재 설치 플랜(setup-cluster, aipub)만 모델링하고 add-node 는 없음. 이 플랜과 무관
+|===
+
+== 결정 (2026-11-05)
+
+* **cp 노드는 한 실행에 최대 1개.** preflight 가 `target_nodes` 중 `k8s_cp: true` 인 노드가
+  둘 이상이면 거부하고, 메시지에 "cp 노드는 한 번에 하나씩, etcd 멤버 변경이 실행당 하나여야
+  실패 시 복구가 단순하기 때문" 을 적음. 워커는 제한 없음. 이로써 `add-k8s-node` 의 cp join
+  플레이는 `serial: 1` 이 아니라 "대상 중 cp 노드 하나" 로 단순해지고, 토큰 TTL 우려도 사라짐.
+  로드맵 3단계(ki cp 2개 동시)는 ki cp 노드가 `k8s_cp: false` 인 구성에서만 해당.
+* **플랜 C 채택.** `-e node=` 를 적으면 그 노드들, 생략하면 인벤토리에 있는데 클러스터에
+  없는 노드 전부. 로드맵 4단계를 선택이 아닌 정식 단계로. 자동 모드에서도 cp 상한 1 은
+  같이 적용되므로, 차분에 cp 노드가 둘 이상 있으면 거부하고 `-e node=` 로 하나씩 넣으라고
+  안내. `broken_node` 그룹의 노드는 차분에서 제외(그룹에서 뺀 뒤에야 대상이 됨).
+* **`forks` 는 5 그대로.** forks 는 한 태스크를 동시에 돌리는 호스트 수이고, 대상이 아닌
+  노드는 `when:` 에서 SSH 없이 스킵되므로 비용은 실제 스크립트를 도는 대상 노드 수에만
+  달림. 한 번에 넣는 노드가 5개 이하면 영향 0, 10개면 약 2배, 20개면 약 4배(순차 루프는
+  각각 10배, 20배). 10개 이상을 한 번에 넣는 사이트는 `ansible.cfg` `[defaults]` 에
+  `forks = 20` 한 줄로 비례해서 빨라지며, 이것은 플랜과 분리해 그 사이트에서 결정. README
+  에 그 한 줄을 적음. 레지스트리 동기화는 대역폭을 나눠 쓰므로 forks 와 비례하지 않음.
+
+== 미결
+
+없음. 이 문서는 분석과 플랜 단계까지이고, 구현은 별도 결정 뒤에 시작.
