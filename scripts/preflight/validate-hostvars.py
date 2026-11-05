@@ -1499,6 +1499,7 @@ class ConstantVarsModel(BaseModel):
         "ki_tmp_pki_path",
         "ki_tmp_ki_ca_crt_path",
         "ki_tmp_join_credentials_path",
+        "ki_tmp_join_credentials_src_path",
         "ki_etc_root_path",
         "ki_etc_pki_path",
         "ki_etc_services_path",
@@ -1543,6 +1544,7 @@ class ConstantVarsModel(BaseModel):
     ki_tmp_pki_path: PurePosixPath
     ki_tmp_ki_ca_crt_path: PurePosixPath
     ki_tmp_join_credentials_path: PurePosixPath
+    ki_tmp_join_credentials_src_path: PurePosixPath
 
     ki_etc_root_path: PurePosixPath
     ki_etc_pki_path: PurePosixPath
