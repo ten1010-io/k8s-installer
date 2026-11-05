@@ -40,10 +40,8 @@
         - name: Validate variable[\"node\"]
           fail:
             msg: >-
-              Variable["node"] is not defined. Name the node to work on with -e node=<name>
-              {% if playbook == "add-node" %}
-              or several of them with -e node=<name>,<name>
-              {% endif %}
+              Variable["node"] is not defined. Name the node to work on with -e node=<name>{%
+              if playbook == "add-node" %} or several of them with -e node=<name>,<name>{% endif %}
           when: node is not defined
 
         # A yaml list on the command line is taken as it is, and the usual form, a
