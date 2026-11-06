@@ -732,6 +732,11 @@ ki_kubelet_memory_reservation_vars:
 target_nodes: null
 target_node_op: null
 
+# Whether add-node was run with no node named, so that derive-target-nodes.yml
+# fills target_nodes from the inventory and the cluster. preflight-playbook.yml
+# sets it; everything else reads false
+ki_target_nodes_from_inventory: false
+
 # Whether the node a play is on is one of those, which is the condition of
 # nearly every task that builds or resets a node. Asked through this rather
 # than spelled out at each task so that a playbook pointed at no node and a

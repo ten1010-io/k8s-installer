@@ -5,11 +5,12 @@
 # the cluster, so a run adding five workers asks a control plane node once and
 # hands the same file to each.
 #
-# Workers join together and the control plane node joins after them, on its
-# own. A worker joins nothing but the apiserver, so any number of them can be
+# Workers join together and the control plane nodes join after them, one at a
+# time. A worker joins nothing but the apiserver, so any number of them can be
 # in flight at once. A control plane node adds an etcd member, which kubeadm
-# wants done one at a time, and preflight-playbook.yml allows one per run for
-# that reason - so the last play below is one node whenever it is any
+# wants done one at a time, so the play that joins them runs with serial: 1. A
+# run that fails between two of them leaves the first in the cluster with no
+# record of it, which is the state README.adoc tells the operator how to leave
 - hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
@@ -73,10 +74,14 @@
         - name: Execute join-k8s-cluster.sh
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/join-k8s-cluster.sh {{ vars_path_arg }}"
 
-# The control plane node of this run, if there is one, after the workers
+# The control plane nodes of this run, if there are any, after the workers and
+# one at a time. serial is one host per batch over the whole group, so the hosts
+# that are not joining go through an empty batch each, which is the cost of
+# keeping the group the play is on the same as the one above
 - hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
+  serial: 1
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
