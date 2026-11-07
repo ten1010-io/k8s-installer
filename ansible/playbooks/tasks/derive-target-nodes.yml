@@ -1,0 +1,112 @@
+# Fills target_nodes for an add-node run that named no node: every node of the
+# inventory that the cluster does not hold yet.
+#
+# Right after preflight-playbook.yml, because the next play of add-node.yml,
+# setup-ephemeral-storage.yml, already builds the nodes of target_nodes. Until
+# this has run target_nodes is the empty list preflight-playbook.yml set, so
+# that no node is a target by accident. gather-facts.yml has not run either,
+# which is why the hostnames are asked here: what the apiserver lists are
+# hostnames, and the inventory names are not.
+#
+# Who is in the cluster is decided by create-target-nodes.py, from what the
+# plays below gather: the hostname of every node, whether it carries the
+# release record a built node holds, and the node list of the apiserver from
+# the first control plane node that can give it. A control plane node that is
+# itself being added has no kubectl to ask, so every declared one is asked and
+# the ones that can not answer are passed over
+- hosts: all:!localhost:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Execute hostname
+      shell: "sudo hostname"
+      register: shell_result
+
+    - name: Set_fact variable[\"hostname\"]
+      set_fact:
+        hostname: "{{ shell_result.stdout | trim }}"
+
+    - name: "Check for file[\"{{ ki_etc_applied_release_path }}\"]"
+      shell: "sudo test -f {{ ki_etc_applied_release_path }} && echo yes || echo no"
+      register: release_result
+
+    - name: Set_fact variable[\"ki_holds_applied_release\"]
+      set_fact:
+        ki_holds_applied_release: "{{ release_result.stdout | trim == 'yes' }}"
+
+    - name: Execute kubectl get nodes
+      shell: "sudo kubectl get nodes -o name"
+      register: kubectl_result
+      failed_when: false
+      when: inventory_hostname in groups['k8s_node'] and k8s_cp | bool
+
+    - name: Set_fact variable[\"ki_cluster_node_names\"]
+      set_fact:
+        ki_cluster_node_names: >-
+          {{ kubectl_result.stdout_lines | select('match', '^node/') | map('regex_replace', '^node/', '') | list }}
+      when:
+        - inventory_hostname in groups['k8s_node'] and k8s_cp | bool
+        - kubectl_result.rc | default(1) == 0
+
+    - name: Remove temporary variables
+      set_fact:
+        shell_result: null
+        release_result: null
+        kubectl_result: null
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    tmp_input_path: "{{ ki_tmp_root_path }}/tmp-input.yml"
+  tasks:
+    - name: "Create output directory[\"{{ ki_tmp_root_path }}\"]"
+      shell: "{{ ki_create_tmp_root_cmd }}"
+
+    - name: Write temporary file for cli input
+      copy:
+        content: "{{ hostvars | to_yaml }}"
+        dest: "{{ tmp_input_path }}"
+      become: yes
+
+    - name: Execute create-target-nodes.py
+      shell: "sudo {{ ansible_python_interpreter }} {{ ki_opt_scripts_path }}/preflight/create-target-nodes.py < {{ tmp_input_path }}"
+      register: shell_result
+
+    - name: Set_fact variable[\"ki_derived_target_nodes\"]
+      set_fact:
+        ki_derived_target_nodes: "{{ shell_result.stdout | from_yaml | community.general.json_query('target_nodes') }}"
+
+    - name: Remove temporary file for cli input
+      shell: "sudo rm {{ tmp_input_path }}"
+
+    - name: Remove temporary variable[\"shell_result\"]
+      set_fact:
+        shell_result: null
+
+# On every host, since each play reads target_nodes from its own host. An empty
+# list is not an error: the inventory and the cluster agree, and the run goes
+# on to do what add-node does to the nodes that were already there, which is to
+# write their services again and record them, and builds nothing
+- hosts: all:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Set_fact variable[\"target_nodes\"]
+      set_fact:
+        target_nodes: "{{ hostvars['localhost']['ki_derived_target_nodes'] }}"
+
+    - name: Report the nodes the inventory adds
+      debug:
+        msg: >-
+          {% if target_nodes | length > 0 %}
+          Nodes of the inventory that the cluster does not hold, to be added: {{ target_nodes | join(', ') }}
+          {% else %}
+          Every node of the inventory is in the cluster already. Nothing is added; the run goes on and builds no node
+          {% endif %}
+      run_once: true
+
+    - name: Remove temporary variables
+      set_fact:
+        ki_cluster_node_names: null
+        ki_holds_applied_release: null

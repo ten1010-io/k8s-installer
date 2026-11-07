@@ -29,51 +29,98 @@
         allow_upgrading_from_snapshot: ""
       when: aus is defined
 
+    # node names the nodes the playbook works on. add-node takes several at once,
+    # as one argument with commas between the names, or none at all, in which
+    # case the nodes to add are the ones of the inventory the cluster does not
+    # hold yet - worked out by derive-target-nodes.yml, the play after this one,
+    # because what the cluster holds is not known here. remove-node takes one:
+    # taking several out at once shrinks the etcd quorum and the keepalived peers
+    # in one step, and remove-broken-node refuses the same thing for the same
+    # reason. Either way what the plays read is target_nodes, a list, so that a
+    # task asks "is this node one of them" whether there is one or five
     - when: playbook == "add-node" or playbook == "remove-node"
       block:
         - name: Validate variable[\"node\"]
           fail:
-            msg: "Variable[\"node\"] is not defined"
-          when: node is not defined
-
-        - name: Validate variable[\"node\"]
-          fail:
-            msg: "Node[\"{{ node }}\"] not belong to all group"
-          when: node not in groups['all']
-
-        - name: Validate variable[\"node\"]
-          fail:
-            msg: "Node[\"{{ node }}\"] must belong to ki_cp_node or k8s_node group"
+            msg: "Variable[\"node\"] is not defined. Name the node to remove with -e node=<name>"
           when:
-            - node not in groups['ki_cp_node']
-            - node not in groups['k8s_node']
+            - playbook == "remove-node"
+            - node is not defined
 
-        # Both playbooks work on the node itself, which is the one thing a node of
-        # the broken_node group can not be asked to do
-        - name: Validate variable[\"node\"]
-          fail:
-            msg: >-
-              Node["{{ node }}"] is in the broken_node group, so this playbook can not
-              reach it.
-              {% if playbook == "remove-node" %}
-              Run the remove-broken-node.yml playbook instead, which takes it out of the
-              cluster from the nodes that are still up
-              {% else %}
-              Rebuild it and take it out of the broken_node group of inventory.yml first
-              {% endif %}
-          when: node in ki_broken_nodes
-
-        - name: Set_fact variable[\"target_node\"] and variable[\"target_node_op\"]
+        # Empty rather than null until derive-target-nodes.yml fills it: null
+        # is what the playbooks that work on every node read, and a play that
+        # ran between the two would otherwise take every node for a target
+        - name: Set_fact variable[\"target_nodes\"] to be filled from the inventory
           set_fact:
-            target_node: "{{ node }}"
+            target_nodes: []
             target_node_op: add
-          when: playbook == "add-node"
+            ki_target_nodes_from_inventory: true
+          when:
+            - playbook == "add-node"
+            - node is not defined
 
-        - name: Set_fact variable[\"target_node\"] and variable[\"target_node_op\"]
-          set_fact:
-            target_node: "{{ node }}"
-            target_node_op: remove
-          when: playbook == "remove-node"
+        - when: node is defined
+          block:
+            # A yaml list on the command line is taken as it is, and the usual
+            # form, a string, is split on commas. Names are trimmed because
+            # "node4, node5" is what a person types, and repeated names are
+            # collapsed because a node named twice would be built twice by every
+            # task below
+            - name: Set_fact variable[\"target_nodes\"] and variable[\"target_node_op\"]
+              set_fact:
+                target_nodes: >-
+                  {{ ((node if node is not string else node.split(','))
+                      | map('trim') | reject('equalto', '') | unique | list) }}
+                target_node_op: "{{ 'add' if playbook == 'add-node' else 'remove' }}"
+
+            - name: Validate variable[\"node\"]
+              fail:
+                msg: >-
+                  Variable["node"] names no node. Name one with -e node=<name>{%
+                  if playbook == "add-node" %}, several with -e node=<name>,<name>, or leave
+                  it out to add every node of the inventory the cluster does not hold{% endif %}
+              when: target_nodes | length == 0
+
+            - name: Validate variable[\"node\"]
+              fail:
+                msg: >-
+                  remove-node takes one node and was given {{ target_nodes | length }}:
+                  {{ target_nodes | join(', ') }}. Nodes are removed one at a time, because
+                  each removal takes the etcd quorum and the ki cp services of the nodes that
+                  are left through a change
+              when:
+                - playbook == "remove-node"
+                - target_nodes | length != 1
+
+            - name: Validate variable[\"node\"]
+              fail:
+                msg: "Node[\"{{ item }}\"] not belong to all group"
+              loop: "{{ target_nodes | default([], true) }}"
+              when: item not in groups['all']
+
+            - name: Validate variable[\"node\"]
+              fail:
+                msg: "Node[\"{{ item }}\"] must belong to ki_cp_node or k8s_node group"
+              loop: "{{ target_nodes | default([], true) }}"
+              when:
+                - item not in groups['ki_cp_node']
+                - item not in groups['k8s_node']
+
+            # Both playbooks work on the node itself, which is the one thing a
+            # node of the broken_node group can not be asked to do
+            - name: Validate variable[\"node\"]
+              fail:
+                msg: >-
+                  Node["{{ item }}"] is in the broken_node group, so this playbook can not
+                  reach it.
+                  {% if playbook == "remove-node" %}
+                  Run the remove-broken-node.yml playbook instead, which takes it out of the
+                  cluster from the nodes that are still up
+                  {% else %}
+                  Rebuild it and take it out of the broken_node group of inventory.yml first
+                  {% endif %}
+              loop: "{{ target_nodes | default([], true) }}"
+              when: item in ki_broken_nodes
 
     # node is optional here. Named, it is the one node this reboots and nothing is
     # asked about it; left out, the playbook decides which nodes need a reboot from
@@ -134,9 +181,9 @@
                   -e node={{ node }}
               when: node == ki_control_node_ih
 
-            - name: "Set_fact variable[\"target_node\"]"
+            - name: "Set_fact variable[\"target_nodes\"]"
               set_fact:
-                target_node: "{{ node }}"
+                target_nodes: ["{{ node }}"]
 
     # The node is named by the inventory rather than by a variable on the command
     # line. It has to be in the broken_node group for the plays to leave it out,
@@ -159,7 +206,7 @@
             - ki_broken_nodes[0] not in groups['ki_cp_node']
             - ki_broken_nodes[0] not in groups['k8s_node']
 
-        - name: Set_fact variable[\"target_node\"] and variable[\"target_node_op\"]
+        - name: Set_fact variable[\"target_nodes\"] and variable[\"target_node_op\"]
           set_fact:
-            target_node: "{{ ki_broken_nodes[0] }}"
+            target_nodes: ["{{ ki_broken_nodes[0] }}"]
             target_node_op: remove

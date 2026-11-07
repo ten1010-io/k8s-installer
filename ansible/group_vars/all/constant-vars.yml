@@ -720,5 +720,44 @@ ki_kubelet_memory_reservation_vars:
   - kubelet_kube_reserved_memory
   - kubelet_system_reserved_memory
 
-target_node: null
+# The nodes a playbook was pointed at, and what it is doing to them. null is
+# the playbooks that were pointed at none - setup-cluster, update-cluster - and
+# for those every node is a target. preflight-playbook.yml sets both from the
+# node argument of the command line, so a value here is only what a play reads
+# before that or when the playbook takes no node at all.
+#
+# A list rather than one name. add-node takes several nodes at once and the
+# rest take one, and the one is a list of length one so that every reader asks
+# the same question: is this node in it
+target_nodes: null
 target_node_op: null
+
+# Whether add-node was run with no node named, so that derive-target-nodes.yml
+# fills target_nodes from the inventory and the cluster. preflight-playbook.yml
+# sets it; everything else reads false
+ki_target_nodes_from_inventory: false
+
+# Whether the node a play is on is one of those, which is the condition of
+# nearly every task that builds or resets a node. Asked through this rather
+# than spelled out at each task so that a playbook pointed at no node and a
+# playbook pointed at this one read the same way
+ki_is_target_node: "{{ target_nodes is none or inventory_hostname in target_nodes }}"
+
+# The ki cp nodes and the k8s cp nodes that are neither broken nor being
+# added or removed by this run: the ones a play may delegate to, fetch the pki
+# from or ask for a join token. A node being added has none of that yet and a
+# node being removed is about to lose it.
+#
+# k8s_cp_nodes and k8s_cp_nodes_in_inventory are facts gather-facts.yml sets,
+# and that play renders every hostvar on its way to setting them: its first
+# task writes hostvars | to_yaml, which resolves these templates while the
+# facts do not exist yet. On ansible-core 2.19 that is an error rather than an
+# undefined left in the output, so the two names default to empty here. Read
+# before gather-facts.yml these lists are empty, which no play does
+ki_standing_ki_cp_nodes: "{{ groups['ki_cp_node'] | reject('in', ki_broken_nodes) | reject('in', target_nodes | default([], true)) | list }}"
+ki_standing_k8s_cp_nodes: "{{ k8s_cp_nodes | default([]) | reject('in', target_nodes | default([], true)) | list }}"
+
+# The targets of this run that the inventory declares as control plane nodes.
+# Read where a play has to know whether the control plane is changing shape:
+# the load balancer backends, the etcd member a removal takes out
+ki_target_k8s_cp_nodes: "{{ (target_nodes | default([], true)) | select('in', k8s_cp_nodes_in_inventory | default([])) | list }}"

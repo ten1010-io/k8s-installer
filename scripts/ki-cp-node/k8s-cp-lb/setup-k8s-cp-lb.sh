@@ -84,7 +84,7 @@ jinja2_cmd=""
 
 ki_etc_services_path=""
 ki_tmp_root_path=""
-target_node=""
+target_nodes=""
 target_node_op=""
 
 svc_root_path=""
@@ -101,7 +101,7 @@ main() {
 
   ki_etc_services_path=$($yq_cmd '.ki_etc_services_path' < "$vars_path")
   ki_tmp_root_path=$($yq_cmd '.ki_tmp_root_path' < "$vars_path")
-  target_node=$($yq_cmd .target_node < "$vars_path")
+  target_nodes=$($yq_cmd -o json '.target_nodes' < "$vars_path")
   target_node_op=$($yq_cmd .target_node_op < "$vars_path")
 
   svc_root_path="$ki_etc_services_path"/$SVC_NAME
@@ -265,12 +265,12 @@ create_haproxy_cfg_file() {
 }
 
 get_backend_server_ih_list() {
-  if [[ $target_node = "null" ]] || [[ $target_node != "null" && $target_node_op = "add" ]]; then
+  if [[ $target_nodes = "null" ]] || [[ $target_nodes != "null" && $target_node_op = "add" ]]; then
     $yq_cmd '.k8s_cp_nodes' -o json < "$vars_path"
-  elif [[ $target_node != "null" && $target_node_op = "remove" ]]; then
-    $yq_cmd ".k8s_cp_nodes - [\"$target_node\"]" -o json < "$vars_path"
+  elif [[ $target_nodes != "null" && $target_node_op = "remove" ]]; then
+    $yq_cmd ".k8s_cp_nodes - $target_nodes" -o json < "$vars_path"
   else
-    die "[ERROR] Invalid variable[\"\target_node\"] or Invalid variable[\"\target_node_op\"]"
+    die "[ERROR] Invalid variable[\"target_nodes\"] or Invalid variable[\"target_node_op\"]"
   fi
 }
 

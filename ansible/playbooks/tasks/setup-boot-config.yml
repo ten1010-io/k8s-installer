@@ -32,7 +32,7 @@
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
-    - when: target_node is none or inventory_hostname == target_node
+    - when: ki_is_target_node | bool
       block:
         - name: Execute setup-kernel.sh
           shell: "sudo {{ ki_opt_scripts_path }}/all-node/kernel/setup-kernel.sh {{ vars_path_arg }}"
@@ -52,7 +52,7 @@
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
-    - when: target_node is none or inventory_hostname == target_node
+    - when: ki_is_target_node | bool
       block:
         - name: Execute setup-vfio-pci.sh
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/vfio-pci/setup-vfio-pci.sh {{ vars_path_arg }}"
@@ -79,7 +79,7 @@
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
     - when:
-        - target_node is none or inventory_hostname == target_node
+        - ki_is_target_node | bool
         - (vfio_pci_device_ids | length > 0) or (kernel_cmdline_extra_args | length > 0) or (node_reboot_for_kernel | default(false) | bool)
       block:
         - name: Report that the control node has to be rebooted by hand
@@ -97,12 +97,12 @@
         # the node needs one" test: every node of the block above is rebooted, so
         # what keeps this from rebooting a running cluster is that setup-cluster.yml
         # imports it while every node is being built and add-node.yml imports it
-        # with target_node set to the one node it is building. update-cluster.yml,
+        # with target_nodes set to the nodes it is building. update-cluster.yml,
         # which is the playbook that runs against nodes already carrying pods, does
         # not import it at all.
         #
         # So whoever adds this import somewhere else has to check that, or give the
-        # task a test of its own. Run with target_node unset against a cluster that
+        # task a test of its own. Run with target_nodes unset against a cluster that
         # exists, it reboots every node naming a device whether or not any of them
         # has anything to gain by it.
         #

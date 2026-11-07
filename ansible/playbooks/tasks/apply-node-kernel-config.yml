@@ -13,6 +13,6 @@
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
-    - when: target_node is none or inventory_hostname == target_node
+    - when: ki_is_target_node | bool
       name: Execute setup-kernel-config.sh
       shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/kernel-config/setup-kernel-config.sh {{ vars_path_arg }}"

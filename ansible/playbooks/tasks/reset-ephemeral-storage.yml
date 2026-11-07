@@ -11,7 +11,7 @@
   vars:
     mount_path_arg: "--mount-path {{ ki_ephemeral_root_path }}"
   tasks:
-    - when: target_node is none or inventory_hostname == target_node
+    - when: ki_is_target_node | bool
       block:
         - name: Execute reset-ephemeral-storage.sh
           shell: "sudo {{ ki_opt_scripts_path }}/all-node/ephemeral-storage/reset-ephemeral-storage.sh {{ mount_path_arg }}"
