@@ -864,8 +864,8 @@ require_hostname_known() {
 
 require_linux_packages_installed() {
   [[ $("$ki_opt_scripts_path/systemctl.sh" exists containerd) = "false" ]] && die "[ERROR] Linux package[\"containerd\"] not installed"
-  [[ $("$ki_opt_scripts_path/systemctl.sh" exists docker) = "false" ]] && die "[ERROR] Linux package[\"containerd\"] not installed"
-  [[ $("$ki_opt_scripts_path/systemctl.sh" exists kubelet) = "false" ]] && die "[ERROR] Linux package[\"containerd\"] not installed"
+  [[ $("$ki_opt_scripts_path/systemctl.sh" exists docker) = "false" ]] && die "[ERROR] Linux package[\"docker\"] not installed"
+  [[ $("$ki_opt_scripts_path/systemctl.sh" exists kubelet) = "false" ]] && die "[ERROR] Linux package[\"kubelet\"] not installed"
 
   return 0
 }
