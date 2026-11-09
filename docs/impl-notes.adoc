@@ -4518,3 +4518,53 @@ root 로 들어가던 때는 운영자가 곧 root 라 맞았지만, 이제 운�
 에 있기를 요구하는데, 접속 변수는 적용할 것이 없으므로 inventory.yml 에 이미 있던 `ansible_` 접두어
 예외를 vars.yml 에도 두었습니다. 변수를 아예 적지 않으면 ansible 은 실행한 사용자로 들어가고, 남은
 scp 둘과 ssh 하나가 쓰는 `ki_ssh_user` 도 같은 기본값을 따릅니다.
+
+== docker 가 이미 깔린 노드
+
+DGX OS 는 docker 와 containerd 를 넣어서 나옵니다. 그런 노드에 설치하면 `check-node-state.sh` 가
+`Linux package["containerd"] already installed` 한 줄로 멈췄고, 그 다음에 무엇을 해야 하는지는 어디에도
+없었습니다. NVIDIA 문서의 절차로 Ubuntu 24.04 에 DGX 소프트웨어 스택(7.6.0)을 얹은 EC2 박스 둘
+(x86_64 + T4, aarch64 + T4G)에서 재어 보고 정했습니다.
+
+=== 받아들이지 않고, 미는 법을 말합니다
+
+그 박스가 들고 있던 것은 `docker-ce` 29.6.2 와 `containerd.io` 2.2.5 로, 번들이 까는 것과 같은 이름이고
+릴리스가 고정한 버전(29.8.1, 2.3.5)보다 낮았습니다. 검사 두 곳(`check-node-state.sh` 와
+`install-packages.sh`)을 끄고 돌리면 dpkg 가 제자리에서 올리고 클러스터가 섭니다. 그래서 받아들이는
+쪽도 가능했지만 하지 않았습니다. 설치본은 이 둘을 깔고, 설정을 쓰고, reset 때 지우는 것까지 혼자 하고,
+그 검사는 "누군가 미리 깔았다"와 "앞선 실행이 반쯤 하다 멈췄다"를 한 줄로 막아 줍니다. 받아들이려면 그
+둘을 가려야 하고, 같은 이름이어도 높은 버전, 다른 패키지로 깔린 docker(`docker.io`), 돌고 있는 남의
+컨테이너, 손으로 고친 `daemon.json` 을 하나씩 따로 판단해야 합니다. 핵심 컴포넌트를 두고 그 판단을
+늘리는 대신 거절을 그대로 두고, 거절이 다음에 할 일을 말하게 했습니다.
+
+할 일은 설치본 자신의 reset 입니다. `uninstall-packages.sh` 가 지우는 이름이 번들이 까는 이름이고,
+DGX 가 넣어 둔 것도 그 이름이라 따로 지우는 법을 만들 필요가 없었습니다. 첫 설치는
+`reset-cluster.yml -e sdfc=` (지울 클러스터가 없으니 apiserver 에 묻는 단계를 건너뜁니다), 노드 추가는
+`remove-node.yml -e node=X` 입니다. 뒤쪽에 `-e sdfc=` 가 필요 없는 것은 `delete-node.sh` 가 노드 객체와
+etcd 멤버를 **있을 때만** 지우기 때문입니다. 메시지는 `playbook` 을 보고 둘 중 맞는 쪽을 적습니다.
+
+=== 설치된 적 없는 노드에 reset 을 돌린 적이 없었습니다
+
+안내한 순서를 그대로 돌려 보니 reset 의 두 군데가 그 경우를 몰랐습니다. `reset-resolv-conf.sh` 가 노드의
+이름을 가져갔고(<<노드의 자기 이름은 /etc/hosts 에 둡니다>>), `remove-node.yml` 은 떠나는 ki cp 노드를 시간
+원본으로 거절했습니다(<<떠나는 노드에게는 묻기만 합니다>>). 안내는 그 둘이 고쳐진 위에서 성립합니다.
+
+=== 번들은 그대로입니다
+
+DGX 박스의 패키지 DB 를 closure 의 첫 `--root` 로, GA 를 둘째로 주고 뽑으면 발행한 번들의
+ubuntu24.04/aarch64 와 파일 67개가 전부 같습니다. DGX 쪽이 번들과 같거나 낮은 버전뿐이어서입니다
+(같음 40, 낮음 6, 높음 0, 없음 6). DGX 를 위한 번들을 따로 뽑을 이유가 지금은 없습니다. DGX 저장소가
+릴리스의 핀을 앞지르면 달라지고, 그때는 reset 이 높은 것을 지운 뒤 번들 것을 까는 순서라 설치는 그대로
+되지만 운영자의 `apt upgrade` 가 다시 올립니다.
+
+그 closure 가 처음에는 한마디 없이 죽었던 것은 <<이미지보다 많이 들고 있는 기준>> 에 있습니다.
+
+=== 재지 못한 것
+
+얹은 스택은 ISO 로 설치한 DGX OS 가 아닙니다. 패키지 집합이 얼마나 다른지는 모릅니다. EC2 는 DGX 플랫폼이
+아니어서 `nv-iommu` 가 첫 부팅에 쓰는 `/etc/default/grub.d/iommu.cfg`(B200·H100 계열의 `iommu=pt`,
+GB200 의 `init_on_alloc=0 numa_balancing=disable ...`)가 생기지 않았고, 그것이 `setup-vfio-pci.sh` 가
+소유하는 인자와 만나는 자리는 실물에서만 볼 수 있습니다. aarch64 의 `nvidia-64k` 커널(페이지 64K,
+휴지페이지 2M·512M·16G)은 Graviton 에서 부팅했고 kubelet 이 세 크기를 다 보고했지만, 그 크기로
+`hugepages=` 를 선언해 보지는 않았습니다. reset 순서는 Docker 저장소의 docker 를 깐 Ubuntu 24.04 와
+RHEL 9.8 에서 돌렸고, DGX 스택 박스에서는 같은 패키지를 손으로 지우는 것으로 봤습니다.

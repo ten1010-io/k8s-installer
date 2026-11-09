@@ -752,7 +752,8 @@ require_not_installed() {
 
   local result
   result=$("$ki_opt_scripts_path/systemctl.sh" exists "$svc_name")
-  [[ $result = true ]] && die "[ERROR] Service[\"$svc_name\"] already installed"
+  [[ $result = true ]] &&
+    die "[ERROR] Service[\"$svc_name\"] already installed. the installer installs it itself and does not build on one that is already there, so the node is reset before it is installed on: reset-cluster.yml -e sdfc= for a first install, remove-node.yml -e node=<node> for a node being added"
 
   return 0
 }
