@@ -431,7 +431,7 @@ check_vip_carrier() {
   [[ $exit_code = 0 ]] && return 0
 
   report_or_die "$severity" \
-    "This node can not carry vip[\"$ki_cp_ha_mode_vip\"] with carrier[\"$ki_cp_ha_mode_vip_carrier\"], which ki_cp_ha_mode_vip_carrier says it has to:\n$output\nWhat the carrier needs from the site is in README.adoc"
+    "This node can not carry vip[\"$ki_cp_ha_mode_vip\"] with carrier[\"$ki_cp_ha_mode_vip_carrier\"], which ki_cp_ha_mode_vip_carrier says it has to:\n$output\nGive the site what the carrier names above before going on"
 
   return 0
 }

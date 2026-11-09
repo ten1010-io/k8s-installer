@@ -348,7 +348,9 @@ def validate_broken_node_group(hostvars_errors: List[HostvarsError], hostvars):
                                   f"Node[\"{control_node_ih}\"] is declared as the control node and as a"
                                   " broken node. The control node is the node the playbooks run from, so it"
                                   " can not be one of the nodes they leave out. Hand the control node over"
-                                  " to another node of the ki_cp_node group first. See README.adoc")
+                                  " to another node of the ki_cp_node group first, by changing"
+                                  " control_node_ih of inventory.yml on that node and running the playbooks"
+                                  " from there")
             hostvars_errors.append(error)
         return
 
