@@ -69,6 +69,9 @@ parse_params "$@"
 
 # --- End of CLI template ---
 
+# shellcheck source=scripts/all-node/resolv-conf/resolv-conf-common.sh
+source "$SCRIPT_DIR_PATH/resolv-conf-common.sh"
+
 UBUNTU2204_SUPPORTED_MINOR_VERSION=5
 UBUNTU2404_SUPPORTED_MINOR_VERSION=5
 RHEL8_SUPPORTED_MINOR_VERSION=10
@@ -89,6 +92,7 @@ os_major_version=""
 os_minor_version=""
 
 ki_tmp_root_path=""
+ki_cp_ha_mode_vip=""
 
 main() {
   require_file_exists "$vars_path"
@@ -99,6 +103,7 @@ main() {
   get_os_version
 
   ki_tmp_root_path=$($yq_cmd .ki_tmp_root_path < "$vars_path")
+  ki_cp_ha_mode_vip=$($yq_cmd .ki_cp_ha_mode_vip < "$vars_path")
 
   if [[ $os_distribution = "ubuntu" && $os_major_version = "22.04" && $os_minor_version -le "$UBUNTU2204_SUPPORTED_MINOR_VERSION" ]]; then
     ubuntu2204_reset
@@ -152,11 +157,14 @@ rhel10_reset() {
 # the upstream servers instead of the cluster dns, and the file only holds if
 # nothing else owns it. So resolved is stopped wherever it exists, the same as
 # setup-resolv-conf.sh does and for the same reason, and rhel keeps NetworkManager
-# off the file with the drop in
+# off the file with the drop in. What that leaves the node without is its own
+# name, on a node the setup never got to, so that is written here as well, see
+# resolv-conf-common.sh
 reset_resolv_conf() {
   disable_resolved
   [[ $os_distribution = "rhel" ]] && disable_nm_dns
   create_resolv_conf_file
+  keep_own_hostname_resolvable "$yq_cmd" "$vars_path" "$ki_cp_ha_mode_vip"
 }
 
 create_resolv_conf_file() {
