@@ -29,14 +29,22 @@
       shell: "{{ ki_create_tmp_root_cmd }}"
 
     # Read on the node as root, since the script above wrote it as root, and
-    # written on the control node as the user ansible runs as
+    # written on the control node as the user ansible runs as. To a path of
+    # its own rather than to the one a node keeps it at: on a control node
+    # that is also the node that made them the two would be one file, which
+    # this would find already there and leave to root
     - name: Copy join-credentials.yml to ansible control node
       fetch:
         src: "{{ ki_tmp_join_credentials_path }}"
-        dest: "{{ ki_tmp_join_credentials_path }}"
+        dest: "{{ ki_tmp_join_credentials_src_path }}"
         flat: yes
       become: yes
       delegate_to: "{{ k8s_cp_nodes | community.general.lists_difference([target_node]) | first }}"
+
+    - name: Close join-credentials.yml of ansible control node to every other user
+      file:
+        path: "{{ ki_tmp_join_credentials_src_path }}"
+        mode: "0600"
 
 - hosts: k8s_node:!broken_node
   gather_facts: false
@@ -50,7 +58,7 @@
         # so it is readable by root alone for the minutes it exists
         - name: "Copy join-credentials.yml to the node[\"{{ target_node }}\"]"
           copy:
-            src: "{{ ki_tmp_join_credentials_path }}"
+            src: "{{ ki_tmp_join_credentials_src_path }}"
             dest: "{{ ki_tmp_join_credentials_path }}"
             mode: "0600"
           become: yes
@@ -74,3 +82,10 @@
   tasks:
     - name: Delete temporary join-credentials.yml file
       shell: "sudo rm -f {{ ki_tmp_join_credentials_path }}"
+
+    # Without sudo, since the directory it is in belongs to the user ansible
+    # runs as
+    - name: Delete temporary join-credentials.yml file of ansible control node
+      shell: "rm -f {{ ki_tmp_join_credentials_src_path }}"
+      delegate_to: localhost
+      run_once: true

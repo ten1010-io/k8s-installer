@@ -96,6 +96,13 @@ ki_tmp_vars_path: "{{ ki_tmp_root_path }}/vars.yml"
 ki_tmp_pki_path: "{{ ki_tmp_root_path }}/pki"
 ki_tmp_ki_ca_crt_path: "{{ ki_tmp_root_path }}/ki-ca.crt"
 ki_tmp_join_credentials_path: "{{ ki_tmp_root_path }}/join-credentials.yml"
+# The copy of the join credentials the control node hands to the nodes, named
+# apart from the one a node holds for the reason the archives below are. A
+# control node that is also a k8s node is handed the credentials like any other
+# node, as root and closed to everyone else, and with one name for both that was
+# the file the copy module still had to read for the nodes after it. See
+# init-k8s-cluster.yml
+ki_tmp_join_credentials_src_path: "{{ ki_tmp_root_path }}/join-credentials-src.yml"
 # The source and the destination of an archive are named apart so that each side
 # owns the file it cleans up. A control node that is also a managed node holds
 # both, and the names say which play is responsible for which

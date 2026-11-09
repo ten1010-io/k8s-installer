@@ -42,14 +42,35 @@
       shell: "{{ ki_create_tmp_root_cmd }}"
 
     # Read on the node as root, since the script above wrote it as root, and
-    # written on the control node as the user ansible runs as
+    # written on the control node as the user ansible runs as.
+    #
+    # To a path of its own rather than to the one a node keeps it at, which
+    # is what this used to do. On a control node that is also the first k8s
+    # cp node the two were then one file: this found what the script had
+    # written as root already at its destination and left it alone, and the
+    # copy below, handing that node its credentials like any other, set the
+    # file to 0600. That closed the source of the copy to the user ansible
+    # runs as while the nodes after it still had to read it, and they failed
+    # with "Permission denied". Only the nodes after it, though: two nodes
+    # handled at once had both read the file before either closed it, so the
+    # same inventory passed one day and failed another. Nothing showed when
+    # ansible ran as root, which reads the file whatever its mode says
     - name: Copy join-credentials.yml to ansible control node
       fetch:
         src: "{{ ki_tmp_join_credentials_path }}"
-        dest: "{{ ki_tmp_join_credentials_path }}"
+        dest: "{{ ki_tmp_join_credentials_src_path }}"
         flat: yes
       become: yes
       delegate_to: "{{ k8s_cp_nodes | first }}"
+
+    # fetch lays it down with the umask of the user ansible runs as. The
+    # directory is what keeps the other users of the control node away from
+    # it, and this says the same of the file, so that it does not rest on
+    # where the file happens to be
+    - name: Close join-credentials.yml of ansible control node to every other user
+      file:
+        path: "{{ ki_tmp_join_credentials_src_path }}"
+        mode: "0600"
 
 - hosts: k8s_node:!broken_node
   gather_facts: false
@@ -58,10 +79,11 @@
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
     # The token and the certificate key in it join a node to the cluster, so it
-    # is readable by root alone for the minutes it exists
+    # is readable by root alone for the minutes it exists. The node that made
+    # it holds it already, and what this does there is close it
     - name: Copy join-credentials.yml to the node
       copy:
-        src: "{{ ki_tmp_join_credentials_path }}"
+        src: "{{ ki_tmp_join_credentials_src_path }}"
         dest: "{{ ki_tmp_join_credentials_path }}"
         mode: "0600"
       become: yes
@@ -81,3 +103,10 @@
   tasks:
     - name: Delete temporary join-credentials.yml file
       shell: "sudo rm -f {{ ki_tmp_join_credentials_path }}"
+
+    # Without sudo, since the directory it is in belongs to the user ansible
+    # runs as
+    - name: Delete temporary join-credentials.yml file of ansible control node
+      shell: "rm -f {{ ki_tmp_join_credentials_src_path }}"
+      delegate_to: localhost
+      run_once: true
