@@ -217,8 +217,21 @@ main() {
 # failed is refused by nothing here: the operator came to fix or remove, and a
 # full disk or a wrong clock is a reason they came rather than a reason to send
 # them away. Everything else is building on this node and has no chance of
-# ending well
+# ending well.
+#
+# The node remove-node.yml is taking out is the first kind, on that node alone:
+# it is leaving, and everything asked here is about to be reset on it. It is
+# also what a node that was never set up looks like. One that came with docker
+# is reset with remove-node.yml before it is added, and a ki cp node in that
+# state follows whatever time server its image shipped with, which the check
+# of the time source would refuse it for. The nodes that are staying are still
+# held to all of it
 get_node_check_severity() {
+  if [[ $playbook = "remove-node" && $inventory_hostname = "$target_node" ]]; then
+    echo "warn"
+    return 0
+  fi
+
   case "$playbook" in
     reset-cluster | remove-broken-node) echo "warn" ;;
     *) echo "fail" ;;
