@@ -4723,7 +4723,8 @@ E 는 지우는 쪽입니다. 조인이 node2 에서 실패한 뒤 `always` 의 
 `add-node.yml` 은 B 에 세 번째 인스턴스를 띄워 `-e node=node3` 로 붙였습니다 (`ANSIBLE_FORKS=1`).
 rc 0 이고 node3 이 조인됐고, node3 의 사본은 `root:root 600` 으로 3.6초 있다가 지워졌습니다. 이
 플레이북에서 자격증명을 만든 노드(node1)의 원본은 `copy` 가 가지 않으므로 지워질 때까지 6초 동안
-`root:root 644` 입니다. 고치기 전에도 그랬고, `0700` 인 디렉토리 안입니다.
+`root:root 644` 입니다. 고치기 전에도 그랬고, `0700` 인 디렉토리 안입니다. 이 구간은 아래에서 스크립트가
+쓰는 순간 닫게 해서 없앴습니다.
 
 같은 날 한 번 더, 위에서 빠진 구성을 열두 대로 쟀습니다. 전부 수정본이고
 `ansible_user: ubuntu` 입니다.
@@ -4764,10 +4765,106 @@ F 에는 다섯 번째 인스턴스를 띄워 `join-k8s-cluster.sh` 에 `exit 7`
 접속이 끊겼습니다. 노드에 남은 로그의 `PLAY RECAP` 이 모든 호스트에서 `failed=0 unreachable=0` 이고
 `fatal:` 이 한 줄도 없는 것, 그리고 노드가 전부 클러스터에 있는 것으로 판단했습니다.
 
-재지 못한 것이 셋 남았습니다. 클러스터를 세울 때 **cp 조인이** 실패하는 경우 — 실패를 넣어 본 것은
-워커의 조인(E)과 `add-node` 의 조인이고, block 가운데의 태스크가 실패하는 경우는 위의 컨테이너
-실험으로만 봤습니다. RHEL 의 실제 클러스터 — ansible-core 는 Ubuntu 24.04 와 같은 2.19.3 입니다. 그리고
-제어 노드가 k8s 노드가 아예 아닌 (ki cp 만 하는) 인벤토리입니다.
+여기까지에서 빠진 것이 셋 있었습니다. 클러스터를 세울 때 **cp 조인이** 실패하는 경우 — 실패를 넣어 본
+것은 워커의 조인(E)과 `add-node` 의 조인이었습니다 —, RHEL 의 실제 클러스터, 그리고 제어 노드가 k8s
+노드가 아예 아닌 (ki cp 만 하는) 인벤토리입니다. 아래 두 절이 그것을 채웁니다.
+
+==== 원본도 쓰는 순간 닫습니다
+
+자격증명을 만든 노드의 원본은 `0644` 였습니다. 누가 고른 값이 아닙니다. `create-join-credentials-file.sh`
+가 리다이렉션으로 쓰고, 리다이렉션은 모드를 umask 에 맡기고, sudo 아래의 umask 가 022 입니다.
+`init-k8s-cluster.yml` 에서는 그 노드로 가는 `copy` 가 닫아 주지만 그때까지는 열려 있고,
+`add-k8s-node.yml` 에서는 `copy` 가 추가되는 노드에만 가므로 지워질 때까지 내내 `0644` 였습니다. 다른
+사용자를 막고 있던 것은 `0700` 인 디렉토리 하나였습니다.
+
+이제 스크립트가 `umask 077` 아래에서 씁니다. 그 앞에서 파일을 지우는데, 이미 있는 파일 위로
+리다이렉션하면 그 파일의 모드가 남기 때문입니다. 실패한 실행이 남긴 `0644` 짜리가 있으면 닫으려던
+것이 열린 채로 다시 쓰입니다. 원본이 닫혀 있으므로 `init-k8s-cluster.yml` 의 `copy` 는 만든 노드에서
+할 일이 없어 `ok` 로 끝납니다.
+
+**그 `0644` 가 옛 흐름을 우연히 받치고 있었습니다.** 경로를 가르기 전의 `fetch` 는 제어 노드가 첫 k8s
+cp 일 때 그 파일을 ansible 을 돌리는 사용자로 읽어 체크섬을 비교했습니다. root 의 umask 가 077 인
+호스트에서는 그 읽기부터 실패하므로, 그런 곳에서 옛 플레이북은 타이밍과 무관하게 항상 죽습니다. 위의
+컨테이너에서 스크립트 자리를 `0600` 으로 쓰게 바꾸고 경로를 가르기 전의 트리(`e57ee0a`)를 돌리면 forks
+5 에서도 `fetch` 가 `Permission denied` 로 끝납니다. 지금은 노드 쪽 경로를 사용자로 읽는 자리가
+없습니다 — `fetch` 는 `become` 으로 읽고 조인 스크립트는 sudo 아래에서 읽습니다.
+
+==== 빠져 있던 구성
+
+컨테이너를 셋으로 늘려, 원본을 `0600` 으로 쓰는 스텁으로 `init-k8s-cluster.yml` 을 돌렸습니다
+(ansible-core 2.17.13, forks 1).
+
+[cols="4,3,4",options="header"]
+|===
+|구성 |실패를 넣은 곳 |결과
+
+|node1 제어·첫 k8s cp, node2 워커
+|없음 (forks 5 로도)
+|rc 0. node1 로 가는 `copy` 는 `ok`
+
+|node1 제어·첫 k8s cp, node2 k8s cp, node3 워커
+|없음
+|rc 0
+
+|같음
+|node2 의 **cp 조인**
+|rc 2. 워커의 조인 태스크는 돌지 않고, 세 노드와 제어 노드에서 지워짐
+
+|같음
+|node3 의 워커 조인
+|rc 2. 모두 지워짐
+
+|node1 제어·**ki cp 만**, node2 첫 k8s cp, node3 워커
+|없음
+|rc 0. 제어 노드에는 `join-credentials-src.yml` 만 생겼다가 지워짐
+
+|같음
+|node3 의 워커 조인
+|rc 2. 모두 지워짐
+|===
+
+제어 노드가 ki cp 만 하는 인벤토리는 `validate-hostvars.py` 도 받습니다 (테스트의 인벤토리에서 node1 을
+`k8s_node` 에서 빼고 물었습니다).
+
+2026-11-09 에는 EC2 의 RHEL 9.8 (ansible-core 2.19.3, `ansible_user: ec2-user`) 여섯 대로 클러스터 둘을
+세웠습니다. node1 이 제어 노드이자 ki cp 이자 첫 k8s cp, node2 가 k8s cp, node3 이 워커이고, 스크립트는
+위와 같이 고친 것입니다.
+
+[cols="1,3,3,3",options="header"]
+|===
+| |실행 |`setup-cluster.yml` |자격증명
+
+|R
+|기본 forks
+|rc 0, node2 와 node3 조인
+|네 군데 모두 지워짐
+
+|S
+|`ANSIBLE_FORKS=1`, node2 의 `join-k8s-cluster.sh` 에 `exit 7`
+|rc 2, node2 의 cp 조인에서 실패. 워커의 조인은 돌지 않음
+|실패한 지 2.6초 뒤 네 군데 모두 지워짐
+|===
+
+두 클러스터 모두 원본은 생기는 순간부터 `root:root 600` 이었고 node1 로 가는 `copy` 는 `ok` 였습니다.
+R 의 제어 노드입니다.
+
+----
+08:29:59.357 join-credentials.yml root:root 600                                                  <- 스크립트
+08:30:01.092 join-credentials.yml root:root 600; join-credentials-src.yml ec2-user:ec2-user 644   <- fetch
+08:30:01.790 join-credentials.yml root:root 600; join-credentials-src.yml ec2-user:ec2-user 600   <- file
+08:30:35.446                                     join-credentials-src.yml ec2-user:ec2-user 600   <- always
+08:30:36.629 (둘 다 없음)                                                                          <- always
+----
+
+R 은 세 번 만에 끝났습니다. 앞의 두 번은 `ANSIBLE_FORKS=1` 이었고, 자격증명에 닿기 전에 ansible 안에서
+멈췄습니다 — 한 번은 `setup-control-node.yml`, 한 번은 `setup-cluster.yml` 의 첫 play 들에서 결과를 받는
+스레드가 `KeyError: ('localhost', '<태스크 uuid>')` 로 죽고 (`_convert_wire_task_result_to_raw`),
+플레이북은 오류 없이 다음 태스크의 제목만 찍은 채 끝나지 않습니다. 같은 설정의 S 는 세 플레이북을 다
+지났으므로 매번 그런 것은 아닙니다. ansible-core 2.17.13 의 forks 1 에서는 본 적이 없습니다. 이 저장소의
+결함은 아니지만, 2.19.3 을 쓰는 OS 에서 forks 를 1 로 두면 만날 수 있다는 것은 적어 둡니다.
+
+실제 클러스터로 재지 않은 것은 ki cp 만 하는 제어 노드(위의 컨테이너로만 봤습니다)와 RHEL 8 · 10
+입니다.
 
 === 비밀번호 sudo 는 지원하지 않습니다
 

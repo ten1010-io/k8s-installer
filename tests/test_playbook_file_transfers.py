@@ -21,12 +21,24 @@ Nothing here runs a playbook. The paths are rendered from group_vars, the way
 conftest.py renders them for the validator, and compared: two variables that
 resolve to one path are caught the same as one variable written twice.
 """
+import re
+
 import yaml
 from jinja2 import ChainableUndefined, Environment, TemplateError
 
-from conftest import ANSIBLE
+from conftest import ANSIBLE, REPO
 
 PLAYBOOKS = ANSIBLE / "playbooks"
+CREATE_SCRIPT = REPO / "scripts" / "k8s-node" / "create-join-credentials-file.sh"
+
+# How the script that makes the join credentials lays them down: the file taken
+# away, then written inside a subshell whose umask leaves it to root alone
+WRITTEN_CLOSED = re.compile(
+    r'rm -f "\$ki_tmp_join_credentials_path"\n'
+    r'\s*\(\n'
+    r'\s*umask 077\n'
+    r'\s*print_yaml [^\n]*> "\$ki_tmp_join_credentials_path"\n'
+    r'\s*\)\n')
 
 FETCH = {"fetch", "ansible.builtin.fetch"}
 COPY = {"copy", "ansible.builtin.copy"}
@@ -197,3 +209,21 @@ def test_the_join_credentials_are_handed_out_from_a_path_of_their_own(hostvars):
             "fetch": (node_path, control_node_path, "None"),
             "copy": (control_node_path, node_path, "0600"),
         }, f"{name}: {seen}"
+
+
+def test_the_join_credentials_are_closed_as_they_are_written():
+    """The file the playbooks carry starts on the node that made it.
+
+    That node writes it through a redirection, which takes the mode from the
+    umask the script was started under: 0644 under sudo. init-k8s-cluster.yml
+    closes it a play later and add-k8s-node.yml never does, since its copy goes
+    to the node being added. So the script closes it itself, and takes the file
+    away first, because a redirection onto a file that is already there keeps
+    the mode that file has.
+    """
+    source = CREATE_SCRIPT.read_text(encoding="utf-8")
+
+    assert WRITTEN_CLOSED.search(source) is not None, (
+        f"{CREATE_SCRIPT.name} no longer removes the join credentials and writes them under umask 077")
+    assert source.count('> "$ki_tmp_join_credentials_path"') == 1, (
+        f"{CREATE_SCRIPT.name} writes the join credentials in more than one place")
