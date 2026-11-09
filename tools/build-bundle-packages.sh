@@ -815,8 +815,13 @@ fetch_named_rpm() {
 }
 
 fetch_named_deb() {
+  # The scratch is empty when the baseline already holds every package of the
+  # directory at its newest, which a root that had more installed than an
+  # image does (a DGX OS root holds nfs-common). The glob then stays as it was
+  # written, and a loop that ends on a test that failed hands that failure to
+  # the assignment, which ends the run without a word
   local in_scratch
-  in_scratch=$(for f in "$scratch"/*.deb; do [[ -e $f ]] && dpkg-deb -f "$f" Package; done)
+  in_scratch=$(for f in "$scratch"/*.deb; do [[ -e $f ]] || continue; dpkg-deb -f "$f" Package; done)
 
   local spec name
   for spec in "$@"; do
