@@ -38,6 +38,12 @@
 
 - import_playbook: tasks/apply-node-kernel-config.yml
 
+# After every class that restarts something on a node, so that a node rebooted
+# for this is rebooted once and comes back with the rest already applied, and
+# before the record, which has to say what the node was left with. What it does
+# to a node is the rolling reboot of reboot-nodes.yml; see the file
+- import_playbook: tasks/apply-node-reboot-var-changes.yml
+
 - import_playbook: tasks/record-applied-state.yml
   vars:
     ki_recorded_classes: all
@@ -46,9 +52,11 @@
 # the mounted directories the drift check is given - so a playbook that changes
 # that declaration has to write the unit again. class["cp_extra_files"] and
 # class["control_plane"] are both applied here, and left out, the timer would go
-# on measuring the declaration of the run before this one. The other three checks
-# read class["node_rebuild"] variables, which this playbook refuses rather than
-# applies, so the node is rebuilt and the unit written with it.
+# on measuring the declaration of the run before this one. The vfio-pci and the
+# cdi checks read class["node_rebuild"] variables, which this playbook refuses
+# rather than applies, so the node is rebuilt and the unit written with it. The
+# kernel arguments check reads the record on the node and no variable, so
+# class["node_reboot"] being applied above changes nothing the unit carries.
 #
 # It is also the way in for a cluster built before this existed: every other
 # playbook that writes the unit either builds a node or upgrades one

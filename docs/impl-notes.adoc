@@ -545,13 +545,94 @@ vfio-pci 쪽과 같은 규율입니다. 목록이 비어 있고 기록도 없으
 없었습니다 — `check-kernel-args.yml` 과 `check-vfio-pci.yml` 이 매 런 끝에서 "이 노드는 그것으로
 부팅하지 않았다" 고 보고하고, 적용하는 것은 아무것도 없었습니다. `reboot-nodes.yml` 이 그 자리입니다.
 
-=== 값을 바꾸는 것과 적용하는 것은 아직 다릅니다
+=== 커널 인자는 옮겼고 vfio 는 남겼습니다
 
-`kernel_cmdline_extra_args` 와 `vfio_pci_device_ids` 는 `node_rebuild` 클래스라, 서 있는 노드에서
-값을 바꾸면 `update-cluster.yml` 이 거부하고 `remove-node` 후 `add-node` 를 시키는 것은 그대로입니다.
-그 분류의 근거가 "부팅 구성을 서 있는 노드에 적용할 방법이 없다" 였다면 이 플레이북이 그 근거를
-없앤 셈이지만, 분류를 옮기는 것은 이 변경의 범위 밖입니다 — 여기서는 **이미 쓰인 구성을 적용하는
-길**만 냅니다.
+`kernel_cmdline_extra_args` 는 처음에 `node_rebuild` 클래스였습니다. 근거는 "부팅 때 읽히니 노드를 다시
+세워야 한다" 였는데, 이 플레이북이 생기면서 그 근거가 없어졌습니다 — 서 있는 노드에 부팅 구성을 쓰는 것은
+`setup-kernel-args.sh` 가 전제 조건 없이 하고, 적용하는 것은 이 플레이북이 합니다. 실제로 GPU 노드에 1G
+hugepage 를 넣으려다 거부당해 운영자가 grub 드롭인을 손으로 넣고 재부팅한 일이 있었고, 그 노드는 설치본이
+모르는 상태가 됐습니다. 노드를 다시 만들면 그 노드의 local-path 볼륨을 잃으니 그 길은 답이 아니었습니다.
+
+그래서 `node_reboot` 클래스로 옮겼습니다. `update-cluster.yml` 은 그 변수가 바뀐 노드에 구성을 쓰고
+(`apply-node-reboot-var-changes.yml`), 재부팅은 **이 플레이북의 플레이(`reboot-k8s-nodes.yml`)를 그대로
+import** 해서 합니다 — 노드 목록을 `reboot_ihs` 로 넘기면 그 노드만 가져가고 나머지는 묻지 않습니다.
+drain·로드밸런서·앞뒤 건강 검사·Ready 대기·rescue 가 전부 같은 코드라, 운영자가 시킨 재부팅과 변수가
+시킨 재부팅이 다르게 동작할 자리가 없습니다. 재부팅 전의 etcd 스냅샷도 같습니다. 다른 클래스를 다 적용한
+뒤에 두어 한 노드가 한 번만 재부팅되고, 기록은 그 뒤입니다. 제어 노드는 쓰고 알리기만 하며,
+`provision_reboot` 이 꺼진 채 만들어진 노드가 그렇듯 런 끝의 보고와 메트릭이 그 상태를 말합니다.
+
+쓰기만 하고 재부팅은 운영자에게 맡기는 쪽도 생각했습니다. 변경 면은 작지만 `kubelet_policy` 가 이미
+drain 을, `control_plane` 이 이미 apiserver 재시작을 이 플레이북 안에서 하는 마당에 재부팅만 두 단계로
+떼는 이유가 약했고, 운영자가 원한 것이 "설치본이 해 주는 것" 이었습니다.
+
+`vfio_pci_device_ids` 는 `node_rebuild` 에 남겼습니다. 갈리는 것은 재부팅 여부가 아니라 **바뀌는 것이
+값인가, 노드가 무엇인가인가** 입니다. 카드를 vfio-pci 에 묶으면 벤더 드라이버가 카드를 잃고 노드의 GPU
+capacity, CDI 스펙, `gpu_passthrough` 와 라벨이 말하는 역할이 함께 바뀝니다 — `k8s_cp` 가 `node_rebuild`
+인 것과 같은 종류입니다. 쓰기도 initramfs 재생성까지 가고, 재부팅 뒤 실패(펌웨어가 IOMMU 를 안 내줌)는
+카드가 어느 드라이버에도 없는 **저하된 노드**를 남기는 반면, 커널 인자의 실패는 옛 상태 그대로입니다.
+둘 다 빈 기계에서 하는 것이 가장 싸지만, 커널 인자는 그 값이 워크로드에 따라 서 있는 노드에서 바뀌는
+것이라 거기서 멈출 수 없었고 vfio 는 아직 그렇지 않습니다.
+
+=== 뺀 인자는 부팅 ID 로 봅니다
+
+`check-kernel-args.sh` 는 기록 파일의 인자가 `/proc/cmdline` 에 있는지를 봅니다. 그래서 **뺀 인자는 못
+봤습니다** — 기록에서도 빠지니까요. 목록을 비운 노드는 "할 일 없음" 으로 읽혀 `reboot-nodes.yml` 기본
+모드가 건너뛰고, 그 인자는 다음 재부팅까지 명령줄에 남아 있었습니다. `update-cluster` 가 적용한다고 하는
+순간 이것은 "적용했다고 했는데 아직 돌고 있다" 가 됩니다.
+
+명령줄에 그 인자가 있는지로는 못 가릅니다. 사이트가 `/etc/default/grub` 에 직접 넣은 같은 인자와 구분이
+안 되기 때문입니다. 가릴 수 있는 것은 **노드가 그 뒤 부팅했는가** 이고, 커널이 부팅마다 새 boot_id 를
+주므로 setup 과 reset 이 뺀 인자를 `/etc/k8s-installer/kernel-args-removed` 에 **그 부팅의 ID 와 함께**
+적습니다. 검사는 ID 가 같으면 "뺐는데 아직 그것으로 돌고 있다" 로 보고하고(`ki_node_kernel_args_stale`),
+다르면 그 파일을 치웁니다. 값이 바뀐 인자(`hugepages=64` → `128`)는 옛 철자로 이 파일에, 새 철자로
+기록에 들어가 재부팅 전까지 양쪽 다 보고됩니다. 세 스크립트가 같은 두 파일을 읽어야 하므로 경로와
+읽는 법은 `kernel-args-common.sh` 하나에 있습니다.
+
+=== 재부팅 뒤에는 Ready 가 아니라 kubelet 을 묻습니다
+
+아래 "재부팅은 체크포인트를 버려야 하는 자리입니다" 에 적힌 실측이 보여 준 것이 하나 더 있습니다. 노드
+오브젝트는 재부팅 전의 `Ready` 를 grace period 동안 들고 있어서, 빨리 돌아오는 기계에서는
+`wait-k8s-node-ready.sh` 도 그 뒤의 건강 검사도 **죽은 kubelet 의 말**로 통과합니다. 그동안 올라온 kubelet
+은 설정을 거부하며 10초마다 다시 뜨고 있었고 플레이북은 49초 만에 성공으로 끝났습니다.
+
+그래서 `wait-kubelet-running.sh` 가 재부팅 직후, 클러스터에 무엇을 묻기 전에, **노드 자신에게** 유닛을
+묻습니다. 올라올 때까지 5분을 주고(부팅 직후 kubelet 은 containerd 를 기다리며 몇 번 죽었다 뜨는 것이
+정상입니다), 그 뒤 15초 동안 세 번 물어 계속 active 인지 봅니다 — 루프 중인 kubelet 은 0.25초만 살아
+있어 세 번 연속 걸릴 수 없습니다. 실패하면 저널에서 `Invalid state`·`machine state` 줄을 골라 같이
+냅니다. `update-k8s-node-kubelet.sh` 가 재시작 뒤에 하는 것과 같은 모양입니다.
+
+`apply-node-reboot-var-changes.yml` 은 재부팅 전에 `setup-kubelet-policy-state.sh` 도 돌립니다. 체크포인트를
+부팅 첫 기동에 버리는 드롭인은 init·join·`update-k8s-node-kubelet.sh` 가 쓰므로, 그 드롭인이 생기기 전
+릴리스로 세워진 뒤 kubelet 클래스 변경을 한 번도 안 거친 노드에는 없을 수 있습니다. 그런 `static` 노드의
+hugepage 수를 바꾸고 재부팅하면 kubelet 이 정확히 그 비교에 걸립니다. 멱등이고 표식을 "이 부팅은 이미
+시작됐다" 로 두므로 돌고 있는 kubelet 에는 아무 영향이 없습니다.
+
+==== 2026-11-10 검수
+
+EC2 ap-northeast-2, Ubuntu 22.04.5(6.8) 네 대 — node1 ki cp + k8s cp + 제어, node2·node3 k8s cp, node4 워커
+`cpu static + single-numa-node + pod + memory static` — 에 RHEL 8.10(4.18) 워커 node5. k8s 1.36.4, flannel.
+
+* *추가·변경·제거* (node4, `hugepagesz=2M hugepages=512 → 256 → 384 → [hugepagesz=2M] → []`): 매번 diff 가
+  `[node_reboot] node["node4"]` 로 올리고 etcd 스냅샷 뒤 **node4 만** 재부팅(다른 네 노드 boot_id 불변), 돌아온 뒤
+  `nr_hugepages` 가 선언대로, kubelet active, 저널에 `First kubelet start of this boot` 한 줄, applied-vars 갱신.
+  드롭인과 표식을 지워 "옛 클러스터" 로 만든 노드도 플레이가 드롭인을 다시 쓰고 올라왔습니다. 제거 둘은
+  "아직 그것으로 돌고 있다" 판정으로 재부팅됐고, 부팅 뒤 `kernel-args-removed` 가 스스로 사라졌습니다.
+* *RHEL 8 grubby*: 64 → 32 변경 때 `hugepages=32` 가 "안 실렸다", `hugepages=64` 가 "아직 돈다" 두 줄이 같이
+  나오고, 제거 뒤 `grubby --info=ALL` 에 남는 것이 없었습니다.
+* *제어 노드*: 쓰기만 하고 "reboot by hand" 안내, 런 끝 보고, 메트릭 `missing 2 / stale 0`. 손으로 재부팅하니
+  검사가 침묵했고, 빈 목록으로 돌리니 재부팅 없이 stale 보고만 남고 `reboot-nodes.yml` 기본 모드가 그 노드를
+  제어 노드라서 넘겼습니다. 다시 손으로 재부팅하니 침묵.
+* *손 드롭인 들이기*: node2 에 `98-test.cfg` 를 넣고 재부팅한 뒤 같은 값을 인벤토리에 적으니 "written and not
+  rebooted", 어느 노드도 재부팅하지 않았습니다.
+* *PDB 로 drain 거부*: 5분 뒤 rescue 가 uncordon 하고 중단, applied-vars 는 옛 값 그대로, 구성은 쓰여 있어 런
+  끝에 보고. PDB 를 지우고 다시 돌리니 같은 변경을 다시 보고 재부팅·기록.
+* *거부는 그대로*: `intel_iommu=on`, RHEL 8 의 `hugepages=0:4,1:4`, `vfio_pci_device_ids` 동반 변경 셋 다 아무것도
+  쓰지 않고 멈춤.
+* *kubelet 실패 감지*: node3 의 kubelet 에 `ExecStartPre=/bin/false` 를 걸고 `reboot-nodes.yml -e node=node3` →
+  `wait-kubelet-running.sh` 가 5분 뒤 실패, rescue 가 되돌리고 중단. 이전 코드는 낡은 Ready 로 성공하던 경로입니다.
+* 검증 중 고친 둘: 빈 목록에서 `grep .` 이 1 을 돌려 `set -e` 가 setup 을 말없이 죽인 것, 쓰고 재부팅 전에 다시
+  뺀(한 번도 부팅에 들어가지 않은) 인자가 "아직 돌고 있다" 로 읽히던 것 — 기록 시점에 `/proc/cmdline` 에 있는
+  인자만 적습니다.
 
 === 같은 재부팅이 아니라서 합치지 않았습니다
 
@@ -630,9 +711,9 @@ kubelet 도 없고, 서비스는 `restart: always` 라 기계가 돌아오면 do
 
 === 커널 명령줄과 달리 재부팅이 없습니다
 
-`kernel_cmdline_extra_args` 는 부팅 때 읽히는 것이라 노드를 다시 세워야 하고, 그래서
-`node_rebuild` 입니다. 모듈과 sysctl 은 지금 적용됩니다 — `modprobe` 가 로드하고 `sysctl` 이
-값을 넣습니다. 파일은 그것을 **다음 부팅에 되살리는** 역할이고, 그래서 클래스가 다릅니다
+`kernel_cmdline_extra_args` 는 부팅 때 읽히는 것이라 재부팅해야 하고, 그래서 `node_reboot` 입니다
+(<<커널 인자는 옮겼고 vfio 는 남겼습니다>>). 모듈과 sysctl 은 지금 적용됩니다 — `modprobe` 가 로드하고
+`sysctl` 이 값을 넣습니다. 파일은 그것을 **다음 부팅에 되살리는** 역할이고, 그래서 클래스가 다릅니다
 (`node_kernel`). 드레인도 재부팅도 없습니다.
 
 === 파일이 곧 기록입니다
@@ -2399,6 +2480,10 @@ drain-node.sh 의 실패 메시지가 그것을 말해 줍니다.
 |노드가 아니라 클러스터의 노드 오브젝트에 쓰이는 값. 컨트롤 플레인 노드에서 apiserver 에 말을
 걸어 적용하므로 노드에서는 아무것도 재시작하지 않습니다
 
+|`node_reboot`
+|부팅 때 읽히는 값. 노드에 쓰고 그 노드를 한 대씩 비우고 재부팅합니다 — `reboot-nodes.yml` 과 같은
+절차이고, 제어 노드는 쓰고 알리기만 합니다
+
 |`node_rebuild`
 |노드를 만들 때 정해지고 그 뒤로는 손댈 수 없는 값. 어느 노드인지 알리고 멈춥니다
 
@@ -3596,9 +3681,10 @@ drain 을 푸는 순간 로드밸런서는 그 서버를 곧바로 쓸 수 있�
 `ExecStart` 에는 그 노드의 선언이 박혀 있습니다 — vfio 의 ID, `gpu_passthrough`, 드리프트 체크에
 넘길 파일과 host path. 그래서 선언을 바꾸는 플레이북마다 유닛을 다시 써야 합니다.
 
-`class["node_rebuild"]` 에 있는 것들(`vfio_pci_device_ids`, `gpu_passthrough`,
-`kernel_cmdline_extra_args`)은 `update-cluster` 가 적용하지 않고 거부하므로, 노드가 다시 지어질 때
-`add-node` 가 씁니다. 하지만 `class["cp_extra_files"]` 와 `class["control_plane"]` 은
+`class["node_rebuild"]` 에 있는 것들(`vfio_pci_device_ids`, `gpu_passthrough`)은 `update-cluster` 가
+적용하지 않고 거부하므로, 노드가 다시 지어질 때 `add-node` 가 씁니다. `kernel_cmdline_extra_args` 는
+`update-cluster` 가 적용하지만 유닛에는 들어 있지 않습니다 — 그 검사는 노드의 기록 파일을 읽지 변수를
+받지 않습니다. 하지만 `class["cp_extra_files"]` 와 `class["control_plane"]` 은
 `update-cluster` 가 그대로 적용합니다 — 파일을 하나 더 선언하고 그 플레이북을 돌린 노드는, 유닛을
 다시 쓰지 않으면 새 파일을 영원히 재지 않습니다. 그래서 거기에도 둡니다.
 

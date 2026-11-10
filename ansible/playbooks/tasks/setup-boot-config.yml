@@ -99,7 +99,9 @@
         # imports it while every node is being built and add-node.yml imports it
         # with target_node set to the one node it is building. update-cluster.yml,
         # which is the playbook that runs against nodes already carrying pods, does
-        # not import it at all.
+        # not import it at all: a kernel command line that changed on a running
+        # node is apply-node-reboot-var-changes.yml's, which writes it and then
+        # takes the node through the rolling reboot of reboot-k8s-nodes.yml.
         #
         # So whoever adds this import somewhere else has to check that, or give the
         # task a test of its own. Run with target_node unset against a cluster that

@@ -13,6 +13,13 @@
 # saying so at the end of every run - and it is also the one that can not see a
 # kernel that was replaced under a running node, which is what -e all_nodes= is
 # for.
+#
+# update-cluster.yml imports this too, for the nodes whose boot configuration it
+# has just written. It names them in reboot_ihs, and then this takes exactly
+# those and asks nothing of the others. Named by the caller rather than left to
+# the decision per node, because a node that is waiting for a reboot for some
+# other reason - built with provision_reboot off and never rebooted since - is
+# reboot-nodes.yml's to take and not a variable change's
 - hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
@@ -51,21 +58,26 @@
         - name: "Decide whether node[\"{{ inventory_hostname }}\"] is rebooted"
           set_fact:
             reboot_this_node: >-
-              {{ (target_node is not none)
-                 or (reboot_all_nodes is defined)
-                 or ((vfio_pci_result.stdout | trim | length) > 0)
-                 or ((kernel_args_result.stdout | trim | length) > 0) }}
+              {{ (inventory_hostname in reboot_ihs) if reboot_ihs is defined else
+                 ((target_node is not none)
+                  or (reboot_all_nodes is defined)
+                  or ((vfio_pci_result.stdout | trim | length) > 0)
+                  or ((kernel_args_result.stdout | trim | length) > 0)) }}
 
         # Said out loud, because a run that decides on its own which nodes to
         # take has to account for the ones it left. A node that was replaced
-        # under the running kernel looks exactly like this one
+        # under the running kernel looks exactly like this one. Not when the
+        # caller named the nodes: then the ones it did not name were never in
+        # question
         - name: "Report that node[\"{{ inventory_hostname }}\"] is left alone"
           debug:
             msg: >-
               Node["{{ inventory_hostname }}"] is booted with what it is configured to boot
               with, so it is left alone. Pass -e all_nodes= to reboot it anyway, which is what
               a kernel or a package replaced under a running node needs
-          when: not (reboot_this_node | bool)
+          when:
+            - reboot_ihs is not defined
+            - not (reboot_this_node | bool)
 
         # The control node is the machine ansible is running from, so rebooting
         # it takes the run with it. setup-boot-config.yml says the same thing at
@@ -75,7 +87,7 @@
             msg: >-
               Node["{{ inventory_hostname }}"] is the control node, which this playbook runs
               on and can not reboot. Hand the control node over to another ki cp node by
-              changing control_node_ih of inventory.yml, then run this playbook from there
+              changing control_node_ih of inventory.yml, then run reboot-nodes.yml from there
               with -e node={{ inventory_hostname }}
           when:
             - reboot_this_node | bool
@@ -125,6 +137,18 @@
             content: "{{ hostvars[inventory_hostname] | to_yaml }}"
             dest: "{{ ki_tmp_vars_path }}"
           become: yes
+
+        # Before the cluster is asked anything about this node. The node object
+        # keeps the Ready it had before the reboot for as long as the lease
+        # grace period allows, so on a machine that comes back in under a minute
+        # the wait below and the health check after it both pass on the word of
+        # the kubelet that is gone, while the one that came up may be refusing
+        # its configuration and being started over and over. Measured on ec2: a
+        # static memory manager node whose checkpoint disagreed with the boot
+        # was reported Ready, and the run ended green with kubelet down. This
+        # asks the unit itself, on the node, and asks it to stay up
+        - name: Execute wait-kubelet-running.sh
+          shell: "{{ scripts }}/k8s-node/wait-kubelet-running.sh {{ vars_path_arg }}"
 
         # kubelet replaces the static pods after the manifests are read again, so
         # the machine answering ssh says nothing about whether this apiserver is

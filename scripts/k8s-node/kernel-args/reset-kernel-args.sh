@@ -75,11 +75,9 @@ RHEL8_SUPPORTED_MINOR_VERSION=10
 RHEL9_SUPPORTED_MINOR_VERSION=8
 RHEL10_SUPPORTED_MINOR_VERSION=2
 
-# The drop in ubuntu reads after its own file, and the record of what this put on
-# the command line. Both carry the name of the installer, so a file here is never
-# confused with one the site wrote and the reset knows what is its to remove
-GRUB_DROP_IN_PATH=/etc/default/grub.d/99-ki-kernel-args.cfg
-RECORD_PATH=/etc/k8s-installer/kernel-args
+# The paths and the two records, which have to be the same in every script of
+# this directory. See kernel-args-common.sh
+source "$SCRIPT_DIR_PATH"/kernel-args-common.sh
 
 ki_opt_root_path=""
 ki_opt_scripts_path=""
@@ -94,20 +92,13 @@ os_distribution=""
 os_major_version=""
 os_minor_version=""
 
-# The arguments this node was given the last time, one per line. Empty on a node
-# this never ran on, which reads the same as a node that was given none
-recorded_args() {
-  [[ -f $RECORD_PATH ]] || return 0
-  cat "$RECORD_PATH"
-
-  return 0
-}
-
 # Takes the kernel command line arguments of this node away, so that a node the
 # cluster no longer holds does not go on booting with what the cluster asked for.
 #
 # The command line keeps them until the node is rebooted, the same way it only
-# took them at a boot
+# took them at a boot, and that is written down the way the setup writes it
+# down: a node that is built again before it has booted is reported as still
+# running with them until it does
 main() {
   require_file_exists "$vars_path"
   import_ki_opt_vars
@@ -149,6 +140,7 @@ main() {
 }
 
 ubuntu_reset() {
+  record_removed_args "" "$(recorded_args)"
   rm -f "$GRUB_DROP_IN_PATH"
   rm -f "$RECORD_PATH"
 
@@ -158,6 +150,8 @@ ubuntu_reset() {
 }
 
 rhel_reset() {
+  record_removed_args "" "$(recorded_args)"
+
   local arg
   local name
   while IFS= read -r arg; do

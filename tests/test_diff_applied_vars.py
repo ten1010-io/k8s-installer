@@ -98,3 +98,62 @@ def test_only_the_node_running_the_policy_is_drained_for_a_cluster_wide_change(h
 
     assert changed(result, "kubelet") == [("node1", "kubelet_kube_reserved_memory")]
     assert changed(result, "kubelet_policy") == [("node2", "kubelet_kube_reserved_memory")]
+
+
+def diff_refused(hostvars):
+    """What update-cluster.yml is told when the diff refuses: the exit code and
+    the text, which names the class and the node."""
+    result = subprocess.run(
+        [sys.executable, str(PREFLIGHT / "diff-applied-vars.py")],
+        input=yaml.safe_dump(hostvars), capture_output=True, text=True, check=False)
+    assert result.returncode != 0, result.stdout
+    return result.stderr
+
+
+def test_a_kernel_command_line_change_is_a_reboot_of_that_node(hostvars):
+    """Read at a boot and applied by one: update-cluster.yml writes the node
+    and reboots it rather than refusing it, and only the node that changed."""
+    record_as_applied(hostvars)
+    hostvars["node2"]["kernel_cmdline_extra_args"] = ["hugepagesz=2M", "hugepages=512"]
+
+    result = diff(hostvars)
+
+    assert changed(result, "node_reboot") == [("node2", "kernel_cmdline_extra_args")]
+    assert changed(result, "node_rebuild") == []
+
+
+def test_an_emptied_kernel_command_line_is_the_same_reboot(hostvars):
+    """Taking the arguments away is written and rebooted for the way adding
+    them is: an empty list is not nothing to do."""
+    hostvars["node2"]["kernel_cmdline_extra_args"] = ["hugepagesz=2M", "hugepages=512"]
+    record_as_applied(hostvars)
+    hostvars["node2"]["kernel_cmdline_extra_args"] = []
+
+    result = diff(hostvars)
+
+    assert changed(result, "node_reboot") == [("node2", "kernel_cmdline_extra_args")]
+
+
+def test_a_vfio_pci_change_is_still_refused(hostvars):
+    """vfio-pci takes effect at a boot too and stays a rebuild: it changes what
+    the node is to the cluster, not a value it runs with."""
+    record_as_applied(hostvars)
+    hostvars["node2"]["vfio_pci_device_ids"] = ["10de:2230"]
+
+    stderr = diff_refused(hostvars)
+
+    assert 'class["node_rebuild"]' in stderr
+    assert 'node["node2"] variable["vfio_pci_device_ids"]' in stderr
+
+
+def test_a_refused_change_takes_the_reboot_with_it(hostvars):
+    """Refusals are decided before anything is applied, so a kernel command
+    line change beside a refused one is not written either."""
+    record_as_applied(hostvars)
+    hostvars["node2"]["kernel_cmdline_extra_args"] = ["hugepagesz=2M", "hugepages=512"]
+    hostvars["node2"]["vfio_pci_device_ids"] = ["10de:2230"]
+
+    stderr = diff_refused(hostvars)
+
+    assert 'variable["vfio_pci_device_ids"]' in stderr
+    assert "Nothing was applied" in stderr

@@ -648,6 +648,17 @@ ki_var_classes:
   node_kernel:
     - kernel_modules_extra
     - sysctl_extra
+  # Read by the kernel as the node boots, so writing it onto the node is not
+  # applying it. Applied by writing what the node has to boot with and then
+  # rebooting the node for it, one node at a time and the way reboot-nodes.yml
+  # does it: drained, rebooted, waited for and put back. The control node is the
+  # one node that can not be rebooted by the run that is made from it, so there
+  # the configuration is written and reported until somebody reboots it, which
+  # is also what every node is left as when it is built with provision_reboot
+  # off. A node that already boots with what it was given - one rebooted by
+  # hand with the same arguments, say - is written and not rebooted
+  node_reboot:
+    - kernel_cmdline_extra_args
   # Decided while a node is being provisioned and not reachable afterwards. The
   # device is formatted, the container and installer state lives under these
   # paths, so moving any of them means the node is built again rather than
@@ -657,13 +668,20 @@ ki_var_classes:
   # a node runs the control plane decides whether it carries an etcd member,
   # which is not something to add or drop under a node that is running, and the
   # gpu setup and the address a node is published under are the same kind of
-  # thing
+  # thing.
+  #
+  # The vfio-pci configuration takes effect at a boot the way the kernel
+  # arguments above do, and stays here even so. Binding a card to vfio-pci
+  # changes what the node is to the cluster - the gpus it offers, the cdi specs
+  # it generates, what gpu_passthrough and the labels say of it - rather than a
+  # value it runs with, and a node that boots with it and comes up with no iommu
+  # is a node whose cards are driven by nothing, which is worse than the node it
+  # was. Both are cheapest to find out on a node that is still empty
   node_rebuild:
     - docker_root_path
     - ephemeral_storage_device
     - internal_network_ip
     - k8s_cp
-    - kernel_cmdline_extra_args
     - ki_var_root_path
     - vfio_pci_device_ids
     - gpu_passthrough
