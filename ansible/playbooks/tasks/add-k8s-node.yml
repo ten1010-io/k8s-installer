@@ -1,14 +1,27 @@
+# Joins the k8s nodes of target_nodes to the cluster.
+#
+# One set of join credentials for all of them. The token kubeadm mints is good
+# for every join made within its ttl and the certificate key is one secret in
+# the cluster, so a run adding five workers asks a control plane node once and
+# hands the same file to each.
+#
+# Workers join together and the control plane nodes join after them, one at a
+# time. A worker joins nothing but the apiserver, so any number of them can be
+# in flight at once. A control plane node adds an etcd member, which kubeadm
+# wants done one at a time, so the play that joins them runs with serial: 1. A
+# run that fails between two of them leaves the first in the cluster with no
+# record of it, which is the state README.adoc tells the operator how to leave
 - hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
-    - when: inventory_hostname == k8s_cp_nodes | community.general.lists_difference([target_node]) | first
+    - when: inventory_hostname == ki_standing_k8s_cp_nodes | first
       name: Execute create-join-credentials-file.sh
       shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/create-join-credentials-file.sh {{ vars_path_arg }}"
 
-    - when: inventory_hostname == target_node
+    - when: inventory_hostname in target_nodes
       block:
         - name: Execute configure-linux.sh
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/configure-linux.sh {{ vars_path_arg }}"
@@ -26,63 +39,131 @@
     - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
       shell: "{{ ki_create_tmp_root_cmd }}"
 
+# The workers of this run, all at once.
+#
+# Laid out the way init-k8s-cluster.yml lays it out, and for its reasons:
+# everything that carries the join credentials off the node that made them is
+# inside a block, and what follows the block is what takes them away again
+# whether the join went through or not. Here the joins are two plays rather than
+# one, so the taking away is in two parts. The always takes them off the nodes,
+# the one that made them included, as soon as the play is done with them. The
+# copy of the control node has to outlive this play, since the play after it
+# reads it, so it is the rescue that deletes it, when the run is about to stop
+# here, and the last play of this file when it did not
 - hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
-    # Laid out the way init-k8s-cluster.yml lays it out, and for its reasons:
-    # everything that carries the join credentials off the node that made them
-    # is inside the block, and the always is what takes them off that node, off
-    # the node being added and off the control node, whether the join went
-    # through or not
     - block:
         # Read on the node as root, since the script above wrote it as root, and
         # written on the control node as the user ansible runs as. To a path of
         # its own rather than to the one a node keeps it at: on a control node
         # that is also the node that made them the two would be one file, which
-        # this would find already there and leave to root
+        # this would find already there and leave to root.
+        #
+        # On the node that made them, by a when rather than by run_once and a
+        # delegation, which is how init-k8s-cluster.yml says it. A run_once task
+        # that fails inside a block with a rescue sends the one host it ran on
+        # through the rescue and the always and drops the others where they
+        # stand, so the node that made the credentials would keep them unless it
+        # happened to be the first host of the play
         - name: Copy join-credentials.yml to ansible control node
           fetch:
             src: "{{ ki_tmp_join_credentials_path }}"
             dest: "{{ ki_tmp_join_credentials_src_path }}"
             flat: yes
           become: yes
-          delegate_to: "{{ k8s_cp_nodes | community.general.lists_difference([target_node]) | first }}"
-          run_once: true
+          when: inventory_hostname == ki_standing_k8s_cp_nodes | first
 
         - name: Close join-credentials.yml of ansible control node to every other user
           file:
             path: "{{ ki_tmp_join_credentials_src_path }}"
             mode: "0600"
           delegate_to: localhost
-          run_once: true
+          when: inventory_hostname == ki_standing_k8s_cp_nodes | first
 
         # The token and the certificate key in it join a node to the cluster,
         # so it is readable by root alone for the minutes it exists
-        - name: "Copy join-credentials.yml to the node[\"{{ target_node }}\"]"
+        - name: "Copy join-credentials.yml to the node[\"{{ inventory_hostname }}\"]"
           copy:
             src: "{{ ki_tmp_join_credentials_src_path }}"
             dest: "{{ ki_tmp_join_credentials_path }}"
             mode: "0600"
           become: yes
-          when: inventory_hostname == target_node
+          when:
+            - inventory_hostname in target_nodes
+            - not (k8s_cp | bool)
 
         - name: Execute join-k8s-cluster.sh
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/join-k8s-cluster.sh {{ vars_path_arg }}"
-          when: inventory_hostname == target_node
+          when:
+            - inventory_hostname in target_nodes
+            - not (k8s_cp | bool)
 
-      always:
-        - name: Delete temporary join-credentials.yml file
-          shell: "sudo rm -f {{ ki_tmp_join_credentials_path }}"
-
+      rescue:
         # Without sudo, since the directory it is in belongs to the user ansible
         # runs as
         - name: Delete temporary join-credentials.yml file of ansible control node
           shell: "rm -f {{ ki_tmp_join_credentials_src_path }}"
           delegate_to: localhost
-          run_once: true
+
+        # A rescue that ends well is a failure ansible has forgotten, and the
+        # plays after this one would run
+        - name: Stop the run
+          fail:
+            msg: >-
+              Joining the k8s nodes failed, see the failed task above. The join
+              credentials were deleted from every node and from this node
+
+      always:
+        - name: Delete temporary join-credentials.yml file
+          shell: "sudo rm -f {{ ki_tmp_join_credentials_path }}"
+
+# The control plane nodes of this run, if there are any, after the workers and
+# one at a time. serial is one host per batch over the whole group, so the hosts
+# that are not joining go through an empty batch each, which is the cost of
+# keeping the group the play is on the same as the one above.
+#
+# A batch is one node, so the always of a batch can not be what deletes the copy
+# of the control node: the batches after it still read it. See the play above
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - when:
+        - inventory_hostname in target_nodes
+        - k8s_cp | bool
+      block:
+        - name: "Copy join-credentials.yml to the node[\"{{ inventory_hostname }}\"]"
+          copy:
+            src: "{{ ki_tmp_join_credentials_src_path }}"
+            dest: "{{ ki_tmp_join_credentials_path }}"
+            mode: "0600"
+          become: yes
+
+        - name: Execute join-k8s-cluster.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/join-k8s-cluster.sh {{ vars_path_arg }}"
+
+      rescue:
+        - name: Delete temporary join-credentials.yml file of ansible control node
+          shell: "rm -f {{ ki_tmp_join_credentials_src_path }}"
+          delegate_to: localhost
+
+        - name: Stop the run
+          fail:
+            msg: >-
+              Joining the k8s control plane node failed, see the failed task
+              above. The join credentials were deleted from every node and from
+              this node
+
+      always:
+        - name: Delete temporary join-credentials.yml file
+          shell: "sudo rm -f {{ ki_tmp_join_credentials_path }}"
 
 - hosts: ki_cp_node:!broken_node
   gather_facts: false
@@ -92,4 +173,13 @@
   tasks:
     - name: Execute setup-k8s-cp-lb.sh --update
       shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh {{ vars_path_arg }} --update"
-      when: hostvars[target_node]['k8s_cp']
+      when: ki_target_k8s_cp_nodes | length > 0
+
+# The copy of the control node, which the two plays that join delete only when
+# they fail
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Delete temporary join-credentials.yml file of ansible control node
+      shell: "rm -f {{ ki_tmp_join_credentials_src_path }}"

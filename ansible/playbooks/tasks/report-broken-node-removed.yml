@@ -5,13 +5,13 @@
   gather_facts: false
   any_errors_fatal: true
   vars:
-    remaining_ki_cp_nodes: "{{ groups['ki_cp_node'] | difference([target_node]) }}"
+    remaining_ki_cp_nodes: "{{ groups['ki_cp_node'] | difference(target_nodes) }}"
   tasks:
-    - name: "Report what is left to do for node[\"{{ target_node }}\"]"
+    - name: "Report what is left to do for node[\"{{ target_nodes | first }}\"]"
       debug:
         msg:
           - >-
-            Node["{{ target_node }}"] is out of the cluster. It stays in the broken_node group
+            Node["{{ target_nodes | first }}"] is out of the cluster. It stays in the broken_node group
             of inventory.yml, which is what keeps the other playbooks from trying to reach it
           - >-
             Do not bring the machine back as it is. Its kubelet still holds certificates this
@@ -33,5 +33,5 @@
           not be reissued, so losing that node means rebuilding the cluster. Put a node back in
           the ki_cp_node group
       when:
-        - target_node in groups['ki_cp_node']
+        - (target_nodes | first) in groups['ki_cp_node']
         - remaining_ki_cp_nodes | length == 1

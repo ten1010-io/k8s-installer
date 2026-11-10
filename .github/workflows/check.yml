@@ -211,6 +211,13 @@ jobs:
           pip install --disable-pip-version-check -r tools/ci-requirements-ansible.txt
           ansible-playbook --version | head -1
 
+      # ansible-core carries no collection, and a syntax check resolves the
+      # action of every task, so a module a playbook calls out of a collection
+      # has to be here to be found. One file per python, since the distribution
+      # of each carries a different version of the same collection
+      - name: Install the collections whose modules a playbook calls
+        run: ansible-galaxy collection install -r "tools/ci-collections-py${{ matrix.python-version }}.yml"
+
       # Run from the ansible directory, which is where ansible.cfg is and what
       # every documented invocation does. Nothing is connected to: a syntax
       # check reads the playbook and the files it imports and stops there
@@ -244,6 +251,11 @@ jobs:
 
       - name: Install ansible-lint
         run: pip install --disable-pip-version-check -r tools/ci-requirements-ansible-lint.txt
+
+      # The first thing ansible-lint does is the syntax check of the job above,
+      # with the core of the python 3.12 nodes, so it needs their collections
+      - name: Install the collections whose modules a playbook calls
+        run: ansible-galaxy collection install -r tools/ci-collections-py3.12.yml
 
       - name: ansible-lint
         run: ansible-lint

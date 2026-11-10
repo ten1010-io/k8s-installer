@@ -8,7 +8,9 @@
       shell: "{{ ki_create_tmp_root_cmd }} && mkdir -p {{ ki_tmp_pki_path }}"
 
     # Read on the source node as root, since the keys are readable by root alone
-    # there, and written on the control node as the user ansible runs as
+    # there, and written on the control node as the user ansible runs as. Fetched
+    # once from a node that already holds it, however many nodes this run is
+    # copying it to
     - name: Copy pki to ansible control node
       fetch:
         src: "{{ ki_etc_pki_path }}/{{ item.name }}"
@@ -17,7 +19,7 @@
       become: yes
       delegate_to: "{{ src_ih }}"
       vars:
-        src_ih: "{{ groups['ki_cp_node'] | community.general.lists_difference([target_node]) | difference(ki_broken_nodes) | first }}"
+        src_ih: "{{ ki_standing_ki_cp_nodes | first }}"
       loop: "{{ ki_pki_files }}"
 
 - hosts: ki_cp_node:!broken_node
@@ -26,12 +28,12 @@
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
-    - when: inventory_hostname == target_node
+    - when: inventory_hostname in target_nodes
       block:
         - name: Create pki directory
           shell: "sudo mkdir -p {{ ki_etc_pki_path }}"
 
-        - name: "Copy pki to the node[\"{{ target_node }}\"]"
+        - name: "Copy pki to the node[\"{{ inventory_hostname }}\"]"
           copy:
             src: "{{ ki_tmp_pki_path }}/{{ item.name }}"
             dest: "{{ ki_etc_pki_path }}/{{ item.name }}"

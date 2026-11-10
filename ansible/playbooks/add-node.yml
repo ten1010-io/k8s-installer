@@ -2,6 +2,12 @@
   vars:
     playbook: "add-node"
 
+# Run with no -e node=, the nodes to add are the ones of the inventory the
+# cluster does not hold yet. Worked out here, before setup-ephemeral-storage.yml,
+# which is the first play that builds them. See tasks/derive-target-nodes.yml
+- import_playbook: tasks/derive-target-nodes.yml
+  when: ki_target_nodes_from_inventory | bool
+
 # Before prepare-vars.yml, whose gather-facts measures the filesystem this
 # provides. See tasks/setup-ephemeral-storage.yml
 - import_playbook: tasks/setup-ephemeral-storage.yml
@@ -15,7 +21,7 @@
 - import_playbook: tasks/setup-boot-config.yml
 
 - import_playbook: tasks/sync-pki.yml
-  when: target_node in groups['ki_cp_node']
+  when: target_nodes | intersect(groups['ki_cp_node']) | length > 0
 
 - import_playbook: tasks/setup-ki-ca-crt.yml
 
@@ -44,7 +50,7 @@
     script: all-node/docker/setup-docker.sh
 
 - import_playbook: tasks/add-ki-cp-node.yml
-  when: target_node in groups['ki_cp_node']
+  when: target_nodes | intersect(groups['ki_cp_node']) | length > 0
 
 - import_playbook: tasks/run-all-node-script.yml
   vars:
@@ -56,21 +62,21 @@
     script: all-node/ntp-client/setup-ntp-client.sh
 
 - import_playbook: tasks/apply-k8s-cp-extra-files.yml
-  when: target_node in groups['k8s_node']
+  when: target_nodes | intersect(groups['k8s_node']) | length > 0
 
 - import_playbook: tasks/add-k8s-node.yml
-  when: target_node in groups['k8s_node']
+  when: target_nodes | intersect(groups['k8s_node']) | length > 0
 
 - import_playbook: tasks/apply-node-metadata.yml
-  when: target_node in groups['k8s_node']
+  when: target_nodes | intersect(groups['k8s_node']) | length > 0
 
-# The node being added was built with everything. The nodes that were already
+# The nodes being added were built with everything. The nodes that were already
 # up were given the services again, because the set of cp nodes they name
 # changed, and nothing else
 - import_playbook: tasks/record-applied-state.yml
   vars:
     ki_recorded_classes: >-
-      {{ "all" if inventory_hostname == target_node else ["service", "no_action"] }}
+      {{ "all" if inventory_hostname in target_nodes else ["service", "no_action"] }}
 
 - import_playbook: tasks/check-user-registry.yml
 

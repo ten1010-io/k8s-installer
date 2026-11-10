@@ -29,11 +29,13 @@
 # collections the distribution carries to hold it buy this check nothing and
 # cost it a hundred megabytes.
 #
-# Where that stops: --syntax-check resolves the action of a task, so the day a
-# playbook's action is a collection module rather than a filter, the collection
-# has to be installed here too - pinned the same way, community.general 9.5.2
-# for 3.10 and 11.4.0 for 3.12, which is what the two distributions carry.
-# Nothing does that today, and the check says so in as many words when it starts
-# to: "couldn't resolve module/action"
+# Where that stops: --syntax-check resolves the action of a task, so a playbook
+# whose action is a collection module rather than a filter needs that collection
+# installed here too, pinned to what the two distributions carry. One does:
+# push-user-registry-artifacts.yml calls ansible.posix.synchronize, and
+# tools/ci-collections-py3.10.yml and tools/ci-collections-py3.12.yml are what
+# install ansible.posix for it. The next one is added there - community.general
+# would be 9.5.2 for 3.10 and 11.4.0 for 3.12 - and the check says in as many
+# words when it is missing: "couldn't resolve module/action"
 ansible-core==2.17.13; python_version == "3.10"
 ansible-core==2.19.3; python_version == "3.12"
