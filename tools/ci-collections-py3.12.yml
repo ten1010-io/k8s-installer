@@ -1,0 +1,13 @@
+# The collections whose modules a playbook calls, for the parse check of the
+# python 3.12 nodes. tools/ci-requirements-ansible.txt says why the check
+# installs ansible-core and not the distribution, and why that leaves these to
+# be named one by one.
+#
+# The versions are the ones ansible 12.1.0 carries, which is the distribution
+# release.yml puts in the bundle for python 3.12. They are read from the .deps
+# file of that release in ansible-community/ansible-build-data and move when
+# the ansible of release.yml moves
+collections:
+  # ansible.posix.synchronize, in push-user-registry-artifacts.yml
+  - name: ansible.posix
+    version: "2.1.0"
