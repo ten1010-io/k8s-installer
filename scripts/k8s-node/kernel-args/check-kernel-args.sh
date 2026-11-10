@@ -298,18 +298,53 @@ hugepage_sizes_kb() {
   return 0
 }
 
+# Two shortfalls that look the same in the numbers and are put right in opposite
+# ways. A size the kernel has and could not fill is short of memory, and a
+# smaller count or a bigger machine fixes it. A size the kernel does not have at
+# all is the wrong size for that kernel, and no amount of memory fixes it: which
+# sizes exist follows from the page size the kernel was built with, so a kernel
+# of 64K pages (arm64, the one DGX OS runs on Grace) has 2M, 512M and 16G where
+# one of 4K pages has 2M and 1G. The kernel drops the argument with one line in
+# dmesg, and "hugepagesz=1G", which is what every example for x86 says, is the
+# one that gets dropped there. The kernel lists a directory for every size it
+# has whether or not any page of it was asked for, so a size with no directory
+# is one it does not have
 report_short_hugepages() {
   local kb
   local declared
   local allocated
+  local label
 
   for kb in $(hugepage_sizes_kb); do
     declared=${declared_hugepages[$kb]:-0}
-    allocated=${allocated_hugepages[$kb]:-0}
+    [[ $declared -gt 0 ]] || continue
+    label=$(hugepage_size_label "$kb")
+
+    if [[ -z ${allocated_hugepages[$kb]+known} ]]; then
+      echo "[WARN] node[\"$node\"] declared $declared hugepages of size[\"$label\"] and the kernel it is booted with has no hugepages of that size, so it took none. this kernel has [$(supported_hugepage_labels)]: the sizes follow from the page size the kernel was built with, $(getconf PAGESIZE) bytes here, and more memory does not add one. declare one of those sizes instead"
+      continue
+    fi
+
+    allocated=${allocated_hugepages[$kb]}
     [[ $declared -gt $allocated ]] || continue
 
-    echo "[WARN] node[\"$node\"] declared $declared hugepages of size[\"$(hugepage_size_label "$kb")\"] and the kernel allocated $allocated. a page of that size needs that much contiguous memory at boot, and the kernel takes what it finds and says so only in dmesg"
+    echo "[WARN] node[\"$node\"] declared $declared hugepages of size[\"$label\"] and the kernel allocated $allocated. a page of that size needs that much contiguous memory at boot, and the kernel takes what it finds and says so only in dmesg"
   done
+
+  return 0
+}
+
+# The sizes the running kernel has, as they are written on the command line and
+# smallest first: "2M 512M 16G"
+supported_hugepage_labels() {
+  local kb
+  local labels=""
+
+  for kb in $(printf '%s\n' "${!allocated_hugepages[@]}" | grep . | sort -n); do
+    labels+="$(hugepage_size_label "$kb") "
+  done
+
+  echo "${labels% }"
 
   return 0
 }

@@ -217,8 +217,21 @@ main() {
 # failed is refused by nothing here: the operator came to fix or remove, and a
 # full disk or a wrong clock is a reason they came rather than a reason to send
 # them away. Everything else is building on this node and has no chance of
-# ending well
+# ending well.
+#
+# The node remove-node.yml is taking out is the first kind, on that node alone:
+# it is leaving, and everything asked here is about to be reset on it. It is
+# also what a node that was never set up looks like. One that came with docker
+# is reset with remove-node.yml before it is added, and a ki cp node in that
+# state follows whatever time server its image shipped with, which the check
+# of the time source would refuse it for. The nodes that are staying are still
+# held to all of it
 get_node_check_severity() {
+  if [[ $playbook = "remove-node" && $(is_target_node) = "true" ]]; then
+    echo "warn"
+    return 0
+  fi
+
   case "$playbook" in
     reset-cluster | remove-broken-node) echo "warn" ;;
     *) echo "fail" ;;
@@ -436,7 +449,7 @@ check_vip_carrier() {
   [[ $exit_code = 0 ]] && return 0
 
   report_or_die "$severity" \
-    "This node can not carry vip[\"$ki_cp_ha_mode_vip\"] with carrier[\"$ki_cp_ha_mode_vip_carrier\"], which ki_cp_ha_mode_vip_carrier says it has to:\n$output\nWhat the carrier needs from the site is in README.adoc"
+    "This node can not carry vip[\"$ki_cp_ha_mode_vip\"] with carrier[\"$ki_cp_ha_mode_vip_carrier\"], which ki_cp_ha_mode_vip_carrier says it has to:\n$output\nGive the site what the carrier names above before going on"
 
   return 0
 }
@@ -882,16 +895,43 @@ require_hostname_known() {
 
 require_linux_packages_installed() {
   [[ $("$ki_opt_scripts_path/systemctl.sh" exists containerd) = "false" ]] && die "[ERROR] Linux package[\"containerd\"] not installed"
-  [[ $("$ki_opt_scripts_path/systemctl.sh" exists docker) = "false" ]] && die "[ERROR] Linux package[\"containerd\"] not installed"
-  [[ $("$ki_opt_scripts_path/systemctl.sh" exists kubelet) = "false" ]] && die "[ERROR] Linux package[\"containerd\"] not installed"
+  [[ $("$ki_opt_scripts_path/systemctl.sh" exists docker) = "false" ]] && die "[ERROR] Linux package[\"docker\"] not installed"
+  [[ $("$ki_opt_scripts_path/systemctl.sh" exists kubelet) = "false" ]] && die "[ERROR] Linux package[\"kubelet\"] not installed"
 
   return 0
 }
 
+# The installer owns these three on a node: it installs them at the version the
+# release pins, renders their configuration, and takes them off again on a
+# reset. So a node that already holds one is refused rather than built on,
+# whoever put it there. An earlier run that stopped half way did, or the
+# operating system did: DGX OS and the images of some sites come with docker
+# and containerd installed. What has to happen next is the same for both, the
+# reset of the installer itself, which removes them by the names the bundle
+# installs them under, so the refusal names the playbook that does it
 require_linux_packages_not_installed() {
-  [[ $("$ki_opt_scripts_path/systemctl.sh" exists containerd) = "true" ]] && die "[ERROR] Linux package[\"containerd\"] already installed"
-  [[ $("$ki_opt_scripts_path/systemctl.sh" exists docker) = "true" ]] && die "[ERROR] Linux package[\"docker\"] already installed"
-  [[ $("$ki_opt_scripts_path/systemctl.sh" exists kubelet) = "true" ]] && die "[ERROR] Linux package[\"kubelet\"] already installed"
+  local name
+  for name in containerd docker kubelet; do
+    [[ $("$ki_opt_scripts_path/systemctl.sh" exists "$name") = "true" ]] || continue
+
+    die "[ERROR] Linux package[\"$name\"] already installed. $(how_to_reset_first)"
+  done
+
+  return 0
+}
+
+how_to_reset_first() {
+  local msg="The installer installs it itself and does not build on one that is already there,"
+  msg+=" whether an earlier run or the operating system of the node put it there. Reset first, which takes it off along with"
+  msg+=" the images and containers it holds:"
+
+  if [[ $playbook = "add-node" ]]; then
+    msg+=" run remove-node.yml -e node=$inventory_hostname and then add-node.yml again."
+  else
+    msg+=" run reset-cluster.yml -e sdfc= and then setup-cluster.yml again."
+  fi
+
+  echo "$msg"
 
   return 0
 }
