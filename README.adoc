@@ -186,7 +186,7 @@ binaries:
 |이름 |버전
 
 |ansible |12.1.0
-|ansible-core |2.19.3
+|ansible-core |2.19.15
 |jmespath |1.0.1
 |jinja2-cli |0.8.2
 |PyYAML |6.0.3
