@@ -34,6 +34,13 @@ ki_opt_ansible_path: "{{ ki_opt_root_path }}/ansible"
 # that directory is, and kept by upgrade.sh across a release for the same
 # reason vars.yml is: it belongs to the operator
 ki_opt_ansible_files_path: "{{ ki_opt_ansible_path }}/files"
+# This file, where the control node holds it. diff-applied-vars.py reads it for
+# the fallbacks declared below, because the hostvars it is handed carry only the
+# value each node ended up with and the fallback is gone from the merge once
+# vars.yml or inventory.yml has named the variable. The file is the release's
+# own - upgrade.sh replaces it and keeps only vars.yml - so what is read is what
+# this release falls back to and not what the operator wrote
+ki_constant_vars_path: "{{ ki_opt_ansible_path }}/group_vars/all/constant-vars.yml"
 
 # The node of the inventory that the control node is, declared in inventory.yml
 # and read here so that every host can compare itself against it. What the
@@ -281,6 +288,7 @@ kubelet_cpu_manager_policy: "none"
 kubelet_cpu_manager_full_pcpus_only: false
 kubelet_topology_manager_policy: "none"
 kubelet_topology_manager_scope: "container"
+kubelet_memory_manager_policy: "none"
 kubelet_reserved_system_cpus: null
 kubelet_max_pods: null
 kubelet_server_tls_bootstrap: false
@@ -420,10 +428,10 @@ ki_preflight_clock_offset_max_seconds: 5
 #
 # args and volumes carry the values and not only the names. The template is
 # rendered by jinja2 and the node scripts read the vars file with yq, and neither
-# can look a variable up by the name of another variable. default([], true) so
-# that a vars.yml written before one of these existed still reaches
-# validate-hostvars.py, which says which line is missing, rather than failing
-# here as an undefined name.
+# can look a variable up by the name of another variable. A vars.yml written
+# before one of these existed resolves to the fallback below, and default([],
+# true) is for a line that is there and left empty: it reads as no arguments
+# here, and validate-hostvars.py says what the line has to hold.
 #
 # volumes_var is null for etcd on purpose, and that is what says etcd takes no
 # volumes: a volume there mounts a host path into the member holding the state of
@@ -526,6 +534,72 @@ ki_k8s_cp_components:
       k8s_etcd_data_path with the membership the inventory describes. Setting it
       here moves the member out from under its own backup
 
+# The fallbacks for the rest of the variables update-cluster.yml applies, for a
+# second reason beyond the one the fallbacks above give.
+#
+# A variable a release adds is in no record a node wrote before it, so
+# diff-applied-vars.py has nothing it was applied with to compare against. It
+# compares against the fallback instead: the fallback is by definition what a
+# vars.yml with no line for the variable resolves to, and a cluster taking the
+# release is running exactly that vars.yml, so the fallback is what the node was
+# running with. A value that differs from it is then a change of the variable's
+# class and is applied - a kubelet_memory_manager_policy set to static on a node
+# in the same run as the upgrade drains that node - rather than being written
+# down as applied. A variable without a fallback would be compared against
+# nothing, and a value would be a change from that, which is right for a
+# variable nobody held and a drain for one everybody did.
+#
+# So every variable of a class that playbook applies has a fallback here, the
+# two optional ones as null, and tests/test_diff_applied_vars.py refuses a class
+# table that names one without. The ones that reach this block are the ones
+# whose line vars.yml has always carried; what each means is said beside its
+# line there, and the value here is the one that file ships.
+#
+# The blocking classes are left out on purpose: there a difference is a refusal
+# rather than an apply, and a record is not always complete - upgrade-cluster.yml
+# writes only the classes it applied - so a cluster that is as it was would be
+# refused. The script takes what the node holds now for those and says so
+internal_network_extra_zone: null
+internal_network_extra_zone_a_records: null
+ki_cp_dns_dnssec_validation: true
+ki_cp_dns_server_upstream_servers:
+  - "8.8.8.8"
+  - "8.8.4.4"
+ki_cp_ntp_server_upstream_servers:
+  - "time1.google.com"
+  - "time2.google.com"
+ki_cp_ha_mode_vip: null
+kubelet_auto_ephemeral_storage_max: "30Gi"
+kubelet_auto_ephemeral_storage_min: "5Gi"
+kubelet_auto_memory_available_max: "4Gi"
+kubelet_auto_memory_available_min: "500Mi"
+kubelet_auto_nodefs_available_max: "50Gi"
+kubelet_auto_nodefs_available_min: "15Gi"
+kubelet_eviction_hard_imagefs_available: null
+kubelet_eviction_hard_memory_available: null
+kubelet_eviction_hard_nodefs_available: null
+kubelet_eviction_hard_nodefs_inodes_free: "5%"
+kubelet_ki_cp_extra_cpu: "500m"
+kubelet_ki_cp_extra_memory: "1Gi"
+kubelet_kube_reserved_cpu: null
+kubelet_kube_reserved_ephemeral_storage: null
+kubelet_kube_reserved_memory: null
+kubelet_kube_reserved_pid: null
+kubelet_system_reserved_cpu: null
+kubelet_system_reserved_ephemeral_storage: null
+kubelet_system_reserved_memory: null
+kubelet_system_reserved_pid: null
+k8s_certificate_validity_period: "26280h"
+k8s_apiserver_extra_args: []
+k8s_apiserver_extra_volumes: []
+k8s_controller_manager_extra_args: []
+k8s_controller_manager_extra_volumes: []
+k8s_etcd_extra_args: []
+k8s_scheduler_extra_args: []
+k8s_scheduler_extra_volumes: []
+k8s_cp_extra_files: []
+ki_etcd_backup_retention_count: 5
+
 # What has to happen when a variable changes. update-cluster.yml compares the
 # current values against ki_etc_applied_vars_path and decides from this table
 # what to run, so a variable that is not listed here is one nothing knows how to
@@ -535,7 +609,12 @@ ki_k8s_cp_components:
 #
 # Covers both files. Most of these are set once in vars.yml, some are only ever
 # set per node in inventory.yml, and a few can be either: what a node is
-# recorded with is the value that node ended up with, whichever file it came from
+# recorded with is the value that node ended up with, whichever file it came from.
+#
+# What a node's record does not hold is compared against the fallback of the
+# variable rather than read as unchanged, except in the three classes that
+# refuse. The block of fallbacks above says why, and the script says which
+# checks cover the exception
 ki_var_classes:
   # Rendered into a ki cp service and picked up by re-rendering it. The nodes
   # and the cluster stay as they are

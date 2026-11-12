@@ -2869,7 +2869,87 @@ could not bootstrap the admin user in file admin.conf: unable to create
 파일에 있던 값을 그대로 두므로, 반영되지 않은 변경은 기록에 남지 않고 다음 `update-cluster.yml`
 이 그것을 봅니다. 기본값을 두지 않은 것은 의도입니다 — 기본이 "전부" 면 나중에 추가된 클래스가
 적용되지 않은 채 기록되고, 기본이 "전부 빼고 몇 개" 여도 마찬가지입니다. 이름을 빠뜨리면 기록되지
-않는 쪽으로 틀리고, 기록이 없는 변수는 `diff-applied-vars.py` 가 기준점으로 받습니다.
+않는 쪽으로 틀리고, 기록이 없는 변수는 `diff-applied-vars.py` 가 아래 절의 규칙으로 봅니다.
+
+=== 기록에 없는 변수는 릴리스의 fallback 과 견줍니다
+
+`diff-applied-vars.py` 는 오랫동안 노드 기록에 없는 이름을 전부 "변경 아님" 으로 받고 실행 끝에
+현재 값을 기록했습니다. 릴리스가 더한 변수는 어느 기록에도 없으니 그렇게 둔 것인데, 그러면 그 변수를
+업그레이드와 **같은 실행에서** 설정한 경우가 조용히 틀립니다. 2026-11-10 에 리그에서 설치본을 옛
+스냅샷에서 main 으로 올리며 `inventory.yml` 의 한 노드에 `kubelet_memory_manager_policy: static` 을
+넣었더니, 드레인 없이 끝나고 기록에는 `"static"` 이 적혔습니다. kubelet 은 `none` 그대로였고, 다음
+실행은 "바뀐 것 없음" 이라 답합니다. 기록을 손으로 `"none"` 으로 고쳐야 비로소 드레인이 돌았습니다.
+`kubelet_policy` 처럼 적용이 곧 드레인인 클래스에서 "적용됐다고 적힌 미적용" 이 되는 결함입니다.
+
+같은 뿌리가 하나 더 있었습니다. 기본값이 없는 선택 변수(`internal_network_extra_zone`)는 안 쓰면
+기록에 없고, 서 있는 클러스터에서 처음 넣으면 역시 기준점으로 받아 DNS 가 다시 렌더되지 않았습니다.
+
+이제 기록에 없는 이름은 **그 변수의 fallback** 과 견줍니다. `constant-vars.yml` 의 fallback 은 정의가
+정확히 그것입니다 — 줄이 없는 `vars.yml` 이 받는 값이고, 업그레이드는 사용자의 `vars.yml` 을 보존하므로
+릴리스를 받은 클러스터가 바로 그 파일을 돌리고 있습니다. 같으면 아무 보고 없이 지나가고(기본값
+그대로인 업그레이드는 조용합니다), 다르면 그 클래스의 변경으로 적용되고 그 뒤에 기록됩니다. 요약
+줄에는 기록이 아니라 fallback 과 견줬다고 덧붙여, `none -> static` 이 기록이 `none` 이라 말한 것으로
+읽히지 않게 합니다. fallback 이 없는 변수는 아무 노드도 들지 않았던 것이므로 "없음" 과 견주고, 값이
+생겼으면 변경입니다.
+
+그래서 **update-cluster 가 적용하는 클래스의 변수는 전부 fallback 을 갖습니다.** 릴리스가 변수를 더할
+때 fallback 을 같이 두는 것이 이미 관례였고(kubelet 정책들, ntp 로컬 폴백, 캐리어, preflight 임계값),
+이번에 그 관례를 전부로 넓히고 `tests/test_diff_applied_vars.py` 가 빠진 것을 거부합니다. 선택 변수
+둘은 null 로 들어갑니다. 그래서 반대 방향도 보입니다 — `internal_network_extra_zone` 줄을 지우면 노드의
+값은 사라지는 것이 아니라 fallback 인 null 이 되고, 기록의 `example.com` 과 달라 service 변경으로 잡혀
+DNS 가 다시 렌더됩니다. 노드가 아예 갖지 않는 분류 변수는 localhost 에만 선언되는 `control_node_ih`
+하나뿐이고, 테스트가 그것을 지킵니다. 재부팅 클래스로 옮긴 `kernel_cmdline_extra_args` 도 이 규칙을
+따릅니다. 기록에 없는 노드에서 인벤토리에 인자가 있으면 빈 목록과 달라 변경으로 잡히지만,
+`apply-node-reboot-var-changes.yml` 은 이미 그 인자로 부팅한 노드를 쓰기만 하고 재부팅하지 않으므로
+기록이 비었다는 이유만으로 노드가 재부팅되지는 않습니다. 대가는 `vars.yml` 에서 그 줄들을 지워도 거부되지 않고 릴리스 기본값으로
+돈다는 것인데, 지금까지 fallback 을 둔 변수들이 이미 그렇게 동작하고 있었습니다. 기본값을 릴리스의
+`vars.yml` 사본에서 읽는 안은 그 사본을 setup.sh·upgrade.sh 가 놓고 ki cp 노드마다 동기화해야 해서
+택하지 않았습니다. 단 fallback 이 `vars.yml` 의 줄과 다른 것은 의도된 선언(ntp 로컬 폴백: 새 클러스터는
+켜고, 옛 클러스터는 꺼진 채로 둔다)이라 테스트가 그 하나만 예외로 둡니다.
+
+**막는 클래스(immutable, cluster_upgrade, node_rebuild)는 예전 규칙 그대로입니다.** 거기서 다름은 적용이
+아니라 거부이고, 기록은 늘 완전하지 않습니다 — `upgrade-cluster.yml` 은 자기가 적용한 다섯 클래스만
+적으므로, 기록 전 클러스터가 업그레이드부터 거치면 `k8s_cp` 와 서브넷이 기록에 없습니다. 거기서
+fallback 과 견주면 `k8s_cp false -> true` 로 멀쩡한 클러스터에 "모든 노드를 다시 만들라" 고 말하게
+됩니다. 그 창은 기계에 묻는 검사가 덮습니다: `check-kube-proxy-as-declared.yml`(fallback 이 있는 유일한
+immutable 변수)과 `check-vfio-pci.yml`(<<썼는지가 아니라 먹었는지를 봅니다>> 에 적힌 "첫 실행에서는
+node_rebuild 가 다시 만들라고 하지 않는다" 는 그대로 의도입니다). 이 클래스에서 기록에 없는 이름만
+`baseline_names` 로 보고됩니다.
+
+fallback 은 hostvars 가 아니라 **파일에서** 읽습니다. hostvars 는 노드가 결국 갖게 된 값만 들고 있어서
+`vars.yml` 이나 `inventory.yml` 이 이름을 적는 순간 fallback 은 머지에서 사라집니다. 플레이북이
+`lookup('file') | from_yaml` 로 넘기는 길은 피했습니다 — 그 파일의 템플릿 문자열을 ansible-core 2.17 은
+한 번 더 렌더하고 2.19 는 그대로 두어, 번들이 싣는 두 코어가 다른 입력을 만듭니다. 스크립트가
+`--constant-vars-path` 로 받아 분류된 이름만 골라 읽고, 템플릿인 값은 거부합니다. 배포본의
+`constant-vars.yml` 은 upgrade.sh 가 갈아 끼우는 릴리스 파일이라 사용자가 쓴 것이 섞이지 않습니다.
+
+=== EC2 에서 리그의 상황을 재현해 쟀습니다
+
+2026-11-12, Ubuntu 22.04.5 t3.xlarge 두 대(node1 ki cp + 컨트롤 플레인 + 제어 노드, node2 컨트롤
+플레인), 수정 전 main(`b909d00`)으로 세운 뒤 두 노드의 `applied-vars.yml` 에서
+`kubelet_memory_manager_policy` 줄을 지워 그 변수가 생기기 전 릴리스로 세운 노드를 흉내 냈습니다.
+수정본으로 `upgrade.sh` → `upgrade-k8s-installer.yml` 을 돌리고(스냅샷 재배포), `update-cluster.yml`
+을 세 번 돌렸습니다.
+
+[cols="1,3,3"]
+|===
+|실행 |인벤토리 |결과
+
+|① 변수 없이
+|두 노드 다 기본값
+|"No variable changed". 드레인·kubelet 재시작 모두 skipping. 기록에 `kubelet_memory_manager_policy: "none"` 이 두 노드에 적힘
+
+|② 기록 줄을 다시 지우고, node2 에 cpu static / topology restricted / memory static
+|기록에 없는 변수와 인벤토리 값이 같은 실행에서 만남 — 리그의 상황
+|요약 `[kubelet_policy] node["node2"] variable["kubelet_memory_manager_policy"] none -> static (not recorded; compared against the fallback of the release)`. node2 만 drain → `update-k8s-node-kubelet.sh --reset-cpu-manager-state` → Ready 대기 → uncordon. node2 의 `config.yaml` 에 `memoryManagerPolicy: Static`, `memory_manager_state` 가 `Static`, 기록 `"static"`. node1 은 건드리지 않음
+
+|③ 그대로 한 번 더
+|②와 같음
+|"No variable changed". 아무 노드도 건드리지 않음
+|===
+
+같은 박스에서 수정 전 규칙이라면 ②가 ①처럼 조용히 끝나고 기록만 `"static"` 이 됐을 것이고, 그것이
+리그에서 본 그대로입니다. 세 실행 모두 rc 0, 각 3분 안팎. 끝나고 인스턴스는 내렸습니다.
 
 == 인증서를 무중단으로 갱신하는 법
 
