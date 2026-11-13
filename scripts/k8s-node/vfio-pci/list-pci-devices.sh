@@ -247,8 +247,8 @@ numa_node_of_sysfs_path() {
 # region: the six bars first, then the expansion rom, then the bridge windows or
 # the bars of the virtual functions. Only the six are counted, and only those the
 # kernel flags as memory - an io port bar is not mapped that way. A 64 bit bar
-# takes two of the six and the second comes out empty, and so does a bar the
-# firmware never placed, so an empty line counts as nothing. A device with no
+# takes two of the six and the second comes out empty, and so does a slot the
+# device does not implement, so an empty line counts as nothing. A device with no
 # memory bar at all is reported as unknown
 bar_size_of_sysfs_path() {
   local path=$1

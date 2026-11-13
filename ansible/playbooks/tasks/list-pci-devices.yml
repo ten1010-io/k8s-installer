@@ -19,7 +19,9 @@
 #
 # And each device carries the size of its memory bars added up, which is what a
 # platform sizing the host memory a guest needs beside its own - the vmm maps
-# those windows a page at a time - copies from here. See list-pci-devices.sh
+# those windows a page at a time - sizes that share from. It is the basis of the
+# share rather than the share, since what a page of bar costs moves with the
+# kernel and the page size. See list-pci-devices.sh
 #
 # Narrow it to one node with the --limit of ansible:
 #
