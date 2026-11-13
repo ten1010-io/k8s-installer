@@ -352,18 +352,26 @@ ansible-playbook -i inventory.yml playbooks/list-pci-devices.yml --limit node3
 ----
 
 출력은 NUMA 노드별 CPU 목록 뒤에 장치 한 줄씩이고, 각 줄은 IOMMU 그룹·슬롯·ID·**NUMA 노드**·
-분류·드라이버입니다.
+분류·**BAR 합**·드라이버입니다.
 
 [source]
 ----
 [INFO] node["node3"] iommu: on
 [INFO] numa["0"] cpus["0-31,64-95"]
 [INFO] numa["1"] cpus["32-63,96-127"]
-group["61"]  0000:61:00.0   10de:2230    numa["1"]    3D controller            driver["vfio-pci"]
+group["61"]  0000:61:00.0   10de:26b9    numa["1"]    3D controller            bar["65584Mi"]   driver["vfio-pci"]
 ----
 
 IOMMU 그룹은 그 노드가 IOMMU 를 켜고 부팅한 뒤에야 보입니다. 처음 조회에서는 ID 만 나오므로,
 지정하고 재부팅한 다음 다시 조회하면 그룹과 `vfio-pci` 로 바뀐 드라이버가 함께 보입니다.
+
+`bar` 는 그 장치가 BAR 로 내보이는 메모리 창의 크기를 다 더한 것입니다. 장치를 넘겨받은 게스트의 VMM 과
+커널은 그 창을 4K 페이지 단위로 매핑해 두므로, 게스트 메모리와 별도로 호스트 메모리를 장치마다 그만큼에
+비례해 씁니다. BAR1 이 카드 메모리 전체를 덮는 GPU 는 카드 하나에 수백 MiB 입니다. 그 몫을 정하는 쪽(가상머신
+플랫폼의 GPU 모델 정보 같은 것)은 이 값에서 출발합니다. 비용이 BAR 크기에 비례하는 비율은 커널과 페이지 크기에 따라
+달라서, 이 값은 답이 아니라 시작점이고 실제 VM 의 메모리 사용을 보고 맞춥니다. 쿠버네티스 수량 표기라 정확히
+나누어떨어지는 가장 큰 단위로 나오고, 같은 모델이면 값이 같으므로 모델마다 노드 하나에서 읽으면 충분합니다. 메모리 BAR 가 없는
+장치는 `bar["-"]` 입니다. 위 예의 L40S 는 BAR0 16Mi · BAR1 64Gi · BAR3 32Mi 를 더한 값입니다.
 
 NUMA 는 <<kubelet 이 CPU 를 나눠 주는 방식>> 에서 씁니다. `numa["-"]` 는 커널이 답을 주지 않은
 것으로, NUMA 가 하나인 기계이거나 펌웨어가 말해 주지 않은 경우입니다. CPU 목록 자리의 `cpus["-"]`

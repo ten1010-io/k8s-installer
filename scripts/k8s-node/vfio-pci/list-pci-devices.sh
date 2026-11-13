@@ -83,6 +83,11 @@ source "$SCRIPT_DIR_PATH"/vfio-pci-common.sh
 # fixtures and checked without a machine that has two sockets
 NUMA_NODES_PATH=${NUMA_NODES_PATH:-/sys/devices/system/node}
 
+# The flag the kernel sets on a region of a device that is memory rather than io
+# ports (IORESOURCE_MEM of include/linux/ioport.h), as it comes out in the third
+# column of the resource file of a device
+IORESOURCE_MEM=0x200
+
 # The pci class codes worth naming. Unlike the drivers of a card, which are a
 # fact about the machine and are asked of it, these are a fixed enumeration of
 # the pci specification, so writing them down is reading a constant rather than
@@ -199,13 +204,14 @@ device_lines() {
     id="$(hex4 "$path"/vendor):$(hex4 "$path"/device)"
     group=$(iommu_group_of_sysfs_path "$path")
 
-    printf '%s\t%-12s %-14s %-12s %-12s %-24s %s\n' \
+    printf '%s\t%-12s %-14s %-12s %-12s %-24s %-16s %s\n' \
       "${group:-zzz}$slot" \
       "group[\"${group:--}\"]" \
       "$slot" \
       "$id" \
       "numa[\"$(numa_node_of_sysfs_path "$path")\"]" \
       "$(class_name "$path")" \
+      "bar[\"$(bar_size_of_sysfs_path "$path")\"]" \
       "driver[\"$(driver_of_sysfs_path "$path")\"]"
   done
 
@@ -225,6 +231,66 @@ numa_node_of_sysfs_path() {
   [[ $value = "-1" ]] && { echo "-"; return 0; }
 
   echo "$value"
+
+  return 0
+}
+
+# The memory a device exposes through its bars, all of them added up. A guest that
+# is handed the device gets those windows mapped by its vmm, and the vmm and the
+# kernel keep page tables over them a page at a time - for a gpu whose bar1 spans
+# the whole of its memory or more, that is hundreds of mebibytes per card on the
+# host, beside the guest memory and not out of it. Whoever sizes the memory a
+# guest needs on top of its own reads it here, and since it is the same for every
+# card of a model, one node of each is enough.
+#
+# Read from the resource file, which holds a start, an end and the flags of each
+# region: the six bars first, then the expansion rom, then the bridge windows or
+# the bars of the virtual functions. Only the six are counted, and only those the
+# kernel flags as memory - an io port bar is not mapped that way. A 64 bit bar
+# takes two of the six and the second comes out empty, and so does a bar the
+# firmware never placed, so an empty line counts as nothing. A device with no
+# memory bar at all is reported as unknown
+bar_size_of_sysfs_path() {
+  local path=$1
+  local index=0
+  local total=0
+  local start
+  local end
+  local flags
+
+  [[ -f $path/resource ]] || { echo "-"; return 0; }
+
+  while read -r start end flags; do
+    if (( index < 6 && (flags & IORESOURCE_MEM) && end > start )); then
+      total=$(( total + end - start + 1 ))
+    fi
+    index=$(( index + 1 ))
+  done < "$path"/resource
+
+  (( total > 0 )) || { echo "-"; return 0; }
+
+  binary_size "$total"
+
+  return 0
+}
+
+# A byte count in the largest binary unit that holds it exactly, which is how a
+# kubernetes quantity is written, so the number can be copied as it is into
+# whatever asks for one. A count no unit divides comes out in bytes
+binary_size() {
+  local bytes=$1
+  local units=(Ti Gi Mi Ki)
+  local shifts=(40 30 20 10)
+  local i
+
+  for i in "${!units[@]}"; do
+    if (( bytes % (1 << shifts[i]) == 0 )); then
+      echo "$(( bytes >> shifts[i] ))${units[i]}"
+      return 0
+    fi
+  done
+
+  echo "$bytes"
 
   return 0
 }

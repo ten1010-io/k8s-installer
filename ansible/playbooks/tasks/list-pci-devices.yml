@@ -17,6 +17,10 @@
 # kubelet_reserved_system_cpus and kubelet_topology_manager_policy are picked
 # from.
 #
+# And each device carries the size of its memory bars added up, which is what a
+# platform sizing the host memory a guest needs beside its own - the vmm maps
+# those windows a page at a time - copies from here. See list-pci-devices.sh
+#
 # Narrow it to one node with the --limit of ansible:
 #
 #   ansible-playbook -i inventory.yml playbooks/list-pci-devices.yml --limit node4
