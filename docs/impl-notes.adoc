@@ -1570,10 +1570,10 @@ Ready, VM 둘은 drain 으로 쫓겨났다가 새 IP 로 다시 Running. 체크�
 거부합니다
 |===
 
-aipub-cloud 가 `restricted` 를 고르며 세운 전제 둘 중 "한 NUMA 에 들어갈 요청이 파편화로 걸치는 것은 거부" 는 맞았고(T5),
+`restricted` 를 고르는 플랫폼이 흔히 기대하는 두 가지 중 "한 NUMA 에 들어갈 요청이 파편화로 걸치는 것은 거부" 는 맞았고(T5),
 "한 NUMA 보다 큰 요청은 admit" 은 **조건이 더 셉니다** — GPU 만이 아니라 vCPU 와 메모리(hugepage 포함)도 각각 한 NUMA 를
 넘어야 합니다(T3a 대 T3c). 그리고 그런 VM 이 도는 동안 그 노드는 한 NUMA 짜리 Guaranteed 파드를 받지 못합니다(T3d). 둘 다
-kubelet 의 규칙이라 설치본이 바꿀 수 있는 것이 아니고, 배치 규칙은 aipub-cloud 쪽에서 세워야 합니다.
+kubelet 의 규칙이라 설치본이 바꿀 수 있는 것이 아니고, 배치 규칙은 그 위의 플랫폼이 세워야 합니다.
 
 == cgroup v1 노드를 통과시키는 자리
 
@@ -2902,7 +2902,7 @@ could not bootstrap the admin user in file admin.conf: unable to create
 
 `diff-applied-vars.py` 는 오랫동안 노드 기록에 없는 이름을 전부 "변경 아님" 으로 받고 실행 끝에
 현재 값을 기록했습니다. 릴리스가 더한 변수는 어느 기록에도 없으니 그렇게 둔 것인데, 그러면 그 변수를
-업그레이드와 **같은 실행에서** 설정한 경우가 조용히 틀립니다. 2026-11-10 에 리그에서 설치본을 옛
+업그레이드와 **같은 실행에서** 설정한 경우가 조용히 틀립니다. 2026-11-10 에 GPU 테스트 클러스터에서 설치본을 옛
 스냅샷에서 main 으로 올리며 `inventory.yml` 의 한 노드에 `kubelet_memory_manager_policy: static` 을
 넣었더니, 드레인 없이 끝나고 기록에는 `"static"` 이 적혔습니다. kubelet 은 `none` 그대로였고, 다음
 실행은 "바뀐 것 없음" 이라 답합니다. 기록을 손으로 `"none"` 으로 고쳐야 비로소 드레인이 돌았습니다.
@@ -2950,7 +2950,7 @@ fallback 은 hostvars 가 아니라 **파일에서** 읽습니다. hostvars 는 
 `--constant-vars-path` 로 받아 분류된 이름만 골라 읽고, 템플릿인 값은 거부합니다. 배포본의
 `constant-vars.yml` 은 upgrade.sh 가 갈아 끼우는 릴리스 파일이라 사용자가 쓴 것이 섞이지 않습니다.
 
-=== EC2 에서 리그의 상황을 재현해 쟀습니다
+=== EC2 에서 그 클러스터의 상황을 재현해 쟀습니다
 
 2026-11-12, Ubuntu 22.04.5 t3.xlarge 두 대(node1 ki cp + 컨트롤 플레인 + 제어 노드, node2 컨트롤
 플레인), 수정 전 main(`b909d00`)으로 세운 뒤 두 노드의 `applied-vars.yml` 에서
@@ -2967,7 +2967,7 @@ fallback 은 hostvars 가 아니라 **파일에서** 읽습니다. hostvars 는 
 |"No variable changed". 드레인·kubelet 재시작 모두 skipping. 기록에 `kubelet_memory_manager_policy: "none"` 이 두 노드에 적힘
 
 |② 기록 줄을 다시 지우고, node2 에 cpu static / topology restricted / memory static
-|기록에 없는 변수와 인벤토리 값이 같은 실행에서 만남 — 리그의 상황
+|기록에 없는 변수와 인벤토리 값이 같은 실행에서 만남 — 그 클러스터의 상황
 |요약 `[kubelet_policy] node["node2"] variable["kubelet_memory_manager_policy"] none -> static (not recorded; compared against the fallback of the release)`. node2 만 drain → `update-k8s-node-kubelet.sh --reset-cpu-manager-state` → Ready 대기 → uncordon. node2 의 `config.yaml` 에 `memoryManagerPolicy: Static`, `memory_manager_state` 가 `Static`, 기록 `"static"`. node1 은 건드리지 않음
 
 |③ 그대로 한 번 더
@@ -2976,7 +2976,7 @@ fallback 은 hostvars 가 아니라 **파일에서** 읽습니다. hostvars 는 
 |===
 
 같은 박스에서 수정 전 규칙이라면 ②가 ①처럼 조용히 끝나고 기록만 `"static"` 이 됐을 것이고, 그것이
-리그에서 본 그대로입니다. 세 실행 모두 rc 0, 각 3분 안팎. 끝나고 인스턴스는 내렸습니다.
+그 클러스터에서 본 그대로입니다. 세 실행 모두 rc 0, 각 3분 안팎. 끝나고 인스턴스는 내렸습니다.
 
 == 인증서를 무중단으로 갱신하는 법
 
