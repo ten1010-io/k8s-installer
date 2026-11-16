@@ -124,7 +124,24 @@ main() {
     die "[ERROR] Failed to upload the certificates. kubeadm said:\n$upload_certs_output"
   certificate_key=$(tail -1 <<< "$upload_certs_output")
 
-  print_yaml "$token" "$discovery_token_ca_cert_hash" "$certificate_key" > "$ki_tmp_join_credentials_path"
+  # Closed to everyone but root as it is written, rather than left for the
+  # playbook to close. A redirection takes its mode from the umask this was
+  # started under, which is 0644 under sudo, and the token and the certificate
+  # key then stood readable for as long as it took a play to get to the file:
+  # until the copy of init-k8s-cluster.yml came round to this node, and for
+  # the whole of add-k8s-node.yml, which copies to the node being added and
+  # never to the one that made them. Only the directory it is in kept the
+  # other users of the node from it. Nothing but root reads it here - the
+  # playbook fetches it with become and join-k8s-cluster.sh runs under sudo.
+  #
+  # Removed first because a redirection onto a file that is already there
+  # keeps the mode that file has, and a run that failed under an earlier
+  # release leaves one behind
+  rm -f "$ki_tmp_join_credentials_path"
+  (
+    umask 077
+    print_yaml "$token" "$discovery_token_ca_cert_hash" "$certificate_key" > "$ki_tmp_join_credentials_path"
+  )
 
   return 0
 }

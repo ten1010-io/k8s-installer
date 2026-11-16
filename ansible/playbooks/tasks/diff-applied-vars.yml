@@ -33,8 +33,15 @@
         dest: "{{ tmp_input_path }}"
       become: yes
 
+    # Given constant-vars.yml as well as the hostvars, because the hostvars carry
+    # only the value a node ended up with and the script needs what that value
+    # would have been without a line: the fallback, which is what a variable the
+    # record does not hold is compared against. See the script
     - name: Execute diff-applied-vars.py
-      shell: "sudo {{ ansible_python_interpreter }} {{ ki_opt_scripts_path }}/preflight/diff-applied-vars.py < {{ tmp_input_path }}"
+      shell: >-
+        sudo {{ ansible_python_interpreter }} {{ ki_opt_scripts_path }}/preflight/diff-applied-vars.py
+        --constant-vars-path {{ ki_constant_vars_path }}
+        < {{ tmp_input_path }}
       register: shell_result
 
     - name: Remove temporary file for cli input
@@ -63,15 +70,20 @@
           Changes to them are reported from the next run on
       when: ki_baseline_ihs | length > 0
 
-    # And the variables a release added, which are in no record written before
-    # it. Same rule, one level down: nothing was applied with a value, so there
-    # is nothing that could have been applied differently
+    # And the variables of a blocking class that a release added, which are in no
+    # record written before it. Those are the only unrecorded variables read this
+    # way: the rest are compared against the fallback of the release, and a
+    # difference is a change like any other. A blocking class refuses rather than
+    # applies, and a record is not always complete - upgrade-cluster.yml writes
+    # only the classes it applied - so comparing there would refuse a cluster
+    # that is as it was. The script says which checks cover that window
     - name: Report the variables with nothing recorded yet
       debug:
         msg: >-
           Variable[{{ ki_baseline_names | join(", ") }}] has no record on the nodes that
-          carry it, so this run takes the values they have now as the starting point.
-          Changes to them are reported from the next run on
+          carry it and is of a class this playbook refuses rather than applies, so this
+          run takes the values they have now as the starting point. Changes to them are
+          reported from the next run on
       when: ki_baseline_names | length > 0
 
     - name: Report what changed

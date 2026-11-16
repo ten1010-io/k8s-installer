@@ -75,11 +75,9 @@ RHEL8_SUPPORTED_MINOR_VERSION=10
 RHEL9_SUPPORTED_MINOR_VERSION=8
 RHEL10_SUPPORTED_MINOR_VERSION=2
 
-# The drop in ubuntu reads after its own file, and the record of what this put on
-# the command line. Both carry the name of the installer, so a file here is never
-# confused with one the site wrote and the reset knows what is its to remove
-GRUB_DROP_IN_PATH=/etc/default/grub.d/99-ki-kernel-args.cfg
-RECORD_PATH=/etc/k8s-installer/kernel-args
+# The paths and the two records, which have to be the same in every script of
+# this directory. See kernel-args-common.sh
+source "$SCRIPT_DIR_PATH"/kernel-args-common.sh
 
 ki_opt_root_path=""
 ki_opt_scripts_path=""
@@ -94,15 +92,6 @@ os_distribution=""
 os_major_version=""
 os_minor_version=""
 
-# The arguments this node was given the last time, one per line. Empty on a node
-# this never ran on, which reads the same as a node that was given none
-recorded_args() {
-  [[ -f $RECORD_PATH ]] || return 0
-  cat "$RECORD_PATH"
-
-  return 0
-}
-
 kernel_cmdline_extra_args=""
 
 # Puts the kernel command line arguments of this node where the bootloader reads
@@ -115,8 +104,11 @@ kernel_cmdline_extra_args=""
 # are declared by whoever runs the cluster, and two owners writing one file is
 # how a reset takes away more than it put there.
 #
-# Nothing here reboots. The arguments take effect at the next boot, and
-# setup-boot-config.yml is where the reboot for both components sits
+# Nothing here reboots. The arguments take effect at the next boot: while a
+# node is built that reboot is setup-boot-config.yml's, and on a node that is
+# running it is update-cluster.yml's, which walks the nodes this was run on one
+# at a time. Until then check-kernel-args.sh says what is written and not in
+# force, which is why the arguments taken away here are written down too
 main() {
   require_file_exists "$vars_path"
   import_ki_opt_vars
@@ -168,6 +160,7 @@ main() {
 }
 
 ubuntu_setup() {
+  write_removed_record
   create_grub_drop_in_file
   write_record
 
@@ -177,9 +170,27 @@ ubuntu_setup() {
 }
 
 rhel_setup() {
+  write_removed_record
   remove_recorded_grubby_args
   add_grubby_args
   write_record
+
+  return 0
+}
+
+# The arguments the record names and the inventory no longer does, written down
+# before the record is replaced, since afterwards nothing on the node says they
+# were ever there. An argument whose value changed is here as well as in the new
+# record, under its old spelling: the line carries the old one until the node
+# boots, and the check reports both halves of that until then
+write_removed_record() {
+  local wanted
+  wanted=$(tr ' ' '\n' <<< "$kernel_cmdline_extra_args" | grep . || true)
+
+  local removed
+  removed=$(comm -23 <(recorded_args | grep . | sort -u) <(sort -u <<< "$wanted") || true)
+
+  record_removed_args "$wanted" "$removed"
 
   return 0
 }
@@ -258,6 +269,12 @@ report_state() {
   else
     msg "[INFO] Configured kernelCmdlineExtraArgs[\"$kernel_cmdline_extra_args\"]"
   fi
+
+  local removed
+  removed=$(removed_args | tr '\n' ' ')
+  [[ -n $removed ]] &&
+    msg "[INFO] Took kernelCmdlineExtraArgs[\"${removed% }\"] off the bootloader, which this node runs with until it boots again"
+
   msg "[WARN] This node has to be rebooted before the command line changes"
 
   return 0

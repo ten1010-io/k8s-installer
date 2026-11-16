@@ -9,8 +9,9 @@
 # vars.yml alone this file said what that file held rather than what the node was
 # left with, which is a different thing in every playbook but update-cluster.yml.
 # A class that is not named keeps the value it was last applied with, and a
-# variable that has never been recorded stays unrecorded, which is where
-# diff-applied-vars.py takes what the node holds now as its starting point
+# variable that has never been recorded stays unrecorded, which diff-applied-vars.py
+# compares against the fallback of the release - or, in a class update-cluster.yml
+# refuses rather than applies, takes as what the node holds now
 - hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
@@ -22,7 +23,8 @@
     # Rather than a default of every class, which is what this did before and is
     # the shape that goes wrong quietly: a class added later and forgotten here
     # would be recorded by a playbook that never applied it. Unrecorded is the
-    # safe direction, since diff-applied-vars.py reads it as a starting point
+    # safe direction, since diff-applied-vars.py reads it as the fallback of the
+    # release, which is what a node nothing applied to is running with
     - name: Check that the playbook said which classes it applied
       assert:
         that: ki_recorded_classes is defined

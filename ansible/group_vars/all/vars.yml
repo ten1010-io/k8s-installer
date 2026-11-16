@@ -42,8 +42,11 @@ ephemeral_storage_device: null
 #
 # Empty leaves the node alone, and emptying a list that had something in it takes
 # what it had away. Either way the command line changes at the next boot:
-# setup-boot-config.yml is what reboots a node while it is being built, and a
-# node that was not rebooted is reported at the end of every run until it is
+# setup-boot-config.yml is what reboots a node while it is being built,
+# update-cluster.yml drains and reboots a node that is already running when
+# this changes on it, one node at a time, and a node that was not rebooted -
+# the control node, or one built with provision_reboot off - is reported at the
+# end of every run until it is
 kernel_cmdline_extra_args: []
 
 # Kernel modules this node loads, and sysctls it is set to. Set per node in

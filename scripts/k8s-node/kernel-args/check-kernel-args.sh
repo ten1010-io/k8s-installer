@@ -85,8 +85,8 @@ parse_params "$@"
 # --- End of CLI template ---
 
 # The record of what was put on the command line, which is what this compares
-# against. Absent on a node that was never given any
-RECORD_PATH=/etc/k8s-installer/kernel-args
+# against, and the record of what was taken off it. See kernel-args-common.sh
+source "$SCRIPT_DIR_PATH"/kernel-args-common.sh
 
 # Where the kernel says how many pages of each size it is holding, one directory
 # per size it supports: hugepages-2048kB, hugepages-1048576kB
@@ -106,6 +106,13 @@ declare -A allocated_hugepages=()
 # bootloader did not take them. Reported rather than failed, and to stdout for a
 # playbook to collect, the way check-vfio-pci.sh is.
 #
+# Both directions. An argument that was added is missing from the command line
+# until the boot, and one that was taken away is still on it until the boot;
+# the first is read off the record and /proc/cmdline, the second off the record
+# of what was taken away and the id of the boot it was taken away in. Either is
+# a node that has to be rebooted, which is how reboot-k8s-nodes.yml and
+# update-cluster.yml read a line printed here.
+#
 # Nothing is read out of the vars file of the node, and the node is named on the
 # command line, so that this can be run at any time - including after
 # reset-vars-file.yml has taken that file away, which is where every playbook
@@ -119,14 +126,21 @@ main() {
   local missing
   missing=$(missing_args)
 
+  # Read in this boot or taken away: a node that has booted since the arguments
+  # were taken off has nothing left to say about them
+  local stale
+  stale=$(removed_args)
+
   count_hugepages
 
-  [[ -n $metrics_path ]] && write_metrics_file "$missing"
+  [[ -n $metrics_path ]] && write_metrics_file "$missing" "$stale"
 
-  # A node that was given no argument has nothing to take, which is most of them
-  [[ -f $RECORD_PATH ]] || exit 0
+  # A node that was given no argument and had none taken away has nothing to
+  # take, which is most of them
+  [[ -f $RECORD_PATH || -n $stale ]] || exit 0
 
   report_missing_args "$missing"
+  report_stale_args "$stale"
 
   # Only when asked, and only once the node is booted with its arguments.
   #
@@ -141,7 +155,7 @@ main() {
   #
   # And not before the node is booted with its arguments: then the pages are short
   # because the line never reached the kernel, which the report above already says
-  [[ -z $missing && $report_hugepages = "true" ]] && report_short_hugepages
+  [[ -f $RECORD_PATH && -z $missing && $report_hugepages = "true" ]] && report_short_hugepages
 
   exit 0
 }
@@ -174,6 +188,23 @@ report_missing_args() {
   joined=$(tr '\n' ' ' <<< "$missing")
 
   echo "[WARN] node[\"$node\"] is not booted with kernelCmdlineExtraArgs[\"${joined% }\"]. the configuration is written and takes effect when the node is rebooted"
+
+  return 0
+}
+
+# The other half of the same report: taken off the bootloader and still on the
+# kernel. Not compared against /proc/cmdline, which would also match an
+# argument the site put on the line itself, but decided by whether the node has
+# booted since - see removed_args
+report_stale_args() {
+  local stale=$1
+
+  [[ -z $stale ]] && return 0
+
+  local joined
+  joined=$(tr '\n' ' ' <<< "$stale")
+
+  echo "[WARN] node[\"$node\"] is still booted with kernelCmdlineExtraArgs[\"${joined% }\"], which were taken away. they go when the node is rebooted"
 
   return 0
 }
@@ -358,16 +389,23 @@ supported_hugepage_labels() {
 # node_textfile_mtime_seconds for every file it reads
 write_metrics_file() {
   local missing=$1
+  local stale=$2
 
-  local count=0
-  [[ -n $missing ]] && count=$(grep -c . <<< "$missing")
+  local missing_count=0
+  [[ -n $missing ]] && missing_count=$(grep -c . <<< "$missing")
+
+  local stale_count=0
+  [[ -n $stale ]] && stale_count=$(grep -c . <<< "$stale")
 
   mkdir -p "$(dirname "$metrics_path")"
 
   cat > "$metrics_path".tmp <<EOF
 # HELP ki_node_kernel_args_missing Kernel command line arguments this node was given and is not booted with
 # TYPE ki_node_kernel_args_missing gauge
-ki_node_kernel_args_missing $count
+ki_node_kernel_args_missing $missing_count
+# HELP ki_node_kernel_args_stale Kernel command line arguments taken away from this node that it is still booted with
+# TYPE ki_node_kernel_args_stale gauge
+ki_node_kernel_args_stale $stale_count
 # HELP ki_node_hugepages_declared Hugepages of each size this node was told to allocate at boot
 # TYPE ki_node_hugepages_declared gauge
 # HELP ki_node_hugepages_allocated Hugepages of each size the kernel of this node is holding

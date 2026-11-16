@@ -89,7 +89,8 @@
 
         # The token and the certificate key in it join a node to the cluster, so
         # it is readable by root alone for the minutes it exists. The node that
-        # made it holds it already, and what this does there is close it
+        # made it holds it already, closed by the script that wrote it, and
+        # this writes nothing there
         - name: Copy join-credentials.yml to the node
           copy:
             src: "{{ ki_tmp_join_credentials_src_path }}"

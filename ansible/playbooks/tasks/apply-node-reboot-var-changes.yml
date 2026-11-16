@@ -1,0 +1,89 @@
+# Applies the changes of class["node_reboot"]: what a node has to boot with is
+# written onto it, and the node is rebooted for it, one node at a time.
+#
+# Two halves, and both existed before this did. The first is the script that
+# writes the boot configuration, which setup-boot-config.yml runs while a node
+# is built. The second is reboot-k8s-nodes.yml, the play reboot-nodes.yml is
+# built around, imported here with the nodes to take named rather than copied:
+# the drain, the load balancer, the health checks, the waiting and the rescue
+# are the same whether an operator asked for the reboot or a variable did.
+#
+# Only the nodes the diff filed under this class are written, and of those only
+# the ones that are not booted with what was written are rebooted. The second
+# question is check-kernel-args.sh's, which answers it in both directions - an
+# argument added and not yet on the command line, an argument taken away and
+# not yet off it - so a node whose list was emptied is rebooted for that, and a
+# node that already boots with what it was just given is not. The last one is
+# what adopting a site's own grub drop in looks like: the operator put the
+# arguments on the node by hand, rebooted, and now writes them into the
+# inventory so that the installer knows. That node has nothing to reboot for
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    scripts: "sudo {{ ki_opt_scripts_path }}"
+    changed_ihs: "{{ hostvars['localhost']['ki_var_changes']['node_reboot'] | map(attribute='ih') | unique | list }}"
+  tasks:
+    - when: inventory_hostname in changed_ihs
+      block:
+        - name: Execute setup-kernel-args.sh
+          shell: "{{ scripts }}/k8s-node/kernel-args/setup-kernel-args.sh {{ vars_path_arg }}"
+
+        # The drop in of kubelet.service that takes the checkpoints of the cpu
+        # manager and the memory manager away at the first start of a boot.
+        # Every node built or updated since it existed carries it, and a node
+        # that does not is exactly the one about to be rebooted: on the static
+        # memory manager policy the checkpoint records the hugepages the kernel
+        # held, and kubelet refuses to start after a boot that changed the
+        # count. Idempotent, and it marks this boot as already started, so the
+        # kubelet that is running now is left alone
+        - name: Execute setup-kubelet-policy-state.sh
+          shell: "{{ scripts }}/k8s-node/kubelet-policy/setup-kubelet-policy-state.sh {{ vars_path_arg }}"
+
+        - name: Execute check-kernel-args.sh
+          shell: "{{ scripts }}/k8s-node/kernel-args/check-kernel-args.sh --node {{ inventory_hostname }}"
+          register: kernel_args_result
+
+        - name: "Decide whether node[\"{{ inventory_hostname }}\"] is rebooted"
+          set_fact:
+            node_reboot_needed: "{{ kernel_args_result.stdout | trim | length > 0 }}"
+
+        - name: Report that the node already boots with its kernel command line arguments
+          debug:
+            msg: >-
+              Node["{{ inventory_hostname }}"] is booted with the kernel command line arguments
+              it was just given, so it is written and not rebooted
+          when: not (node_reboot_needed | bool)
+
+        - name: "Remove temporary variable[\"kernel_args_result\"]"
+          set_fact:
+            kernel_args_result: null
+
+# The list the reboot play is given, gathered in one place so that the plays
+# below can be imported with it. Built node by node rather than with a filter
+# over hostvars, which reads worse for what it does
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: "Set_fact variable[\"ki_node_reboot_ihs\"]"
+      set_fact:
+        ki_node_reboot_ihs: []
+
+    - name: Collect the nodes that are rebooted for their kernel command line arguments
+      set_fact:
+        ki_node_reboot_ihs: "{{ ki_node_reboot_ihs + [item] }}"
+      loop: "{{ groups['k8s_node'] | difference(ki_broken_nodes) }}"
+      when: hostvars[item]['node_reboot_needed'] | default(false) | bool
+
+# What reboot-nodes.yml does before it takes a node, for the same reason: a
+# reboot stops an etcd member for minutes, and the snapshot costs one file per
+# control plane node. Only when a node is actually going to be rebooted, since
+# a run that only writes has changed nothing the snapshot would be for
+- import_playbook: backup-etcd.yml
+  when: hostvars['localhost']['ki_node_reboot_ihs'] | length > 0
+
+- import_playbook: reboot-k8s-nodes.yml
+  vars:
+    reboot_ihs: "{{ hostvars['localhost']['ki_node_reboot_ihs'] }}"

@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
+"""Works out what changed on each node since it was last built or updated.
+
+Reads the hostvars of the run on stdin, compares every classified variable of
+every node against what the node recorded in applied-vars.yml, and files each
+difference under the class constant-vars.yml gives the variable. What a record
+does not hold is not read as unchanged: see baseline_of
+"""
 from __future__ import annotations
 
+import argparse
 import sys
+from pathlib import Path
 from typing import Any, Dict, List, Set
 
 import yaml
@@ -24,12 +33,20 @@ BLOCKING_CLASSES = {
         " add-node.yml, one at a time",
 }
 
+# What a node's record says about a variable it does not name: that the node
+# never held it when the record was written. Compared against as a value, so a
+# variable that went from nothing to something is a change like any other. Never
+# equal to anything a node holds
+UNSET = object()
+
 
 def main():
+    args = parse_args()
     hostvars = yaml.safe_load(sys.stdin)
     var_classes = hostvars["localhost"]["ki_var_classes"]
     class_of = {name: cls for cls, names in var_classes.items() for name in names}
     memory_reservation_vars = set(hostvars["localhost"].get("ki_kubelet_memory_reservation_vars") or [])
+    fallbacks = read_fallbacks(args.constant_vars_path, class_of)
 
     changes: Dict[str, List[dict]] = {cls: [] for cls in var_classes}
     baseline_ihs: List[str] = []
@@ -49,30 +66,30 @@ def main():
             continue
 
         for name, cls in class_of.items():
+            # Only control_node_ih, which is declared on localhost and held by no
+            # node. Every other classified variable has a fallback, so a line taken
+            # out of vars.yml or inventory.yml resolves to it rather than to
+            # nothing, and is compared like any other value
             if name not in node_hostvars:
                 continue
 
             current = node_hostvars[name]
-            # A variable a release added is in no record written before it. There
-            # is no value it was applied with, so there is nothing that could have
-            # been applied differently, and reading it as a change is how a
-            # cluster that is exactly as it was is told to roll its control plane,
-            # or is refused outright when the class it landed in is a blocking
-            # one. What the node holds now is where the comparing starts, which is
-            # already what a node carrying no record at all does
-            if name not in applied:
+            before, compared_with = baseline_of(name, cls, applied, fallbacks)
+            if compared_with == "nothing":
                 baseline_names.add(name)
                 continue
 
-            if applied[name] == current:
+            if before == current:
                 continue
 
-            changes[class_on_node(cls, name, node_hostvars, applied, memory_reservation_vars)].append({
+            change = {
                 "ih": ih,
                 "name": name,
-                "applied": applied[name],
+                "applied": None if before is UNSET else before,
                 "current": current,
-            })
+                "compared_with": compared_with,
+            }
+            changes[class_on_node(cls, name, node_hostvars, applied, fallbacks, memory_reservation_vars)].append(change)
 
     blocking = [(cls, changes[cls]) for cls in BLOCKING_CLASSES if changes[cls]]
     if blocking:
@@ -91,7 +108,93 @@ def main():
     exit(0)
 
 
-def class_on_node(cls: str, name: str, node_hostvars: dict, applied: dict,
+def parse_args():
+    parser = argparse.ArgumentParser(description="Diff the variables of every node against what it recorded")
+    parser.add_argument("--constant-vars-path", required=True, type=Path,
+                        help="constant-vars.yml of the release, read for the fallbacks of the variables")
+    return parser.parse_args()
+
+
+def baseline_of(name: str, cls: str, applied: dict, fallbacks: dict):
+    """What the current value of a variable is compared against, and where that
+    came from: "record", "fallback", "unset" or "nothing".
+
+    A variable the record holds is compared against what it holds. The rest are
+    variables a release added after the record was written, and they are where a
+    run can go wrong quietly: nothing was applied with a value, and reading that
+    as "nothing changed" records whatever the inventory says now as applied,
+    which on a variable set in the same run as the upgrade is a drain that never
+    happened written down as done.
+
+    So for a class this playbook applies, the comparison is against what the node
+    was running with before the release gave the variable a name. That is the
+    fallback constant-vars.yml declares for it, by definition: the fallback is the
+    value a vars.yml written before the line existed resolves to, and a cluster
+    taking the release is exactly that vars.yml. A variable the release gives no
+    fallback is one no node held before, so what it recorded is nothing, and a
+    value now is a change from that.
+
+    A blocking class is the one place the old reading stays: there a difference
+    is a refusal rather than an apply, and the record of a node is not always
+    complete. upgrade-cluster.yml records only the classes it applied, so a node
+    whose first record it wrote has no line for k8s_cp or the subnets, and
+    comparing those against a fallback would refuse a cluster that is exactly as
+    it was and tell its owner to rebuild every node. The window that leaves is
+    covered by the checks that ask the machine: check-kube-proxy-as-declared.yml
+    for the one immutable variable with a fallback, check-vfio-pci.yml for the
+    node_rebuild ones. What the node holds now is the starting point there, and
+    the run says so
+    """
+    if name in applied:
+        return applied[name], "record"
+
+    if cls in BLOCKING_CLASSES:
+        return None, "nothing"
+
+    if name in fallbacks:
+        return fallbacks[name], "fallback"
+
+    return UNSET, "unset"
+
+
+def read_fallbacks(path: Path, class_of: dict) -> dict:
+    """The fallback constant-vars.yml declares for each classified variable.
+
+    Read from the file rather than from the hostvars on stdin, which carry only
+    the value a node ended up with: the fallback is what that value would have
+    been had vars.yml and inventory.yml said nothing, and once they have said
+    something it is gone from the merge. The file is the release's own, which is
+    what upgrade.sh replaces, so it says what this release falls back to and not
+    what the operator wrote
+    """
+    if not path.is_file():
+        print(f"[ERROR] File[\"{path}\"] does not exist. It is constant-vars.yml of the release,"
+              " which this reads for the fallbacks of the variables", file=sys.stderr)
+        exit(1)
+
+    with path.open(encoding="utf-8") as f:
+        constant_vars = yaml.safe_load(f) or {}
+
+    fallbacks = {}
+    for name in class_of:
+        if name not in constant_vars:
+            continue
+
+        value = constant_vars[name]
+        # A fallback is a value, written in the file as the value it is. One
+        # written as a template would need ansible to say what it is, and the
+        # comparison below would be against the text of the template
+        if isinstance(value, str) and "{{" in value:
+            print(f"[ERROR] Variable[\"{name}\"] of file[\"{path}\"] is a template, and a fallback"
+                  " of a classified variable has to be a plain value", file=sys.stderr)
+            exit(1)
+
+        fallbacks[name] = value
+
+    return fallbacks
+
+
+def class_on_node(cls: str, name: str, node_hostvars: dict, applied: dict, fallbacks: dict,
                   memory_reservation_vars: Set[str]) -> str:
     """The class a change has on this node, which is the table's answer but once.
 
@@ -107,13 +210,15 @@ def class_on_node(cls: str, name: str, node_hostvars: dict, applied: dict,
 
     Whether the node ran static before or runs it now: a node that is leaving the
     policy still has the checkpoint that disagrees, and a node that is entering it
-    is already being drained for the policy itself
+    is already being drained for the policy itself. What it ran before is what
+    the record says, or the fallback where the record predates the variable
     """
     if cls != "kubelet" or name not in memory_reservation_vars:
         return cls
 
     policy_name = "kubelet_memory_manager_policy"
-    if node_hostvars.get(policy_name) == "static" or applied.get(policy_name) == "static":
+    ran_before = applied.get(policy_name, fallbacks.get(policy_name))
+    if node_hostvars.get(policy_name) == "static" or ran_before == "static":
         return "kubelet_policy"
 
     return cls
@@ -122,7 +227,7 @@ def class_on_node(cls: str, name: str, node_hostvars: dict, applied: dict,
 def build_summary(changes: Dict[str, List[dict]]) -> List[str]:
     return [
         f"[{cls}] node[\"{change['ih']}\"] variable[\"{change['name']}\"]"
-        f" {fmt(change['applied'])} -> {fmt(change['current'])}"
+        f" {fmt_before(change)} -> {fmt(change['current'])}{fmt_compared_with(change)}"
         for cls in sorted(changes)
         for change in changes[cls]
     ]
@@ -135,7 +240,25 @@ def print_blocking(blocking: List[tuple]):
         print(f"\n  A variable of class[\"{cls}\"] {BLOCKING_CLASSES[cls]}:", file=sys.stderr)
         for change in cls_changes:
             print(f"    node[\"{change['ih']}\"] variable[\"{change['name']}\"]"
-                  f" {fmt(change['applied'])} -> {fmt(change['current'])}", file=sys.stderr)
+                  f" {fmt_before(change)} -> {fmt(change['current'])}", file=sys.stderr)
+
+
+def fmt_before(change: dict) -> str:
+    if change["compared_with"] == "unset":
+        return "(unset)"
+
+    return fmt(change["applied"])
+
+
+def fmt_compared_with(change: dict) -> str:
+    """Says when the value on the left is not one the node recorded, so that a
+    report of "none -> static" is not read as a record that said none."""
+    if change["compared_with"] == "fallback":
+        return " (not recorded; compared against the fallback of the release)"
+    if change["compared_with"] == "unset":
+        return " (not recorded; the release gives it no fallback, so the node held nothing)"
+
+    return ""
 
 
 def fmt(value: Any) -> str:
