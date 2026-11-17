@@ -638,7 +638,11 @@ ki_var_classes:
   # restarting kubelet, which does not stop the containers already running:
   # containerd keeps them and kubelet picks them back up. The reservations only
   # feed scheduler accounting, and a tightened evictionHard evicting a pod is
-  # the point of tightening it
+  # the point of tightening it. The exception is a node whose cpu manager runs
+  # the static policy with full-pcpus-only before kubernetes 1.37, where the
+  # restarted kubelet refuses a container holding more exclusive cpus than are
+  # free; update-cluster.yml refuses the change there unless asked to drain
+  # (check-kubelet-restart.yml)
   kubelet:
     - kubelet_auto_ephemeral_storage_max
     - kubelet_auto_ephemeral_storage_min

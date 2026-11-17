@@ -1,0 +1,83 @@
+# Refuses a change of class["kubelet"] that would kill running containers, before
+# anything is applied.
+#
+# That class is applied by restarting kubelet, on every node, and a restart is
+# meant to leave the containers running. Before kubernetes 1.37 it does not on a
+# node whose cpu manager runs the static policy with full-pcpus-only: the
+# restarted kubelet admits the running pods again, and refuses and kills a
+# container that holds more exclusive cpus than are left free. Which containers
+# that would be is worked out on each node by check-kubelet-restart.sh, and is
+# empty everywhere else.
+#
+# Asked here rather than node by node as the restarts go, because by then the
+# baseline has been uploaded and the nodes before have been restarted, and the run
+# would stop holding half of the change. apply-kubelet-var-changes.yml asks again
+# right before each restart, for whatever has started since.
+#
+# allow_draining_nodes is the operator's permission for that: a change applied
+# without a drain may drain the nodes that need one. It is not asked by what
+# drains anyway - class["kubelet_policy"], a node rebooted for class["node_reboot"]
+# and an upgrade - and setting it changes nothing there.
+#
+# The nodes class["kubelet_policy"] is about to drain are left out. Their
+# containers are evicted before the restart that matters and their checkpoints go
+# with it
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    policy_ihs: "{{ hostvars['localhost']['ki_var_changes']['kubelet_policy'] | map(attribute='ih') | list }}"
+  tasks:
+    - name: Execute check-kubelet-restart.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/kubelet-policy/check-kubelet-restart.sh {{ vars_path_arg }} --node {{ inventory_hostname }}"
+      register: kubelet_restart_result
+      changed_when: false
+      when:
+        - hostvars['localhost']['ki_var_changes']['kubelet'] | length > 0
+        - inventory_hostname not in policy_ihs
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    refusing_ihs: >-
+      {{ groups['k8s_node'] | difference(ki_broken_nodes)
+         | map('extract', hostvars) | selectattr('kubelet_restart_result', 'defined')
+         | selectattr('kubelet_restart_result.stdout', 'defined')
+         | rejectattr('kubelet_restart_result.stdout', 'equalto', '')
+         | map(attribute='inventory_hostname') | list }}
+    refusals: >-
+      {{ refusing_ihs | map('extract', hostvars, ['kubelet_restart_result', 'stdout']) | join('\n') }}
+  tasks:
+    # Two ways on, and both are the operator's to choose. Taking those
+    # containers down first keeps the rest of the node running through the
+    # restart. Draining is the same eviction class["kubelet_policy"] makes, of
+    # every pod on those nodes and only those nodes
+    - name: Refuse the restart of kubelet a change of class["kubelet"] needs
+      fail:
+        msg: |-
+          A change of class["kubelet"] is applied by restarting kubelet on every node, and on
+          node[{{ refusing_ihs | join(', ') }}] the restarted kubelet would refuse and kill running
+          containers. Its cpu manager runs the static policy with full-pcpus-only, and before
+          kubernetes 1.37 that policy admits a running container again only when the cpus it
+          already holds would also fit in the free ones:
+          {{ refusals }}
+          Nothing was applied. Stop or move those pods and run this playbook again, or run it
+          with -e allow_draining_nodes= to drain those nodes before their kubelet is
+          restarted, which evicts every pod on them. That variable lets a change that is
+          otherwise applied without a drain drain the nodes that need one; the changes that
+          always drain, such as class["kubelet_policy"] and an upgrade, do so without it
+      when:
+        - refusing_ihs | length > 0
+        - allow_draining_nodes is not defined
+
+    - name: Report the nodes that are drained before their kubelet is restarted
+      debug:
+        msg: |-
+          Node[{{ refusing_ihs | join(', ') }}] is drained before its kubelet is restarted,
+          because the restarted kubelet would refuse these containers:
+          {{ refusals }}
+      when:
+        - refusing_ihs | length > 0
+        - allow_draining_nodes is defined

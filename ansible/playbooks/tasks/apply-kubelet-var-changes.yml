@@ -19,14 +19,83 @@
 # One node at a time. Restarting kubelet does not stop the containers it is
 # running, so this is not a disruption, but taking every kubelet of the cluster
 # down at the same moment would leave nothing watching any of them for as long
-# as it took them all to come back
+# as it took them all to come back.
+#
+# Except where the restarted kubelet would refuse some of them, which a node whose
+# cpu manager runs the static policy with full-pcpus-only does before kubernetes
+# 1.37 (see check-kubelet-restart.yml). The run was refused before anything was
+# applied when such a node was found, unless the operator asked for those nodes
+# to be drained. This asks the node again right before its restart, since pods
+# may have started on it while the nodes before it were walked, and a node that
+# answers is drained, restarted and put back the way class["kubelet_policy"]
+# does it, or refused when nobody asked for the drain
 - hosts: k8s_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
   serial: 1
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    scripts: "sudo {{ ki_opt_scripts_path }}"
+    knn: "{{ ih_to_hostname_dict[inventory_hostname] | lower | replace('_', '-') }}"
   tasks:
-    - name: Execute update-k8s-node-kubelet.sh
-      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/update-k8s-node-kubelet.sh {{ vars_path_arg }}"
-      when: hostvars['localhost']['ki_var_changes']['kubelet'] | length > 0
+    - when: hostvars['localhost']['ki_var_changes']['kubelet'] | length > 0
+      block:
+        - name: Execute check-kubelet-restart.sh
+          shell: "{{ scripts }}/k8s-node/kubelet-policy/check-kubelet-restart.sh {{ vars_path_arg }} --node {{ inventory_hostname }}"
+          register: kubelet_restart_result
+          changed_when: false
+
+        - name: Refuse the restart of kubelet on this node
+          fail:
+            msg: |-
+              The restarted kubelet of node["{{ inventory_hostname }}"] would refuse and kill
+              running containers, which started on it after this run checked every node:
+              {{ kubelet_restart_result.stdout }}
+              The nodes before it in the inventory have their kubelet restarted with the new
+              configuration and the ones after it were not touched. Stop or move those pods and
+              run this playbook again, or run it with -e allow_draining_nodes= to drain
+              this node first, which evicts every pod on it. That variable lets a change that is
+              otherwise applied without a drain drain the nodes that need one
+          when:
+            - kubelet_restart_result.stdout | length > 0
+            - allow_draining_nodes is not defined
+
+        - name: Execute update-k8s-node-kubelet.sh
+          shell: "{{ scripts }}/k8s-node/update-k8s-node-kubelet.sh {{ vars_path_arg }}"
+          when: kubelet_restart_result.stdout | length == 0
+
+        - when: kubelet_restart_result.stdout | length > 0
+          block:
+            - name: Execute drain-node.sh
+              shell: "{{ scripts }}/k8s-node/drain-node.sh {{ vars_path_arg }} {{ knn }}"
+              delegate_to: "{{ k8s_cp_nodes[0] }}"
+
+            # A plain restart. The containers that held the cpus are gone, so
+            # there is nothing left for the restarted kubelet to refuse, and the
+            # checkpoints agree with the configuration as they did before
+            - name: Execute update-k8s-node-kubelet.sh
+              shell: "{{ scripts }}/k8s-node/update-k8s-node-kubelet.sh {{ vars_path_arg }}"
+
+            - name: Execute wait-k8s-node-ready.sh
+              shell: "{{ scripts }}/k8s-node/wait-k8s-node-ready.sh {{ vars_path_arg }} {{ knn }}"
+              delegate_to: "{{ k8s_cp_nodes[0] }}"
+
+            - name: Execute uncordon-node.sh
+              shell: "{{ scripts }}/k8s-node/uncordon-node.sh {{ vars_path_arg }} {{ knn }}"
+              delegate_to: "{{ k8s_cp_nodes[0] }}"
+
+          # A drained node that is never put back takes no work for good, which
+          # is worse than the failure that got here, so it is uncordoned and the
+          # run stops after that
+          rescue:
+            - name: Execute uncordon-node.sh
+              shell: "{{ scripts }}/k8s-node/uncordon-node.sh {{ vars_path_arg }} {{ knn }}"
+              delegate_to: "{{ k8s_cp_nodes[0] }}"
+              ignore_errors: yes
+
+            - name: Report that restarting kubelet on the drained node failed
+              fail:
+                msg: >-
+                  Draining node["{{ inventory_hostname }}"] and restarting its kubelet failed.
+                  The node was uncordoned, so it takes work again once its kubelet is up. The
+                  nodes after it in the inventory were not touched

@@ -120,7 +120,10 @@ KUBELET_SERVING_CERT_SECONDS=60
 # same shape the node was built with.
 #
 # Restarting kubelet does not stop the containers that are running. containerd
-# holds them and kubelet picks them back up, so the node is not drained for this
+# holds them and kubelet picks them back up, so the node is not drained for this.
+# Whether the restarted kubelet would refuse some of them is asked by the caller
+# beforehand, with check-kubelet-restart.sh, and the caller is the one that
+# drains when it would
 main() {
   require_file_exists "$vars_path"
   import_ki_opt_vars

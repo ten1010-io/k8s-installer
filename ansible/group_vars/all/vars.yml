@@ -378,7 +378,14 @@ kubelet_cpu_manager_policy: "none"
 # cpus a node has and takes the neighbour off the other thread of every core.
 #
 # A pod asking for an odd number of cpus is then refused rather than given a
-# thread too many, so turning this on can leave Pending what used to run
+# thread too many, so turning this on can leave Pending what used to run.
+#
+# Before kubernetes 1.37 it also makes a restart of kubelet refuse a running
+# container that holds more exclusive cpus than are left free, and kill it. A
+# change of class["kubelet"] is applied by such a restart, so update-cluster.yml
+# refuses it on a node where that would happen, and drains the node first when
+# run with -e allow_draining_nodes=, which permits a change that is otherwise
+# applied without a drain to drain the nodes that need one
 kubelet_cpu_manager_full_pcpus_only: false
 
 # Whether kubelet lines the cpus, the memory and the devices of a workload up on
