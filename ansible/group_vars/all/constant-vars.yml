@@ -256,6 +256,14 @@ ki_cp_k8s_registry_port: 5000
 # kubeadm pulls from. What it holds is decided by whoever runs the cluster and
 # carried in with push-user-registry-artifacts.yml, so no release ever fills it
 ki_cp_user_registry_port: 5001
+# How many artifacts push-user-registry-artifacts.sh pushes into that registry
+# at once. One at a time leaves the registry idle while each push waits on its
+# own round trips. Not more than four, because the registry and the archive it
+# is filled from sit on the disk of the same node, and past a few the pushes
+# only take turns at that disk. A blob two images share is pushed once either
+# way, since the registry already holds it when the second asks. 1 pushes one
+# at a time, the way this always did
+ki_cp_user_registry_push_jobs: 4
 
 # The kubernetes version this cluster runs, which is the patch the release pins
 # for the minor vars.yml asked for. Not set directly anywhere: the minor is the

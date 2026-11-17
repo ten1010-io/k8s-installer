@@ -92,6 +92,7 @@ ki_var_root_path=""
 ki_etc_services_path=""
 ki_tmp_root_path=""
 ki_cp_user_registry_port=""
+ki_cp_user_registry_push_jobs=""
 
 etc_svc_root_path=""
 var_svc_root_path=""
@@ -116,6 +117,9 @@ main() {
   ki_etc_services_path=$($yq_cmd '.ki_etc_services_path' < "$vars_path")
   ki_tmp_root_path=$($yq_cmd '.ki_tmp_root_path' < "$vars_path")
   ki_cp_user_registry_port=$($yq_cmd '.ki_cp_user_registry_port' < "$vars_path")
+  ki_cp_user_registry_push_jobs=$($yq_cmd '.ki_cp_user_registry_push_jobs' < "$vars_path")
+  [[ $ki_cp_user_registry_push_jobs =~ ^[1-9][0-9]*$ ]] ||
+    die "[ERROR] Variable[\"ki_cp_user_registry_push_jobs\"] is \"$ki_cp_user_registry_push_jobs\", which is not a count of one or more"
 
   etc_svc_root_path="$ki_etc_services_path"/$SVC_NAME
   var_svc_root_path="$ki_var_root_path"/$SVC_NAME
@@ -167,21 +171,86 @@ set_readonly() {
 }
 
 # The path of a layout under the artifacts directory is the reference it is
-# pushed to, which is what build-user-registry-artifacts.sh laid it out for
+# pushed to, which is what build-user-registry-artifacts.sh laid it out for.
+#
+# Up to ki_cp_user_registry_push_jobs pushes run at once. What crane says goes
+# to a file of its own push and is printed when that push ends, so the lines of
+# two pushes never mix. The first push that fails stops any further one from
+# starting; the ones already running are let finish, and every one of them that
+# failed is named before this fails. With one job that is the loop this used to
+# be: push, and stop at the first failure
 push_artifacts() {
   local artifacts_path=$1
+
+  local logs_path
+  logs_path=$(mktemp -d)
+
+  local -a pids=()
+  local -A refs_by_pid=()
+  local -A logs_by_pid=()
+  local -a failed_refs=()
+  local log
 
   local layout
   local ref
   for layout in $(find "$artifacts_path" -name oci-layout -printf '%h\n' | sort); do
+    [[ ${#failed_refs[@]} -gt 0 ]] && break
+    while [[ ${#pids[@]} -ge $ki_cp_user_registry_push_jobs ]]; do
+      wait -n || true
+      reap_pushes
+    done
+    [[ ${#failed_refs[@]} -gt 0 ]] && break
+
     ref=${layout#"$artifacts_path"/}
     msg "[INFO] Pushing artifact[\"$ref\"]"
     # Loopback, and the certificate of the registry is issued for its dns name
     # rather than for an address, so the name it would be verified against is not
     # the one being connected to
-    $crane_cmd push --insecure "$layout" "127.0.0.1:$ki_cp_user_registry_port/$ref" > /dev/null ||
-      die "[ERROR] Failed to push artifact[\"$ref\"]"
+    log="$logs_path/${#logs_by_pid[@]}.log"
+    $crane_cmd push --insecure "$layout" "127.0.0.1:$ki_cp_user_registry_port/$ref" > /dev/null 2> "$log" &
+    pids+=("$!")
+    refs_by_pid[$!]=$ref
+    logs_by_pid[$!]=$log
   done
+
+  while [[ ${#pids[@]} -gt 0 ]]; do
+    wait -n || true
+    reap_pushes
+  done
+
+  rm -rf "$logs_path"
+
+  if [[ ${#failed_refs[@]} -gt 0 ]]; then
+    for ref in "${failed_refs[@]}"; do
+      msg "[ERROR] Failed to push artifact[\"$ref\"]"
+    done
+    die "[ERROR] Failed to push ${#failed_refs[@]} artifact(s)"
+  fi
+
+  return 0
+}
+
+# Takes every push of push_artifacts that has ended out of pids, prints what
+# crane said and records the push in failed_refs when it failed. A push counts as
+# ended once its process is gone: bash reaps a finished job by itself and keeps
+# its status for the wait below. The status is asked for by pid because the
+# wait -n that woke the caller can not say whose it was on the bash of rhel 8
+reap_pushes() {
+  local -a running=()
+  local pid
+  for pid in "${pids[@]}"; do
+    if kill -0 "$pid" 2> /dev/null; then
+      running+=("$pid")
+      continue
+    fi
+    if [[ -s ${logs_by_pid[$pid]} ]]; then
+      cat >&2 "${logs_by_pid[$pid]}"
+    fi
+    if ! wait "$pid"; then
+      failed_refs+=("${refs_by_pid[$pid]}")
+    fi
+  done
+  pids=("${running[@]}")
 
   return 0
 }
