@@ -15,21 +15,21 @@
     # still an etcd member. Removing it from the cluster while it runs leaves two
     # sides of a split, and no check made from this side can tell that apart from
     # a node that is down. Only the operator can, so only the operator can say so
-    - name: "Check node[\"{{ target_node }}\"] has been fenced"
+    - name: "Check node[\"{{ target_nodes | first }}\"] has been fenced"
       fail:
         msg: >-
-          Node["{{ target_node }}"] is about to be removed from the cluster without
+          Node["{{ target_nodes | first }}"] is about to be removed from the cluster without
           being touched, which is only safe while it can not come back on its own.
           Power it off or cut it off from the network, then run this again with
           -e fenced= to say that it has been done
       when: fenced is not defined
 
-    - name: "Execute ssh on node[\"{{ target_node }}\"]"
+    - name: "Execute ssh on node[\"{{ target_nodes | first }}\"]"
       shell: "ssh {{ ssh_opt }} {{ port_opt }} {{ dst_arg }} true"
       vars:
         ssh_opt: "-o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5"
-        port_opt: "-p {{ hostvars[target_node]['ansible_port'] }}"
-        dst_arg: "{{ hostvars[target_node]['ki_ssh_user'] }}@{{ hostvars[target_node]['ansible_host'] }}"
+        port_opt: "-p {{ hostvars[target_nodes | first]['ansible_port'] }}"
+        dst_arg: "{{ hostvars[target_nodes | first]['ki_ssh_user'] }}@{{ hostvars[target_nodes | first]['ansible_host'] }}"
       register: shell_result
       failed_when: false
       changed_when: false
@@ -38,10 +38,10 @@
     # that path also cleans the node itself up rather than leaving a machine
     # behind that still holds the pki, the installer and a kubelet with valid
     # certificates
-    - name: "Check node[\"{{ target_node }}\"] can not be reached"
+    - name: "Check node[\"{{ target_nodes | first }}\"] can not be reached"
       fail:
         msg: >-
-          Node["{{ target_node }}"] answers over ssh, so it is not broken. Take it
+          Node["{{ target_nodes | first }}"] answers over ssh, so it is not broken. Take it
           out of the broken_node group of inventory.yml and remove it with the
           remove-node.yml playbook, which also cleans up the node itself
       when: shell_result.rc == 0

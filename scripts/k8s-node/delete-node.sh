@@ -79,7 +79,7 @@ jinja2_cmd=""
 etcdctl_cmd=""
 
 playbook=""
-target_node=""
+removed_node=""
 target_node_op=""
 k8s_cp_nodes=""
 ih_to_hostname_dict=""
@@ -92,7 +92,7 @@ main() {
   validate_ki_opt_directory
 
   playbook=$($yq_cmd '.playbook' < "$vars_path")
-  target_node=$($yq_cmd '.target_node' < "$vars_path")
+  removed_node=$($yq_cmd '.target_nodes[0]' < "$vars_path")
   target_node_op=$($yq_cmd '.target_node_op' < "$vars_path")
   # The list the inventory declares rather than the one of the nodes still
   # answering, because the node being removed may be a broken one, and whether
@@ -101,7 +101,7 @@ main() {
   k8s_cp_nodes=$($yq_cmd -o json '.k8s_cp_nodes_in_inventory' < "$vars_path")
   ih_to_hostname_dict=$($yq_cmd -o json '.ih_to_hostname_dict' < "$vars_path")
 
-  [[ -z $target_node ]] && exit 0
+  [[ -z $removed_node ]] && exit 0
   [[ $target_node_op != "remove" ]] && exit 0
 
   # Established before anything is looked up rather than left to the lookups. Both
@@ -112,17 +112,17 @@ main() {
   require_k8s_cluster_reachable
   require_etcd_quorum
 
-  local target_node_knn
-  target_node_knn=$(get_knn "$target_node")
+  local removed_node_knn
+  removed_node_knn=$(get_knn "$removed_node")
 
-  if [[ $(k8s_node_exists "$target_node_knn") = "true" ]]; then
-    msg "[INFO] Deleting k8s node[\"$target_node_knn\"]"
-    delete_k8s_node "$target_node_knn"
+  if [[ $(k8s_node_exists "$removed_node_knn") = "true" ]]; then
+    msg "[INFO] Deleting k8s node[\"$removed_node_knn\"]"
+    delete_k8s_node "$removed_node_knn"
   fi
 
-  if [[ $(is_k8s_cp "$target_node") = "true" && $(etcd_member_exists "$target_node_knn") = "true" ]]; then
-    msg "[INFO] Deleting etcd member with name[\"$target_node_knn\"]"
-    delete_etcd_member "$target_node_knn"
+  if [[ $(is_k8s_cp "$removed_node") = "true" && $(etcd_member_exists "$removed_node_knn") = "true" ]]; then
+    msg "[INFO] Deleting etcd member with name[\"$removed_node_knn\"]"
+    delete_etcd_member "$removed_node_knn"
   fi
 
   return 0

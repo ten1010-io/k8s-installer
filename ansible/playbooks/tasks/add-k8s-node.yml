@@ -4,11 +4,11 @@
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
-    - when: inventory_hostname == k8s_cp_nodes | community.general.lists_difference([target_node]) | first
+    - when: inventory_hostname == ki_standing_k8s_cp_nodes | first
       name: Execute create-join-credentials-file.sh
       shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/create-join-credentials-file.sh {{ vars_path_arg }}"
 
-    - when: inventory_hostname == target_node
+    - when: inventory_hostname in target_nodes
       block:
         - name: Execute configure-linux.sh
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/configure-linux.sh {{ vars_path_arg }}"
@@ -49,7 +49,7 @@
             dest: "{{ ki_tmp_join_credentials_src_path }}"
             flat: yes
           become: yes
-          delegate_to: "{{ k8s_cp_nodes | community.general.lists_difference([target_node]) | first }}"
+          delegate_to: "{{ ki_standing_k8s_cp_nodes | first }}"
           run_once: true
 
         - name: Close join-credentials.yml of ansible control node to every other user
@@ -61,17 +61,17 @@
 
         # The token and the certificate key in it join a node to the cluster,
         # so it is readable by root alone for the minutes it exists
-        - name: "Copy join-credentials.yml to the node[\"{{ target_node }}\"]"
+        - name: "Copy join-credentials.yml to the node[\"{{ inventory_hostname }}\"]"
           copy:
             src: "{{ ki_tmp_join_credentials_src_path }}"
             dest: "{{ ki_tmp_join_credentials_path }}"
             mode: "0600"
           become: yes
-          when: inventory_hostname == target_node
+          when: inventory_hostname in target_nodes
 
         - name: Execute join-k8s-cluster.sh
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/join-k8s-cluster.sh {{ vars_path_arg }}"
-          when: inventory_hostname == target_node
+          when: inventory_hostname in target_nodes
 
       always:
         - name: Delete temporary join-credentials.yml file
@@ -92,4 +92,4 @@
   tasks:
     - name: Execute setup-k8s-cp-lb.sh --update
       shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh {{ vars_path_arg }} --update"
-      when: hostvars[target_node]['k8s_cp']
+      when: ki_target_k8s_cp_nodes | length > 0

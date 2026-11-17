@@ -8,10 +8,10 @@
 #     vars:
 #       script: all-node/containerd/setup-containerd.sh
 #
-# The script runs on the node the playbook was pointed at, and on every node when
+# The script runs on the nodes the playbook was pointed at, and on every node when
 # it was not pointed at one. Setting every_node runs it everywhere either way,
 # which is what a script whose result depends on the cluster as a whole needs: the
-# node being added or removed is not the only one whose file changes
+# nodes being added or removed are not the only ones whose file changes
 - hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
@@ -22,5 +22,4 @@
       shell: "sudo {{ ki_opt_scripts_path }}/{{ script }} {{ vars_path_arg }}"
       when: >-
         every_node | default(false)
-        or target_node is none
-        or inventory_hostname == target_node
+        or ki_is_target_node | bool

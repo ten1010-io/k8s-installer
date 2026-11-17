@@ -14,7 +14,7 @@
     mount_path_arg: "--mount-path {{ ki_ephemeral_root_path }}"
   tasks:
     - when:
-        - target_node is none or inventory_hostname == target_node
+        - ki_is_target_node | bool
         - ephemeral_storage_device is not none
       block:
         - name: Execute setup-ephemeral-storage.sh

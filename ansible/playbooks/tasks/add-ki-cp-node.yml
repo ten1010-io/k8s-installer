@@ -10,7 +10,7 @@
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
-    - when: inventory_hostname == target_node
+    - when: inventory_hostname in target_nodes
       block:
         - name: Execute setup-dns-server.sh
           shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/dns-server/setup-dns-server.sh {{ vars_path_arg }}"
@@ -47,7 +47,7 @@
           set_fact:
             shell_result: null
 
-    - when: inventory_hostname != target_node
+    - when: inventory_hostname not in target_nodes
       block:
         - name: Execute setup-dns-server.sh --update
           shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/dns-server/setup-dns-server.sh {{ vars_path_arg }} --update"
@@ -96,11 +96,11 @@
   tasks:
     - name: Execute setup-keepalived.sh
       shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/keepalived/setup-keepalived.sh {{ vars_path_arg }}"
-      when: inventory_hostname == target_node
+      when: inventory_hostname in target_nodes
 
     - name: Execute setup-keepalived.sh --update
       shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/keepalived/setup-keepalived.sh {{ vars_path_arg }} --update"
-      when: inventory_hostname != target_node
+      when: inventory_hostname not in target_nodes
 
     # Here rather than with the other services of the node, because the first
     # file it writes is a measurement of them and keepalived is not one of them
@@ -111,4 +111,4 @@
     # same reason
     - name: Execute setup-ki-cp-metrics.sh
       shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/metrics/setup-ki-cp-metrics.sh {{ vars_path_arg }}"
-      when: inventory_hostname == target_node
+      when: inventory_hostname in target_nodes

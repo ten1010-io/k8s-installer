@@ -94,7 +94,7 @@ os_minor_version=""
 ki_tmp_root_path=""
 ki_cp_ha_mode=""
 ki_cp_ha_mode_vip=""
-target_node=""
+target_nodes=""
 target_node_op=""
 
 main() {
@@ -108,7 +108,7 @@ main() {
   ki_tmp_root_path=$($yq_cmd .ki_tmp_root_path < "$vars_path")
   ki_cp_ha_mode=$($yq_cmd .ki_cp_ha_mode < "$vars_path")
   ki_cp_ha_mode_vip=$($yq_cmd .ki_cp_ha_mode_vip < "$vars_path")
-  target_node=$($yq_cmd .target_node < "$vars_path")
+  target_nodes=$($yq_cmd -o json '.target_nodes' < "$vars_path")
   target_node_op=$($yq_cmd .target_node_op < "$vars_path")
 
   if [[ $os_distribution = "ubuntu" && $os_major_version = "22.04" && $os_minor_version -le "$UBUNTU2204_SUPPORTED_MINOR_VERSION" ]]; then
@@ -200,12 +200,12 @@ create_resolv_conf_file() {
 # left out of every play, and the one chosen here is the one everything
 # resolves through, which must answer
 get_ki_cp_master_node_ih() {
-  if [[ $target_node = "null" ]] || [[ $target_node != "null" && $target_node_op = "add" ]]; then
+  if [[ $target_nodes = "null" ]] || [[ $target_nodes != "null" && $target_node_op = "add" ]]; then
     $yq_cmd '.groups.ki_cp_node - .ki_broken_nodes | .[0]' < "$vars_path"
-  elif [[ $target_node != "null" && $target_node_op = "remove" ]]; then
-    $yq_cmd ".groups.ki_cp_node - .ki_broken_nodes - [\"$target_node\"] | .[0]" < "$vars_path"
+  elif [[ $target_nodes != "null" && $target_node_op = "remove" ]]; then
+    $yq_cmd "(.groups.ki_cp_node - .ki_broken_nodes) - $target_nodes | .[0]" < "$vars_path"
   else
-    die "[ERROR] Invalid variable[\"target_node\"] or Invalid variable[\"target_node_op\"]"
+    die "[ERROR] Invalid variable[\"target_nodes\"] or Invalid variable[\"target_node_op\"]"
   fi
 }
 

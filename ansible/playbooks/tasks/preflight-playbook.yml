@@ -29,51 +29,52 @@
         allow_upgrading_from_snapshot: ""
       when: aus is defined
 
+    # node names the node the playbook works on, one for both playbooks. What
+    # the plays read is target_nodes, a list of that one node, so that a task
+    # asks "is this node one of them" rather than "is this the node"
     - when: playbook == "add-node" or playbook == "remove-node"
       block:
         - name: Validate variable[\"node\"]
           fail:
-            msg: "Variable[\"node\"] is not defined"
+            msg: "Variable[\"node\"] is not defined. Name the node with -e node=<name>"
           when: node is not defined
 
-        - name: Validate variable[\"node\"]
-          fail:
-            msg: "Node[\"{{ node }}\"] not belong to all group"
-          when: node not in groups['all']
+        - when: node is defined
+          block:
+            - name: Set_fact variable[\"target_nodes\"] and variable[\"target_node_op\"]
+              set_fact:
+                target_nodes: ["{{ node }}"]
+                target_node_op: "{{ 'add' if playbook == 'add-node' else 'remove' }}"
 
-        - name: Validate variable[\"node\"]
-          fail:
-            msg: "Node[\"{{ node }}\"] must belong to ki_cp_node or k8s_node group"
-          when:
-            - node not in groups['ki_cp_node']
-            - node not in groups['k8s_node']
+            - name: Validate variable[\"node\"]
+              fail:
+                msg: "Node[\"{{ item }}\"] not belong to all group"
+              loop: "{{ target_nodes | default([], true) }}"
+              when: item not in groups['all']
 
-        # Both playbooks work on the node itself, which is the one thing a node of
-        # the broken_node group can not be asked to do
-        - name: Validate variable[\"node\"]
-          fail:
-            msg: >-
-              Node["{{ node }}"] is in the broken_node group, so this playbook can not
-              reach it.
-              {% if playbook == "remove-node" %}
-              Run the remove-broken-node.yml playbook instead, which takes it out of the
-              cluster from the nodes that are still up
-              {% else %}
-              Rebuild it and take it out of the broken_node group of inventory.yml first
-              {% endif %}
-          when: node in ki_broken_nodes
+            - name: Validate variable[\"node\"]
+              fail:
+                msg: "Node[\"{{ item }}\"] must belong to ki_cp_node or k8s_node group"
+              loop: "{{ target_nodes | default([], true) }}"
+              when:
+                - item not in groups['ki_cp_node']
+                - item not in groups['k8s_node']
 
-        - name: Set_fact variable[\"target_node\"] and variable[\"target_node_op\"]
-          set_fact:
-            target_node: "{{ node }}"
-            target_node_op: add
-          when: playbook == "add-node"
-
-        - name: Set_fact variable[\"target_node\"] and variable[\"target_node_op\"]
-          set_fact:
-            target_node: "{{ node }}"
-            target_node_op: remove
-          when: playbook == "remove-node"
+            # Both playbooks work on the node itself, which is the one thing a
+            # node of the broken_node group can not be asked to do
+            - name: Validate variable[\"node\"]
+              fail:
+                msg: >-
+                  Node["{{ item }}"] is in the broken_node group, so this playbook can not
+                  reach it.
+                  {% if playbook == "remove-node" %}
+                  Run the remove-broken-node.yml playbook instead, which takes it out of the
+                  cluster from the nodes that are still up
+                  {% else %}
+                  Rebuild it and take it out of the broken_node group of inventory.yml first
+                  {% endif %}
+              loop: "{{ target_nodes | default([], true) }}"
+              when: item in ki_broken_nodes
 
     # node is optional here. Named, it is the one node this reboots and nothing is
     # asked about it; left out, the playbook decides which nodes need a reboot from
@@ -134,9 +135,9 @@
                   -e node={{ node }}
               when: node == ki_control_node_ih
 
-            - name: "Set_fact variable[\"target_node\"]"
+            - name: "Set_fact variable[\"target_nodes\"]"
               set_fact:
-                target_node: "{{ node }}"
+                target_nodes: ["{{ node }}"]
 
     # The node is named by the inventory rather than by a variable on the command
     # line. It has to be in the broken_node group for the plays to leave it out,
@@ -159,7 +160,7 @@
             - ki_broken_nodes[0] not in groups['ki_cp_node']
             - ki_broken_nodes[0] not in groups['k8s_node']
 
-        - name: Set_fact variable[\"target_node\"] and variable[\"target_node_op\"]
+        - name: Set_fact variable[\"target_nodes\"] and variable[\"target_node_op\"]
           set_fact:
-            target_node: "{{ ki_broken_nodes[0] }}"
+            target_nodes: ["{{ ki_broken_nodes[0] }}"]
             target_node_op: remove

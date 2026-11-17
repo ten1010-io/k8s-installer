@@ -2571,7 +2571,7 @@ README 는 그래서 `control_node_ih` 한 줄만 바꾸면 인계가 된다고 
 
 `groups.ki_cp_node` 를 읽는 스크립트 넷(keepalived 피어, dns 서버와 resolv.conf 의 마스터, 사용자
 레지스트리 동기화)은 선언을 그대로 받고 `ki_broken_nodes` 를 뺍니다. 이미 빼려는 노드를
-`target_node` 로 빼고 있던 자리라 같은 관용구 한 줄이고, `create-internal-network-hosts.py` 가
+`target_nodes` 로 빼고 있던 자리라 같은 관용구 한 줄이고, `create-internal-network-hosts.py` 가
 같은 방식으로 빼고 있습니다.
 
 인벤토리에서 노드를 지우라고 README 를 고치는 쪽도 택하지 않았습니다. 되돌리는 절차가
@@ -2755,7 +2755,7 @@ hostvars 에서 읽습니다.
 
 `applied-release`, `nodes.yml`, 그리고 빈 `services` 디렉터리는 **클러스터와 함께** 갑니다 —
 `reset-cluster.yml` 과 `remove-node.yml` 이 `reset-cluster-record.yml` 로 걷어갑니다. 빠지는
-노드 하나만 지우는 것은 `reset-pki.yml` 과 같은 `target_node` 조건입니다.
+노드 하나만 지우는 것은 `reset-pki.yml` 과 같은 `target_nodes` 조건입니다.
 
 `applied-vars.yml` 은 **설치본과 함께** 갑니다 — `reset-k8s-installer.yml` 과 `reset.sh` 가
 `ki_etc_root_path` 를 통째로 지웁니다. 이 파일만 다르게 두는 이유는 이것이 "어느 클러스터에
@@ -5319,3 +5319,43 @@ GB200 의 `init_on_alloc=0 numa_balancing=disable ...`)가 생기지 않았고, 
 휴지페이지 2M·512M·16G)은 Graviton 에서 부팅했고 kubelet 이 세 크기를 다 보고했지만, 그 크기로
 `hugepages=` 를 선언해 보지는 않았습니다. reset 순서는 Docker 저장소의 docker 를 깐 Ubuntu 24.04 와
 RHEL 9.8 에서 돌렸고, DGX 스택 박스에서는 같은 패키지를 손으로 지우는 것으로 봤습니다.
+
+== add-node 가 노드 여럿을 받는 방식
+
+플레이북이 지목하는 노드를 문자열 하나에서 리스트로 바꾼 것을 적습니다. `add-node.yml` 이 노드
+여럿을 받기 위한 첫 단계이고, 이 단계에서 모든 플레이북은 여전히 노드 하나를 받습니다.
+
+=== 변수가 하나가 아니라 리스트인 이유
+
+플레이북이 지목한 노드는 `target_node` 문자열 하나였고, 플레이북과 스크립트 서른 곳이
+`inventory_hostname == target_node` 로 물었습니다. 이제 `target_nodes` 리스트이고 질문은
+`inventory_hostname in target_nodes` 입니다. `remove-node`, `remove-broken-node`, `reboot-nodes`
+처럼 노드 하나만 받는 플레이북도 길이 1 의 리스트를 씁니다. 두 모양을 같이 두면 "하나일 때만 맞는
+값" 이 생기고, 그것을 읽는 코드는 틀려도 조용합니다. 이름을 통째로 바꾼 것도 같은 이유입니다 —
+남은 `target_node` 는 null 을 읽는 대신 undefined 로 터집니다.
+
+`ki_is_target_node` 는 "지목된 노드이거나, 지목이 없으면 모든 노드" 를 한 줄로 둔 것이고,
+`ki_standing_*_nodes` 는 "대상도 broken 도 아닌 노드들" — join 토큰을 발급받고 PKI 를 내주는 쪽
+— 입니다. `difference` 나 `intersect` 가 아니라 `reject('in', …)` 로 쓴 것은 `tests/conftest.py`
+가 group_vars 를 ansible 없이 jinja2 로 렌더링하기 때문입니다. ansible 의 필터는 거기 없고,
+`in` 테스트는 jinja2 의 것입니다.
+
+스크립트는 vars 파일에서 `.target_nodes` 를 JSON 배열로 읽고 yq 로 뺍니다. 멤버십은 `contains`
+가 아니라 `map(select(. == "x")) | length` 로 묻습니다. `contains` 는 문자열에 대해 부분 일치라
+`["node10"] | contains(["node1"])` 이 참입니다.
+
+ansible-core 2.19 가 가르쳐 준 것 둘. 첫째, `when` 이 거짓인 블록 안의 `loop` 도 먼저 평가되고
+null 이면 오류입니다 (`The loop value must resolve to a 'list', not 'NoneType'`). `target_nodes` 는
+노드를 지목하지 않는 플레이북에서 null 이라 preflight 의 `loop` 는 `default([], true)` 를 답니다.
+둘째, `gather-facts.yml` 의 첫 태스크가 `hostvars | to_yaml` 로 모든 hostvar 를 렌더링하는데, 그
+시점에는 `k8s_cp_nodes` 가 아직 없습니다. 2.17 은 undefined 를 남기고 지나갔고 2.19 는 오류입니다.
+그래서 `ki_standing_k8s_cp_nodes` 와 `ki_target_k8s_cp_nodes` 는 그 두 fact 에 `default([])` 를
+답니다. 둘 다 node-232 에서 클러스터를 처음부터 세우다가 나왔습니다. 문법 검사와 add-node 만 돌린
+시뮬레이션은 둘 다 잡지 못합니다 — 노드를 지목하지 않는 플레이북과 facts 전 렌더링이 그 둘의
+조건입니다.
+
+뺄셈 둘을 잇는 자리는 괄호를 칩니다: `(.groups.ki_cp_node - .ki_broken_nodes) - $target_nodes`.
+yq 4.53 은 `a - b - c` 를 `a - (b - c)` 로 묶어서, `["a","b","c"] - ["b"] - ["c"]` 가
+`["a","c"]` 입니다. 괄호 없이 쓴 원래의 remove 분기는 `broken_node` 가 비어 있으면
+`[] - [target]` 이 `[]` 가 되어 빼려는 노드를 빼지 못하고 있었습니다. 넷 다 같은 줄이라 같이
+고쳤습니다.

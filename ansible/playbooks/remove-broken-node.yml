@@ -39,10 +39,10 @@
 # balancer and the keepalived that carries the virtual ip, which takes the path
 # to the api server down for as long as it takes to come back up
 - import_playbook: tasks/remove-k8s-node.yml
-  when: target_node in groups['k8s_node']
+  when: target_nodes | intersect(groups['k8s_node']) | length > 0
 
 - import_playbook: tasks/remove-ki-cp-node.yml
-  when: target_node in groups['ki_cp_node']
+  when: target_nodes | intersect(groups['ki_cp_node']) | length > 0
 
 - import_playbook: tasks/run-all-node-script.yml
   vars:
