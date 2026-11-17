@@ -848,12 +848,16 @@ ki_kubelet_cpu_reservation_vars:
 # node argument of the command line, so a value here is only what a play reads
 # before that or when the playbook takes no node at all.
 #
-# A list rather than one name, even though every playbook that names a node
-# names one: the one is a list of length one, so that every reader asks the
-# same question - is this node in it - and keeps asking it when a playbook
-# takes several
+# A list rather than one name. add-node takes several nodes at once and the
+# rest take one, and the one is a list of length one so that every reader asks
+# the same question: is this node in it
 target_nodes: null
 target_node_op: null
+
+# Whether add-node was run with no node named, so that derive-target-nodes.yml
+# fills target_nodes from the inventory and the cluster. preflight-playbook.yml
+# sets it; everything else reads false
+ki_target_nodes_from_inventory: false
 
 # Whether the node a play is on is one of those, which is the condition of
 # nearly every task that builds or resets a node. Asked through this rather

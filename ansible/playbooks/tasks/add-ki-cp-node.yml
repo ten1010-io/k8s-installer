@@ -30,7 +30,9 @@
         # The registry the line above set up is empty, and what belongs in it
         # arrives on an archive that no release knows. The other ki cp nodes are
         # already serving exactly that, on this side of the air gap, so the node
-        # is filled from one of them rather than left for an operator to notice
+        # is filled from one of them rather than left for an operator to notice.
+        # One of the nodes that were already up: the script leaves the other
+        # nodes of this run out of its peers, since those are as empty as this one
         - name: Execute sync-user-registry.sh
           shell: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/user-registry/sync-user-registry.sh {{ vars_path_arg }}"
           register: shell_result

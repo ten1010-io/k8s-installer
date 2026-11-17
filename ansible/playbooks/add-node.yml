@@ -2,6 +2,12 @@
   vars:
     playbook: "add-node"
 
+# Run with no -e node=, the nodes to add are the ones of the inventory the
+# cluster does not hold yet. Worked out here, before setup-ephemeral-storage.yml,
+# which is the first play that builds them. See tasks/derive-target-nodes.yml
+- import_playbook: tasks/derive-target-nodes.yml
+  when: ki_target_nodes_from_inventory | bool
+
 # Before prepare-vars.yml, whose gather-facts measures the filesystem this
 # provides. See tasks/setup-ephemeral-storage.yml
 - import_playbook: tasks/setup-ephemeral-storage.yml

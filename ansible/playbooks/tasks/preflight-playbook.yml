@@ -29,22 +29,72 @@
         allow_upgrading_from_snapshot: ""
       when: aus is defined
 
-    # node names the node the playbook works on, one for both playbooks. What
-    # the plays read is target_nodes, a list of that one node, so that a task
-    # asks "is this node one of them" rather than "is this the node"
+    # node names the nodes the playbook works on. add-node takes several at once,
+    # as one argument with commas between the names, or none at all, in which
+    # case the nodes to add are the ones of the inventory the cluster does not
+    # hold yet - worked out by derive-target-nodes.yml, the play after this one,
+    # because what the cluster holds is not known here. remove-node takes one.
+    # For a control plane node or a ki cp node that is on purpose: taking
+    # several out at once shrinks the etcd quorum or the keepalived peers in one
+    # step, and remove-broken-node refuses the same thing for the same reason.
+    # A worker touches neither, and several of those in one run is only not
+    # written: the plays and delete-node.sh read the first node of the list.
+    # Either way what the plays read is target_nodes, a list, so that a
+    # task asks "is this node one of them" whether there is one or five
     - when: playbook == "add-node" or playbook == "remove-node"
       block:
         - name: Validate variable[\"node\"]
           fail:
-            msg: "Variable[\"node\"] is not defined. Name the node with -e node=<name>"
-          when: node is not defined
+            msg: "Variable[\"node\"] is not defined. Name the node to remove with -e node=<name>"
+          when:
+            - playbook == "remove-node"
+            - node is not defined
+
+        # Empty rather than null until derive-target-nodes.yml fills it: null
+        # is what the playbooks that work on every node read, and a play that
+        # ran between the two would otherwise take every node for a target
+        - name: Set_fact variable[\"target_nodes\"] to be filled from the inventory
+          set_fact:
+            target_nodes: []
+            target_node_op: add
+            ki_target_nodes_from_inventory: true
+          when:
+            - playbook == "add-node"
+            - node is not defined
 
         - when: node is defined
           block:
+            # A yaml list on the command line is taken as it is, and the usual
+            # form, a string, is split on commas. Names are trimmed because
+            # "node4, node5" is what a person types, and repeated names are
+            # collapsed because a node named twice would be built twice by every
+            # task below
             - name: Set_fact variable[\"target_nodes\"] and variable[\"target_node_op\"]
               set_fact:
-                target_nodes: ["{{ node }}"]
+                target_nodes: >-
+                  {{ ((node if node is not string else node.split(','))
+                      | map('trim') | reject('equalto', '') | unique | list) }}
                 target_node_op: "{{ 'add' if playbook == 'add-node' else 'remove' }}"
+
+            - name: Validate variable[\"node\"]
+              fail:
+                msg: >-
+                  Variable["node"] names no node. Name one with -e node=<name>{%
+                  if playbook == "add-node" %}, several with -e node=<name>,<name>, or leave
+                  it out to add every node of the inventory the cluster does not hold{% endif %}
+              when: target_nodes | length == 0
+
+            - name: Validate variable[\"node\"]
+              fail:
+                msg: >-
+                  remove-node takes one node and was given {{ target_nodes | length }}:
+                  {{ target_nodes | join(', ') }}. Run it once for each of them. Removing
+                  a control plane node takes an etcd member out and removing a ki cp node
+                  takes a keepalived peer out, so those are removed one at a time with the
+                  cluster checked in between; several workers in one run is not supported
+              when:
+                - playbook == "remove-node"
+                - target_nodes | length != 1
 
             - name: Validate variable[\"node\"]
               fail:
