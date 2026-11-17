@@ -46,6 +46,7 @@ def main():
     var_classes = hostvars["localhost"]["ki_var_classes"]
     class_of = {name: cls for cls, names in var_classes.items() for name in names}
     memory_reservation_vars = set(hostvars["localhost"].get("ki_kubelet_memory_reservation_vars") or [])
+    cpu_reservation_vars = set(hostvars["localhost"].get("ki_kubelet_cpu_reservation_vars") or [])
     fallbacks = read_fallbacks(args.constant_vars_path, class_of)
 
     changes: Dict[str, List[dict]] = {cls: [] for cls in var_classes}
@@ -89,7 +90,8 @@ def main():
                 "current": current,
                 "compared_with": compared_with,
             }
-            changes[class_on_node(cls, name, node_hostvars, applied, fallbacks, memory_reservation_vars)].append(change)
+            changes[class_on_node(cls, name, node_hostvars, applied, fallbacks, memory_reservation_vars,
+                                  cpu_reservation_vars)].append(change)
 
     blocking = [(cls, changes[cls]) for cls in BLOCKING_CLASSES if changes[cls]]
     if blocking:
@@ -195,8 +197,8 @@ def read_fallbacks(path: Path, class_of: dict) -> dict:
 
 
 def class_on_node(cls: str, name: str, node_hostvars: dict, applied: dict, fallbacks: dict,
-                  memory_reservation_vars: Set[str]) -> str:
-    """The class a change has on this node, which is the table's answer but once.
+                  memory_reservation_vars: Set[str], cpu_reservation_vars: Set[str]) -> str:
+    """The class a change has on this node, which is the table's answer but twice.
 
     The memory a node keeps for itself is written into its kubelet configuration
     twice on a node running the static memory manager policy: as the reservations
@@ -208,20 +210,42 @@ def class_on_node(cls: str, name: str, node_hostvars: dict, applied: dict, fallb
     under class["kubelet_policy"], whose apply drains the node and takes the
     checkpoints away first. constant-vars.yml says which variables those are.
 
+    The cpu a node keeps for itself is the same on a node running the static cpu
+    manager policy without reservedSystemCPUs. kubelet reserves as many cpus as
+    systemReserved and kubeReserved add up to, rounded up, and picks them from the
+    lowest numbered cores - the cores exclusive allocations are made from too. The
+    checkpoint records which cpus are free, and a kubelet whose reserved cpus are
+    not all among them refuses to start ("not all reserved cpus ... are present
+    in defaultCpuSet"). Raising the reservation takes a cpu a container holds
+    often enough to make that the expected outcome, so the change takes the drain
+    as well. A node that names its reserved cpus is left alone: kubelet replaces
+    the cpu of both reservations with the size of that set, so these variables do
+    not move which cpus are reserved there, and the set itself is already
+    class["kubelet_policy"].
+
     Whether the node ran static before or runs it now: a node that is leaving the
     policy still has the checkpoint that disagrees, and a node that is entering it
     is already being drained for the policy itself. What it ran before is what
     the record says, or the fallback where the record predates the variable
     """
-    if cls != "kubelet" or name not in memory_reservation_vars:
+    if cls != "kubelet":
         return cls
 
-    policy_name = "kubelet_memory_manager_policy"
-    ran_before = applied.get(policy_name, fallbacks.get(policy_name))
-    if node_hostvars.get(policy_name) == "static" or ran_before == "static":
+    if name in memory_reservation_vars and runs_or_ran(
+            "kubelet_memory_manager_policy", "static", node_hostvars, applied, fallbacks):
+        return "kubelet_policy"
+
+    if (name in cpu_reservation_vars
+            and not node_hostvars.get("kubelet_reserved_system_cpus")
+            and runs_or_ran("kubelet_cpu_manager_policy", "static", node_hostvars, applied, fallbacks)):
         return "kubelet_policy"
 
     return cls
+
+
+def runs_or_ran(policy_name: str, value: str, node_hostvars: dict, applied: dict, fallbacks: dict) -> bool:
+    ran_before = applied.get(policy_name, fallbacks.get(policy_name))
+    return node_hostvars.get(policy_name) == value or ran_before == value
 
 
 def build_summary(changes: Dict[str, List[dict]]) -> List[str]:

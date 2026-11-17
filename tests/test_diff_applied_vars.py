@@ -5,7 +5,8 @@ how it is applied. Two things are asserted here. One is the place the answer
 depends on the node as well as the variable: the memory a node keeps for itself
 is a kubelet restart everywhere except on a node running the static memory
 manager, whose checkpoint records that memory and refuses a kubelet that reads a
-different figure. The other is what a variable the record does not hold is
+different figure, and the cpu it keeps is the same on a node running the static
+cpu manager without naming its reserved cpus. The other is what a variable the record does not hold is
 compared against: the fallback of the release where the class is applied, so
 that a value set in the same run as the upgrade that added the variable is
 applied rather than written down as applied, and what the node holds now where
@@ -113,6 +114,60 @@ def test_only_the_node_running_the_policy_is_drained_for_a_cluster_wide_change(h
 
     assert changed(result, "kubelet") == [("node1", "kubelet_kube_reserved_memory")]
     assert changed(result, "kubelet_policy") == [("node2", "kubelet_kube_reserved_memory")]
+
+
+def test_a_cpu_reservation_is_a_policy_change_on_a_static_node_that_names_no_reserved_cpus(hostvars):
+    """kubelet reserves the rounded up cpu of both reservations from the lowest
+    cores and refuses to start when one of them is held by a container, which a
+    larger reservation makes likely (measured on 1.36.4: "not all reserved cpus:
+    "0-1,4" are present in defaultCpuSet")."""
+    hostvars["node2"]["kubelet_cpu_manager_policy"] = "static"
+    record_as_applied(hostvars)
+    hostvars["node2"]["kubelet_kube_reserved_cpu"] = "2"
+
+    result = diff(hostvars)
+
+    assert changed(result, "kubelet_policy") == [("node2", "kubelet_kube_reserved_cpu")]
+    assert changed(result, "kubelet") == []
+
+
+def test_a_cpu_reservation_is_a_kubelet_restart_on_a_static_node_that_names_its_reserved_cpus(hostvars):
+    """kubelet replaces the cpu of both reservations with the size of the named
+    set, so the reserved cpus do not move and the restart is all it takes."""
+    hostvars["node2"]["kubelet_cpu_manager_policy"] = "static"
+    hostvars["node2"]["kubelet_reserved_system_cpus"] = "0,4"
+    record_as_applied(hostvars)
+    hostvars["node2"]["kubelet_ki_cp_extra_cpu"] = "2"
+
+    result = diff(hostvars)
+
+    assert changed(result, "kubelet") == [("node2", "kubelet_ki_cp_extra_cpu")]
+    assert changed(result, "kubelet_policy") == []
+
+
+def test_a_cpu_reservation_is_a_kubelet_restart_on_a_node_running_no_cpu_policy(hostvars):
+    record_as_applied(hostvars)
+    hostvars["node2"]["kubelet_system_reserved_cpu"] = "2"
+
+    result = diff(hostvars)
+
+    assert changed(result, "kubelet") == [("node2", "kubelet_system_reserved_cpu")]
+    assert changed(result, "kubelet_policy") == []
+
+
+def test_a_node_leaving_the_cpu_policy_still_takes_its_cpu_reservation_through_the_drain(hostvars):
+    hostvars["node2"]["kubelet_cpu_manager_policy"] = "static"
+    record_as_applied(hostvars)
+    hostvars["node2"]["kubelet_cpu_manager_policy"] = "none"
+    hostvars["node2"]["kubelet_system_reserved_cpu"] = "2"
+
+    result = diff(hostvars)
+
+    assert set(changed(result, "kubelet_policy")) == {
+        ("node2", "kubelet_cpu_manager_policy"),
+        ("node2", "kubelet_system_reserved_cpu"),
+    }
+    assert changed(result, "kubelet") == []
 
 
 def diff_refused(hostvars):

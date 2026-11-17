@@ -1380,6 +1380,38 @@ hugepage 크기별 전체, 그리고 `SystemReserved` — 위 `reservedMemory` �
 그 때문에 drain 됩니다. 다른 노드에서는 표대로 재시작입니다. 변수 자체를 `kubelet_policy` 로
 옮기지 않은 것은 정책을 안 쓰는 노드의 예약값 변경까지 drain 으로 만들기 때문입니다.
 
+CPU 쪽에도 같은 자리가 있었는데 처음에는 빠져 있었습니다. `reservedSystemCPUs` 를 적지 않은 `static` 노드에서
+kubelet 은 `systemReserved` + `kubeReserved` 의 CPU 를 올림한 개수만큼 **번호가 낮은 코어부터** 예약하고
+(`takeByTopology`), 독점 CPU 도 같은 낮은 코어부터 나갑니다. 체크포인트가 있는 채로 기동할 때는 예약 CPU 가 전부
+체크포인트의 `defaultCpuSet` 안에 있어야 하고(`validateState`), 아니면 시작하지 않습니다 — 소스 주석이 그 이유로
+"kube/system reserved have changed (increased)" 를 듭니다. 그래서 그 노드에서 CPU 예약을 늘리는 것은 재시작이
+아니라 정책 변경입니다. EC2(c5.2xlarge, 형제 스레드가 n 과 n+4, 1.36.4, `static`, 예약 `45m` + `45m` → 1개 = CPU 0)에서
+2 CPU Guaranteed 파드가 CPU 1·5 를 쥔 채 그 노드에만 `kubelet_kube_reserved_cpu: "2"` 를 주자, 이전 분류(`kubelet`
+클래스)로는 재시작한 kubelet 이
+
+----
+"Failed to start ContainerManager" err="start cpu manager error: not all reserved cpus: \"0-1,4\" are present in defaultCpuSet: \"0,2-4,6-7\""
+----
+
+로 재시작을 되풀이했고 실행은 `require_kubelet_running` 에서 멈췄습니다. 예약 3개가 코어 0 통째(0·4)와 CPU 1 이었고,
+1 은 파드의 것이었습니다.
+
+그래서 `ki_kubelet_cpu_reservation_vars`(`kubelet_system_reserved_cpu`·`kubelet_kube_reserved_cpu`·
+`kubelet_ki_cp_extra_cpu` — CPU 예약이 계산되는 셋)의 변경을, CPU 정책이 `static` 이(었)고
+`kubelet_reserved_system_cpus` 가 없는 노드에서는 `kubelet_policy` 로 올려 적습니다. 늘릴 때만이 아니라 모든 변경입니다
+— 메모리 쪽과 같은 규칙이고, 줄이는 것은 해가 없지만 따로 가를 만큼의 값이 없습니다. CPU 를 번호로 적은 노드는 올리지
+않습니다. kubelet 이 두 예약의 CPU 를 그 집합의 크기로 덮어쓰므로 이 변수들은 어느 CPU 가 예약인지를 바꾸지 않고, 집합
+자체는 이미 `kubelet_policy` 입니다(`validate-hostvars.py` 는 그런 노드에서 kube/system 예약 CPU 를 아예 받지 않아,
+남는 것은 ki cp 노드의 `kubelet_ki_cp_extra_cpu` 뿐입니다). 고친 뒤 같은 변경은
+`[kubelet_policy] node["node2"] variable["kubelet_kube_reserved_cpu"] null -> '2'` 로 분류되어 그 노드만 drain → 체크포인트
+제거 → 기동 → uncordon 했고, kubelet 은 한 번에 섰으며(새 예약 0·1·4 가 `defaultCpuSet` 안), 다른 두 노드는 손대지 않았습니다.
+되돌리는 변경(`'2' -> null`)도 같은 길로 지나갔고, 예약과 무관한 `kubelet_max_pods` 는 세 노드 모두 그냥 재시작(drain 0,
+파드 UID 그대로)이었습니다.
+
+이것으로 재시작 가드(<<같은 부팅 안의 재시작이 컨테이너를 죽이는 노드가 있습니다>>)가 재시작 전의 설정을 읽는 것도 맞게
+됩니다. 가드가 셈하는 남은 CPU 는 예약에 달려 있는데, 예약이 그 재시작으로 바뀔 수 있는 노드 — 번호를 적지 않은 `static`
+노드에서 CPU 예약이 바뀐 경우 — 는 이제 `kubelet` 클래스의 재시작이 아니라 drain 으로 가고, 가드는 그 노드를 묻지 않습니다.
+
 같은 `machineState` 비교가 뜻하는 것이 하나 더 있습니다. hugepage 크기별 **전체 수**도 들어 있어서,
 `static` 노드가 재부팅 뒤에 다른 수의 hugepage 를 쥐면 kubelet 이 거부합니다. 2M 은 늘 선언한
 만큼 잡히지만 1G 는 그렇지 않아서, 이것이 아래 검사가 있는 이유의 절반입니다.

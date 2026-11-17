@@ -508,6 +508,13 @@ kubelet 을 재시작하면 남은 CPU 보다 많은 독점 CPU 를 쥔 컨테�
   **기동을 거부**합니다. 그래서 그 노드에서는 메모리 예약 변수가 재시작이 아니라 위와 같은 drain
   경로로 적용됩니다 — 어느 변수가 그런지는 `constant-vars.yml` 의
   `ki_kubelet_memory_reservation_vars` 에 있습니다. 다른 노드에서는 그대로 재시작입니다
+* *CPU 정책이 `static` 이고 `kubelet_reserved_system_cpus` 를 적지 않은 노드에서는 CPU 예약값도 정책입니다.*
+  그 노드의 kubelet 은 `systemReserved` + `kubeReserved` 의 CPU 를 올림한 개수만큼 **번호가 낮은 코어부터**
+  예약하는데, 독점 CPU 도 같은 낮은 코어부터 나갑니다. 예약을 늘리면 이미 컨테이너가 쥔 CPU 가 예약에
+  들어가고, kubelet 은 체크포인트와 어긋난다며 **기동을 거부**합니다(EC2 에서 실측). 그래서 그 노드에서는
+  `kubelet_system_reserved_cpu`, `kubelet_kube_reserved_cpu`, `kubelet_ki_cp_extra_cpu` 가 재시작이 아니라 위와
+  같은 drain 경로로 적용됩니다(`ki_kubelet_cpu_reservation_vars`). CPU 를 번호로 적은 노드는 예약이 그 번호로
+  정해져 이 값들과 무관하므로 그대로 재시작입니다
 * *재부팅하면 체크포인트를 버립니다.* 같은 체크포인트에 NUMA 노드별 전체 메모리와 hugepage 수가
   적혀 있고 kubelet 은 그것을 **바이트까지** 비교합니다. 재부팅 한 번에 커널이 보고하는 NUMA 노드의
   메모리는 몇십 KiB 씩 움직이고(EC2 에서 실측), 1G hugepage 는 부팅마다 잡히는 수가 다를 수 있어서,

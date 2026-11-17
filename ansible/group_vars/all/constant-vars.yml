@@ -828,5 +828,19 @@ ki_kubelet_memory_reservation_vars:
   - kubelet_kube_reserved_memory
   - kubelet_system_reserved_memory
 
+# The variables of class["kubelet"] that a node running the static cpu manager
+# policy without kubelet_reserved_system_cpus applies as class["kubelet_policy"]
+# instead. These are the ones the cpu a node keeps for itself is calculated from,
+# and on such a node kubelet reserves that many cpus from the lowest numbered
+# cores and refuses to start when one of them is held by a container in
+# /var/lib/kubelet/cpu_manager_state - which raising the reservation makes
+# likely, since exclusive cpus are handed out from the same low cores. A node that
+# names its reserved cpus keeps them whatever these say, and every other node
+# applies them by a restart as the table above says
+ki_kubelet_cpu_reservation_vars:
+  - kubelet_ki_cp_extra_cpu
+  - kubelet_kube_reserved_cpu
+  - kubelet_system_reserved_cpu
+
 target_node: null
 target_node_op: null

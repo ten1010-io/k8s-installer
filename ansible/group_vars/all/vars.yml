@@ -366,7 +366,13 @@ kubelet_auto_ephemeral_storage_max: "30Gi"
 # Changing it is not a value being rewritten. kubelet checkpoints the policy it
 # last ran and refuses to start when the new configuration disagrees, saying to
 # drain the node and delete the file, so update-cluster.yml drains the node,
-# takes the checkpoint away and brings kubelet back, one node at a time
+# takes the checkpoint away and brings kubelet back, one node at a time.
+#
+# On a static node that does not name its reserved cpus (kubelet_reserved_system_cpus
+# below) the cpu reservations are the same kind of thing: kubelet reserves that
+# many cpus from the lowest cores, refuses to start when one of them is held by a
+# container, and so update-cluster.yml applies kubelet_system_reserved_cpu,
+# kubelet_kube_reserved_cpu and kubelet_ki_cp_extra_cpu there with the same drain
 kubelet_cpu_manager_policy: "none"
 
 # Whether an exclusive allocation is a whole physical core rather than one

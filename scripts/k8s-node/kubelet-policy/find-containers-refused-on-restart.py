@@ -23,6 +23,13 @@ cpu of systemReserved and kubeReserved add up to, and this can not see which. It
 counts them as if each sat on a core of its own, which is the most cores they can
 take, so that what is named is never less than what kubelet would refuse.
 
+The configuration read is the one on disk, from before the restart writes the
+new one, and that is the right one for the reserved cpus. A node that names them
+takes the set from class["kubelet_policy"], which drains it, and a node that
+does not is drained for a change of the reservations they are counted from as
+well (diff-applied-vars.py), so on a node this is asked about the restart does
+not move which cpus are reserved.
+
 Prints one line per container and nothing when a restart refuses nothing.
 """
 from __future__ import annotations
