@@ -99,8 +99,16 @@ main() {
   # and the run reports a script that exited 1 with nothing on either stream. A
   # clean install once spent a minute here against an apiserver it could not
   # reach yet and said none of that
+  #
+  # The token lives as long as the certificate key below does, which kubeadm
+  # fixes at two hours, so that the two halves of the file stop working
+  # together. One file serves every join of a run, and the last of them can
+  # start a long way after the first: add-node.yml joins its workers and then
+  # its control plane nodes one at a time, each waiting for the one before it.
+  # A token good for half an hour would run out under the last control plane
+  # node of a large run while the key beside it was still good
   exit_code=0
-  join_command=$(kubeadm token create --ttl 30m --print-join-command 2>&1) || exit_code=$?
+  join_command=$(kubeadm token create --ttl 2h --print-join-command 2>&1) || exit_code=$?
   [[ $exit_code != 0 ]] &&
     die "[ERROR] Failed to create a join token. kubeadm said:\n$join_command"
 

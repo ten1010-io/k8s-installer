@@ -3,7 +3,9 @@
 # One set of join credentials for all of them. The token kubeadm mints is good
 # for every join made within its ttl and the certificate key is one secret in
 # the cluster, so a run adding five workers asks a control plane node once and
-# hands the same file to each.
+# hands the same file to each. Both halves are good for two hours, which is
+# what the whole of this file has to fit in: the last control plane node starts
+# its join after every worker and every control plane node before it.
 #
 # Workers join together and the control plane nodes join after them, one at a
 # time. A worker joins nothing but the apiserver, so any number of them can be
