@@ -87,7 +87,7 @@ playbook=""
 inventory_hostname=""
 ki_control_node_ih=""
 provision_reboot=""
-target_node=""
+target_nodes=""
 target_node_op=""
 ki_cp_ha_mode=""
 ki_cp_ha_mode_vip=""
@@ -106,13 +106,13 @@ knn_to_ih_dict=""
 # The node check_k8s_cluster_matches_inventory does not require the cluster and
 # the inventory to agree about, held as a list so that it can be empty.
 #
-# A playbook that names a node with target_node_op is adding it or taking it
-# away, so the two lists differ by exactly that node while the run is what closes
-# the gap: add-node has not joined it yet, remove-node and remove-broken-node are
-# taking it out. reboot-nodes names a node with no op, and for it the answer is
-# the opposite - the node it is about to drain has to be a member already, and a
-# node that is in the inventory and not in the cluster is exactly what has to be
-# refused there rather than exempted
+# A playbook that names nodes with target_node_op is adding them or taking them
+# away, so the two lists differ by exactly those nodes while the run is what
+# closes the gap: add-node has not joined them yet, remove-node and
+# remove-broken-node are taking them out. reboot-nodes names a node with no op,
+# and for it the answer is the opposite - the node it is about to drain has to be
+# a member already, and a node that is in the inventory and not in the cluster is
+# exactly what has to be refused there rather than exempted
 exempt_ih_list="[]"
 
 main() {
@@ -126,7 +126,7 @@ main() {
   inventory_hostname=$($yq_cmd '.inventory_hostname' < "$vars_path")
   ki_control_node_ih=$($yq_cmd '.ki_control_node_ih' < "$vars_path")
   provision_reboot=$($yq_cmd '.provision_reboot' < "$vars_path")
-  target_node=$($yq_cmd '.target_node' < "$vars_path")
+  target_nodes=$($yq_cmd -o json '.target_nodes' < "$vars_path")
   target_node_op=$($yq_cmd '.target_node_op' < "$vars_path")
   ki_cp_ha_mode=$($yq_cmd '.ki_cp_ha_mode' < "$vars_path")
   ki_cp_ha_mode_vip=$($yq_cmd '.ki_cp_ha_mode_vip' < "$vars_path")
@@ -144,11 +144,11 @@ main() {
   knn_to_ih_dict=$(get_knn_to_ih_dict)
 
   # The nodes the inventory declares that the cluster is not expected to hold:
-  # the one being added or removed, and the broken ones, which stay declared so
+  # the ones being added or removed, and the broken ones, which stay declared so
   # that they can be rebuilt and added back but have left or are leaving
   exempt_ih_list=$($yq_cmd -o json '.ki_broken_nodes' < "$vars_path")
   [[ -n $target_node_op && $target_node_op != "null" ]] &&
-    exempt_ih_list=$($yq_cmd -o json --null-input "$exempt_ih_list + [\"$target_node\"]")
+    exempt_ih_list=$($yq_cmd -o json --null-input "$exempt_ih_list + $target_nodes")
 
   # About this machine rather than about the cluster it is in, so they run for
   # every playbook and before the switch below. A node that has no room left or
@@ -167,7 +167,7 @@ main() {
   fi
 
   if [[ $playbook = "add-node" || $playbook = "remove-node" ]]; then
-    if [[ $inventory_hostname = "$target_node" ]]; then
+    if [[ $(is_target_node) = "true" ]]; then
       [[ $target_node_op = "add" ]] && require_linux_packages_not_installed
       return 0
     fi
@@ -201,7 +201,7 @@ main() {
     if [[ $(is_k8s_cp_node "$inventory_hostname") = "true" ]]; then
       require_k8s_cluster_reachable
       require_etcd_quorum
-      require_hostname_known "$target_node"
+      require_hostname_known "$($yq_cmd --null-input "$target_nodes | .[0]")"
       check_k8s_cluster_matches_inventory
     fi
 
@@ -227,7 +227,7 @@ main() {
 # of the time source would refuse it for. The nodes that are staying are still
 # held to all of it
 get_node_check_severity() {
-  if [[ $playbook = "remove-node" && $inventory_hostname = "$target_node" ]]; then
+  if [[ $playbook = "remove-node" && $(is_target_node) = "true" ]]; then
     echo "warn"
     return 0
   fi
@@ -236,6 +236,24 @@ get_node_check_severity() {
     reset-cluster | remove-broken-node) echo "warn" ;;
     *) echo "fail" ;;
   esac
+
+  return 0
+}
+
+# Whether this node is one of the nodes the playbook was pointed at. Asked by
+# an exact match of the name rather than yq's contains, which on strings is a
+# substring test and would have node1 found in node10
+is_target_node() {
+  if [[ $target_nodes = "null" ]]; then
+    echo "false"
+    return 0
+  fi
+
+  if [[ $($yq_cmd --null-input "$target_nodes | map(select(. == \"$inventory_hostname\")) | length") -gt 0 ]]; then
+    echo "true"
+  else
+    echo "false"
+  fi
 
   return 0
 }
@@ -413,7 +431,7 @@ check_vip_carrier() {
 
   [[ $ki_cp_ha_mode = "true" ]] || return 0
   [[ $(is_ki_cp_node "$inventory_hostname") = "true" ]] || return 0
-  [[ $inventory_hostname = "$target_node" && $target_node_op = "remove" ]] && return 0
+  [[ $(is_target_node) = "true" && $target_node_op = "remove" ]] && return 0
   case "$playbook" in
     reset-cluster | remove-node | remove-broken-node) return 0 ;;
   esac
@@ -612,7 +630,7 @@ ki_cp_node_is_the_clock_of_the_cluster() {
 # Whether this playbook is the one putting this node together, so that what the
 # node is set up with is not there to be asked about yet
 node_is_being_set_up() {
-  if [[ $playbook = "setup-cluster" || ($playbook = "add-node" && $inventory_hostname = "$target_node") ]]; then
+  if [[ $playbook = "setup-cluster" || ($playbook = "add-node" && $(is_target_node) = "true") ]]; then
     echo "true"
   else
     echo "false"
@@ -734,7 +752,7 @@ require_no_etcd_alarm() {
   esac
 
   [[ $(is_k8s_cp_node "$inventory_hostname") = "true" ]] || return 0
-  [[ $inventory_hostname = "$target_node" && $target_node_op = "add" ]] && return 0
+  [[ $(is_target_node) = "true" && $target_node_op = "add" ]] && return 0
 
   local alarms
   alarms=$(get_etcd_alarms)
@@ -908,7 +926,7 @@ how_to_reset_first() {
   msg+=" the images and containers it holds:"
 
   if [[ $playbook = "add-node" ]]; then
-    msg+=" run remove-node.yml -e node=$target_node and then add-node.yml again."
+    msg+=" run remove-node.yml -e node=$inventory_hostname and then add-node.yml again."
   else
     msg+=" run reset-cluster.yml -e sdfc= and then setup-cluster.yml again."
   fi
@@ -963,15 +981,19 @@ check_k8s_cluster_all_nodes() {
 
   ih_list1=$(get_k8s_cluster_all_ih_list)
   if [[ $target_node_op = "add" ]]; then
-    ih_list2=$($yq_cmd -o json --null-input "$(get_inventory_k8s_node_ih_list) - [\"$target_node\"]")
+    ih_list2=$($yq_cmd -o json --null-input "$(get_inventory_k8s_node_ih_list) - $target_nodes")
   else
     ih_list2=$(get_inventory_k8s_node_ih_list)
   fi
   diff_ih_list=$($yq_cmd -o json --null-input "$ih_list1 - $ih_list2")
   diff_len=$($yq_cmd --null-input "$diff_ih_list | length")
   if [[ $diff_len -gt 0 ]]; then
-    [[ $diff_len = 1 && $target_node_op = "add" && $($yq_cmd --null-input "$diff_ih_list | .[0]") = "$target_node" ]] &&
-      die "[ERROR] K8s cluster already has node[\"$target_node\"]"
+    # Nodes the cluster holds that the inventory does not account for. Those
+    # being added are a different complaint from strangers: the first is a
+    # node that was added already, the second a node nobody declared
+    if [[ $target_node_op = "add" && $($yq_cmd --null-input "$diff_ih_list - $target_nodes | length") = 0 ]]; then
+      die "[ERROR] K8s cluster already has nodes\n$diff_ih_list"
+    fi
 
     die "[ERROR] K8s cluster has nodes that are not in inventory\n$diff_ih_list"
   fi
@@ -993,15 +1015,16 @@ check_k8s_cluster_cp_nodes() {
 
   ih_list1=$(get_k8s_cluster_cp_ih_list)
   if [[ $target_node_op = "add" ]]; then
-    ih_list2=$($yq_cmd -o json --null-input "$(get_inventory_k8s_cp_node_ih_list) - [\"$target_node\"]")
+    ih_list2=$($yq_cmd -o json --null-input "$(get_inventory_k8s_cp_node_ih_list) - $target_nodes")
   else
     ih_list2=$(get_inventory_k8s_cp_node_ih_list)
   fi
   diff_ih_list=$($yq_cmd -o json --null-input "$ih_list1 - $ih_list2")
   diff_len=$($yq_cmd --null-input "$diff_ih_list | length")
   if [[ $diff_len -gt 0 ]]; then
-    [[ $diff_len = 1 && $target_node_op = "add" && $($yq_cmd --null-input "$diff_ih_list | .[0]") = "$target_node" ]] &&
-      die "[ERROR] K8s cluster already has control plane node[\"$target_node\"]"
+    if [[ $target_node_op = "add" && $($yq_cmd --null-input "$diff_ih_list - $target_nodes | length") = 0 ]]; then
+      die "[ERROR] K8s cluster already has control plane nodes\n$diff_ih_list"
+    fi
 
     die "[ERROR] K8s cluster has control plane nodes that are not in inventory\n$diff_ih_list"
   fi

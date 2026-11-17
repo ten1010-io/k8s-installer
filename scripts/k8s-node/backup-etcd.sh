@@ -79,6 +79,10 @@ etcdctl_cmd=""
 
 ki_etcd_backup_path=""
 ki_etcd_backup_retention_count=""
+k8s_manifests_path=""
+inventory_hostname=""
+target_nodes=""
+target_node_op=""
 
 # Takes a snapshot of etcd on this node, before anything that is about to change
 # the cluster gets the chance to go wrong.
@@ -97,6 +101,10 @@ main() {
 
   ki_etcd_backup_path=$($yq_cmd '.ki_etcd_backup_path' < "$vars_path")
   ki_etcd_backup_retention_count=$($yq_cmd '.ki_etcd_backup_retention_count' < "$vars_path")
+  k8s_manifests_path=$($yq_cmd '.k8s_manifests_path' < "$vars_path")
+  inventory_hostname=$($yq_cmd '.inventory_hostname' < "$vars_path")
+  target_nodes=$($yq_cmd -o json '.target_nodes' < "$vars_path")
+  target_node_op=$($yq_cmd '.target_node_op' < "$vars_path")
 
   # Checked rather than used as it comes. A line missing from vars.yml makes yq
   # answer "null", which the arithmetic below would read as the name of a
@@ -105,6 +113,11 @@ main() {
     die "[ERROR] Variable[\"ki_etcd_backup_retention_count\"] is \"$ki_etcd_backup_retention_count\", which is not a number of snapshots to keep. Add it to vars.yml"
   [[ $ki_etcd_backup_retention_count -ge 1 ]] ||
     die "[ERROR] Variable[\"ki_etcd_backup_retention_count\"] is 0, which would remove the snapshot this is about to take"
+
+  if [[ $(node_is_leaving_without_etcd) = "true" ]]; then
+    msg "[INFO] Node[\"$inventory_hostname\"] is being removed and runs no etcd, so there is no snapshot for it to take"
+    return 0
+  fi
 
   require_etcd_quorum
 
@@ -136,6 +149,36 @@ main() {
 # leader and waits on the same majority a write would, so it answers the
 # question this is asking, and an alarm does not stop it. Keys only: what is
 # being read is that a read is possible, not what is in the cluster
+# Whether this is the node remove-node.yml is taking out and it never became an
+# etcd member. A control plane node whose join failed is declared a control
+# plane node and holds no etcd, so the quorum check below failed on it and the
+# removal that is the way back from that failure was refused. Told by the
+# manifest kubeadm writes when the node joins, which is there from that moment
+# whether etcd is healthy or not.
+#
+# Only that node. A node that is being removed and does run etcd takes its
+# snapshot like every other: removing it shrinks the cluster, which is what a
+# snapshot is taken before
+node_is_leaving_without_etcd() {
+  if [[ $target_node_op != "remove" || $target_nodes = "null" ]]; then
+    echo "false"
+    return 0
+  fi
+
+  if [[ $($yq_cmd --null-input "$target_nodes | map(select(. == \"$inventory_hostname\")) | length") = 0 ]]; then
+    echo "false"
+    return 0
+  fi
+
+  if [[ -f "$k8s_manifests_path"/etcd.yaml ]]; then
+    echo "false"
+  else
+    echo "true"
+  fi
+
+  return 0
+}
+
 require_etcd_quorum() {
   local output
   local exit_code=0

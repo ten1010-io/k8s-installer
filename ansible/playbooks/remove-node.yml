@@ -14,13 +14,13 @@
 - import_playbook: tasks/backup-etcd.yml
 
 - import_playbook: tasks/remove-k8s-node.yml
-  when: target_node in groups['k8s_node']
+  when: target_nodes | intersect(groups['k8s_node']) | length > 0
 
 - import_playbook: tasks/reset-k8s-cp-extra-files.yml
-  when: target_node in groups['k8s_node']
+  when: target_nodes | intersect(groups['k8s_node']) | length > 0
 
 - import_playbook: tasks/remove-ki-cp-node.yml
-  when: target_node in groups['ki_cp_node']
+  when: target_nodes | intersect(groups['ki_cp_node']) | length > 0
 
 - import_playbook: tasks/run-all-node-script.yml
   vars:
@@ -70,7 +70,7 @@
     script: all-node/ki-ca-crt/reset-ki-ca-crt.sh
 
 - import_playbook: tasks/reset-pki.yml
-  when: target_node in groups['ki_cp_node']
+  when: target_nodes | intersect(groups['ki_cp_node']) | length > 0
 
 - import_playbook: tasks/reset-cluster-record.yml
 

@@ -87,7 +87,7 @@ ki_var_root_path=""
 ki_etc_services_path=""
 ki_cp_user_registry_port=""
 inventory_hostname=""
-target_node=""
+target_nodes=""
 target_node_op=""
 
 etc_svc_root_path=""
@@ -135,7 +135,7 @@ main() {
   ki_etc_services_path=$($yq_cmd '.ki_etc_services_path' < "$vars_path")
   ki_cp_user_registry_port=$($yq_cmd '.ki_cp_user_registry_port' < "$vars_path")
   inventory_hostname=$($yq_cmd '.inventory_hostname' < "$vars_path")
-  target_node=$($yq_cmd '.target_node' < "$vars_path")
+  target_nodes=$($yq_cmd -o json '.target_nodes' < "$vars_path")
   target_node_op=$($yq_cmd '.target_node_op' < "$vars_path")
   require_valid_target_node_op
 
@@ -216,15 +216,19 @@ get_peer_ih_list() {
   return 0
 }
 
-# A node on its way out of the cluster is left out, the way every other script
-# that reads this group leaves it out. It answers for its registry until the
-# moment reset-user-registry.sh deletes it, so it is the one peer whose copy is
-# about to stop existing
+# The nodes the playbook was pointed at are left out whichever way it is
+# pointed. A node on its way out of the cluster answers for its registry until
+# the moment reset-user-registry.sh deletes it, so it is the one peer whose copy
+# is about to stop existing. A node on its way in was set up a moment ago and is
+# as empty as this one: add-node builds several at once, and the first of them
+# to answer would otherwise be taken for a source and this node filled with
+# nothing, without a word said. This node itself is one of them too, and it is
+# taken out again below either way
 get_ki_cp_ih_list() {
   # Without the nodes of the broken_node group either: a registry on a machine
   # that does not answer is not one to sync with
-  if [[ $target_node != "null" && $target_node_op = "remove" ]]; then
-    $yq_cmd -o json ".groups.ki_cp_node - .ki_broken_nodes - [\"$target_node\"]" < "$vars_path"
+  if [[ $target_nodes != "null" ]]; then
+    $yq_cmd -o json "(.groups.ki_cp_node - .ki_broken_nodes) - $target_nodes" < "$vars_path"
   else
     $yq_cmd -o json '.groups.ki_cp_node - .ki_broken_nodes' < "$vars_path"
   fi
@@ -239,10 +243,10 @@ get_ki_cp_ih_list() {
 # came out was the right error followed by two misleading ones and a run that
 # carried on to fail somewhere else
 require_valid_target_node_op() {
-  [[ $target_node = "null" ]] && return 0
+  [[ $target_nodes = "null" ]] && return 0
   [[ $target_node_op = "add" || $target_node_op = "remove" ]] && return 0
 
-  die "[ERROR] Invalid variable[\"target_node\"] or Invalid variable[\"target_node_op\"]"
+  die "[ERROR] Invalid variable[\"target_nodes\"] or Invalid variable[\"target_node_op\"]"
 }
 
 get_ip() {

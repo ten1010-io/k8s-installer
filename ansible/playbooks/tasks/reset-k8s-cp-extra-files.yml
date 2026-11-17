@@ -13,7 +13,7 @@
   tasks:
     - when:
         - inventory_hostname in k8s_cp_nodes
-        - target_node is none or inventory_hostname == target_node
+        - ki_is_target_node | bool
       block:
         - name: "Read file[\"{{ ki_etc_applied_vars_path }}\"]"
           shell: "sudo cat {{ ki_etc_applied_vars_path }} 2>/dev/null || true"

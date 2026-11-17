@@ -93,7 +93,7 @@ jinja2_cmd=""
 
 ki_etc_services_path=""
 ki_tmp_root_path=""
-target_node=""
+target_nodes=""
 target_node_op=""
 inventory_hostname=""
 ki_cp_ha_mode=""
@@ -111,7 +111,7 @@ main() {
 
   ki_etc_services_path=$($yq_cmd '.ki_etc_services_path' < "$vars_path")
   ki_tmp_root_path=$($yq_cmd '.ki_tmp_root_path' < "$vars_path")
-  target_node=$($yq_cmd '.target_node' < "$vars_path")
+  target_nodes=$($yq_cmd -o json '.target_nodes' < "$vars_path")
   target_node_op=$($yq_cmd '.target_node_op' < "$vars_path")
   inventory_hostname=$($yq_cmd '.inventory_hostname' < "$vars_path")
   ki_cp_ha_mode=$($yq_cmd '.ki_cp_ha_mode' < "$vars_path")
@@ -293,12 +293,12 @@ get_unicast_peers() {
 # pattern and a script has to leave out itself: a peer that does not answer is
 # advertised to for nothing, and after remove-broken-node it is no peer at all
 get_ki_cp_ih_list() {
-  if [[ $target_node = "null" ]] || [[ $target_node != "null" && $target_node_op = "add" ]]; then
+  if [[ $target_nodes = "null" ]] || [[ $target_nodes != "null" && $target_node_op = "add" ]]; then
     $yq_cmd -o json '.groups.ki_cp_node - .ki_broken_nodes' < "$vars_path"
-  elif [[ $target_node != "null" && $target_node_op = "remove" ]]; then
-    $yq_cmd -o json ".groups.ki_cp_node - .ki_broken_nodes - [\"$target_node\"]" < "$vars_path"
+  elif [[ $target_nodes != "null" && $target_node_op = "remove" ]]; then
+    $yq_cmd -o json "(.groups.ki_cp_node - .ki_broken_nodes) - $target_nodes" < "$vars_path"
   else
-    die "[ERROR] Invalid variable[\"\target_node\"] or Invalid variable[\"\target_node_op\"]"
+    die "[ERROR] Invalid variable[\"target_nodes\"] or Invalid variable[\"target_node_op\"]"
   fi
 }
 

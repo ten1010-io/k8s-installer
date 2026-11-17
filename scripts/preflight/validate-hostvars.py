@@ -414,9 +414,9 @@ def validate_control_node(hostvars_errors: List[HostvarsError], hostvars):
 
     # Removing the node the playbook is running from would tear down the installer
     # underneath the run, so the removal is done from one of the other ki cp nodes
-    if lo_hostvars.get("target_node_op") == "remove" and lo_hostvars.get("target_node") == localhost_ih:
+    if lo_hostvars.get("target_node_op") == "remove" and localhost_ih in (lo_hostvars.get("target_nodes") or []):
         error = HostvarsError("localhost",
-                              ("target_node",),
+                              ("target_nodes",),
                               str(localhost_ih),
                               f"Node[\"{localhost_ih}\"] is the control node and can not be removed from the"
                               " cluster. Run this from another node of the ki_cp_node group")
@@ -1591,7 +1591,7 @@ class ConstantVarsModel(BaseModel):
     k8s_node_labels: dict[str, str]
     k8s_node_taints: List[NodeTaintModel]
 
-    target_node: str | None
+    target_nodes: List[str] | None
     target_node_op: str | None
 
 
