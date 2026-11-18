@@ -118,8 +118,7 @@ main() {
   ki_tmp_root_path=$($yq_cmd '.ki_tmp_root_path' < "$vars_path")
   ki_cp_user_registry_port=$($yq_cmd '.ki_cp_user_registry_port' < "$vars_path")
   ki_cp_user_registry_push_jobs=$($yq_cmd '.ki_cp_user_registry_push_jobs' < "$vars_path")
-  [[ $ki_cp_user_registry_push_jobs =~ ^[1-9][0-9]*$ ]] ||
-    die "[ERROR] Variable[\"ki_cp_user_registry_push_jobs\"] is \"$ki_cp_user_registry_push_jobs\", which is not a count of one or more"
+  resolve_push_jobs
 
   etc_svc_root_path="$ki_etc_services_path"/$SVC_NAME
   var_svc_root_path="$ki_var_root_path"/$SVC_NAME
@@ -166,6 +165,35 @@ set_readonly() {
   docker compose -f "$etc_svc_root_path/compose.yml" down
   docker compose -f "$etc_svc_root_path/compose.yml" up -d
   wait_registry_ready 60
+
+  return 0
+}
+
+# How many pushes push_artifacts runs at once. A number the site set is taken as
+# it is. Left null, it is half the cpus of this node, at least 2 and at most 4:
+# constant-vars.yml says why. Said once in the output either way, because the
+# count is what a slow or a loaded node is first asked about
+resolve_push_jobs() {
+  if [[ -z $ki_cp_user_registry_push_jobs || $ki_cp_user_registry_push_jobs = "null" ]]; then
+    local cpus
+    if command -v nproc > /dev/null 2>&1; then
+      cpus=$(nproc)
+    else
+      cpus=$(getconf _NPROCESSORS_ONLN)
+    fi
+    [[ $cpus =~ ^[1-9][0-9]*$ ]] ||
+      die "[ERROR] Failed to count the cpus of this node. got \"$cpus\""
+
+    ki_cp_user_registry_push_jobs=$((cpus / 2))
+    [[ $ki_cp_user_registry_push_jobs -lt 2 ]] && ki_cp_user_registry_push_jobs=2
+    [[ $ki_cp_user_registry_push_jobs -gt 4 ]] && ki_cp_user_registry_push_jobs=4
+    msg "[INFO] Pushing $ki_cp_user_registry_push_jobs artifacts at a time ($cpus cpus)"
+    return 0
+  fi
+
+  [[ $ki_cp_user_registry_push_jobs =~ ^[1-9][0-9]*$ ]] ||
+    die "[ERROR] Variable[\"ki_cp_user_registry_push_jobs\"] is \"$ki_cp_user_registry_push_jobs\", which is not a count of one or more"
+  msg "[INFO] Pushing $ki_cp_user_registry_push_jobs artifacts at a time (ki_cp_user_registry_push_jobs)"
 
   return 0
 }
