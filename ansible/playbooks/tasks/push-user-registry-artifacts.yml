@@ -23,26 +23,68 @@
         msg: "No such file or directory of which path is \"{{ archive }}\""
       when: not (archive | ansible.builtin.expanduser) is exists
 
+# The control node is a ki cp node (check-control-node.yml) and already holds
+# the archive, so it reads it where it is. Copying it there went over ssh to the
+# same machine, with a sha1 of the whole archive on each side and one more write
+# of it, before anything was pushed. The other ki cp nodes are given a copy, and
+# so is the control node when root can not read the archive where it is (a
+# root_squash NFS home, a FUSE mount of the login user), as the copy reads it as
+# the user that runs ansible
 - hosts: ki_cp_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
-    node_archive_path: "{{ ki_tmp_root_path }}/ki-cp-user-registry-artifacts.tgz"
+    # Absolute, because the control node reads it through a shell of its own,
+    # under sudo, where ~ and a path relative to here mean another place. The
+    # filters run on the control node, from the directory ansible was started in
+    archive_abs_path: "{{ archive | ansible.builtin.expanduser | ansible.builtin.realpath }}"
+    node_archive_path: >-
+      {{ archive_abs_path if in_place | bool
+         else ki_tmp_root_path ~ '/ki-cp-user-registry-artifacts.tgz' }}
   tasks:
     - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
       shell: "{{ ki_create_tmp_root_cmd }}"
 
+    - name: Check root can read the archive where it is
+      shell: "sudo test -r {{ archive_abs_path | quote }}"
+      register: shell_result
+      changed_when: false
+      failed_when: false
+      when: inventory_hostname == ki_control_node_ih
+
+    - name: "Set_fact variable[\"in_place\"]"
+      set_fact:
+        in_place: >-
+          {{ inventory_hostname == ki_control_node_ih
+             and (shell_result.rc | default(1)) == 0 }}
+
+    - name: Say the archive is copied on the control node as well
+      debug:
+        msg: >-
+          root can not read {{ archive_abs_path }} where it is, so it is copied to
+          {{ node_archive_path }} as on the other nodes. Put it on a local disk to skip the copy
+      when:
+        - inventory_hostname == ki_control_node_ih
+        - not (in_place | bool)
+
+    - name: "Remove temporary variable[\"shell_result\"]"
+      set_fact:
+        shell_result: null
+
     - name: Copy the archive to the node
       copy:
-        src: "{{ archive | ansible.builtin.expanduser }}"
+        src: "{{ archive_abs_path }}"
         dest: "{{ node_archive_path }}"
       become: yes
+      when: not (in_place | bool)
 
     - name: Execute push-user-registry-artifacts.sh
       shell: >-
         sudo {{ ki_opt_scripts_path }}/ki-cp-node/user-registry/push-user-registry-artifacts.sh
-        {{ vars_path_arg }} --archive-path {{ node_archive_path }}
+        {{ vars_path_arg }} --archive-path {{ node_archive_path | quote }}
 
+    # Never the archive of the operator, which the control node read in place
     - name: Delete the archive from the node
-      shell: "sudo rm -f {{ node_archive_path }}"
+      shell: "sudo rm -f {{ node_archive_path | quote }}"
+      when: not (in_place | bool)
