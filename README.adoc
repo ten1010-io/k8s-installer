@@ -2268,6 +2268,14 @@ NOTE: 노드마다 놓이는 파일이 다릅니다. 커널 인자와 vfio-pci �
 이면 1, 토폴로지는 정책 이름이 라벨이고 값은 1. 노드 라벨이 "핀닝 노드" 라고 말하는데 이 셋이
 다르게 말하면 라벨이 거짓말입니다
 
+|`ki_node_kubelet_reserved_system_cpus{numa="0"}` +
+`ki_node_kubelet_reserved_system_cpus_half_cores`
+|같은 파일의 `reservedSystemCPUs` 를 이 기계의 토폴로지에 얹어 센 것. 앞은 NUMA 노드별 예약 **스레드**
+수로, CPU 가 있는 NUMA 노드마다 하나씩 나오고 예약이 없는 NUMA 노드는 0 입니다. 뒤는 형제 스레드가
+반만 예약된 코어 수. NUMA 노드끼리 값이 다르거나 뒤가 0 이 아니면 그 노드가 내줄 수 있는 CPU 가
+NUMA 노드마다 다르거나 예약 스레드와 코어를 나눠 쓰는 파드가 생깁니다. `reservedSystemCPUs` 가 없는
+노드는 둘 다 내지 않습니다 — kubelet 이 스스로 고르는 CPU 는 이 파일에서 보이지 않습니다
+
 |`ki_node_vfio_pci_device_ids_declared` +
 `ki_node_vfio_pci_devices_present` +
 `ki_node_vfio_pci_devices_bound`

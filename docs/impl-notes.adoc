@@ -1577,6 +1577,23 @@ k8s 1.36.4). `/var/lib/kubelet/config.yaml` 에 직접 적고 재기동:
 2 NUMA 는 이 박스로 볼 수 없어 `tests/test_check_reserved_cpus.py` 가 2 소켓 기계 모양(형제가 n 과 n+48,
 NUMA 0 = `0-23,48-71`)의 sysfs 픽스처로 봅니다.
 
+=== 예약 집합도 NUMA 노드별로 냅니다
+
+`check-kubelet-policy.sh` 가 같은 `/var/lib/kubelet/config.yaml` 의 `reservedSystemCPUs` 를 읽어
+`ki_node_kubelet_reserved_system_cpus{numa=…}`(NUMA 노드별 예약 스레드 수)와
+`ki_node_kubelet_reserved_system_cpus_half_cores`(형제가 반만 예약된 코어 수)를 냅니다. 인벤토리가
+아니라 파일인 것은 정책 메트릭과 같은 이유입니다 — 적용된 값이 답입니다. 세는 코드는 검사와 같은
+`reserved-cpus-common.sh` 라 둘이 같은 노드를 다르게 말하지 않습니다. 타이머 유닛은 vars 파일도 venv
+경로도 받지 않아 이 부분은 bash 입니다.
+
+예약이 없는 NUMA 노드는 시리즈를 빼지 않고 0 으로 냅니다 — "예약 없는 NUMA" 가 없는 시리즈가 아니라
+비교할 값이어야 해서입니다. 반대로 `reservedSystemCPUs` 가 없는 노드는 두 메트릭을 아예 내지
+않습니다. 그 노드의 kubelet 은 예약 CPU 를 스스로 고르고 어느 것인지 파일에 없으므로, 0 은 "예약이
+없다" 는 거짓말이 됩니다. 반쪽 코어 수는 정책과 무관하게 셉니다 — 문제인지는
+`ki_node_kubelet_cpu_manager_static` 과 나란히 읽는 쪽이 정합니다.
+
+위 박스에서: `"0"` 적용 뒤 `…reserved_system_cpus{numa="0"} 1`, `…half_cores 1`; `"0,2"` 적용 뒤 `2`, `0`.
+
 === 5.16 미만 커널은 NUMA 노드별 문법을 모릅니다
 
 `hugepages=<node>:<count>,…` 는 리눅스 5.16 이 더한 문법입니다 (`mm/hugetlb.c`, "hugetlbfs: extend
