@@ -66,12 +66,36 @@ die() {
   exit "$code"
 }
 
+# What a run stopped in the middle of its pushes leaves behind, a failed push or
+# a signal alike: the pushes still running, which would go on writing into a
+# registry nobody waits on any more; what crane said of each, in push_logs_path;
+# and a registry still writable, which takes a push from anywhere until the next
+# run of this puts it back
 cleanup() {
   trap - SIGINT SIGTERM ERR EXIT
+
+  local running
+  running=$(jobs -p)
+  if [[ -n $running ]]; then
+    # shellcheck disable=SC2086
+    kill $running 2> /dev/null || true
+    wait 2> /dev/null || true
+  fi
+  if [[ -n ${push_logs_path-} ]]; then
+    rm -rf "$push_logs_path"
+  fi
+  if [[ ${registry_writable-} == "true" ]]; then
+    set_readonly "true" || msg "[WARN] The user registry could not be made readonly again: run this again"
+  fi
 }
 
 set -Eeuo pipefail
-trap cleanup SIGINT SIGTERM ERR EXIT
+trap cleanup ERR EXIT
+# A signal ends the run once cleanup is done. Returning from the trap instead
+# would carry on where the run was, with the pushes killed and nothing left to
+# clean up after it
+trap 'cleanup; exit 130' SIGINT
+trap 'cleanup; exit 143' SIGTERM
 setup_colors
 parse_params "$@"
 
@@ -96,6 +120,11 @@ ki_cp_user_registry_push_jobs=""
 
 etc_svc_root_path=""
 var_svc_root_path=""
+
+# For cleanup: where the output of the pushes is kept while they run, and whether
+# this run has the registry writable
+push_logs_path=""
+registry_writable="false"
 
 # Puts the artifacts of an archive, images and charts alike, into the user
 # registry of this node.
@@ -131,9 +160,11 @@ main() {
   # Writable only while this is pushing, and readonly again before it returns.
   # Between those two the registry would take a push from anywhere, and a push
   # that did not come through here reaches one node out of several
+  registry_writable="true"
   set_readonly "false"
   push_artifacts "$artifacts_path"
   set_readonly "true"
+  registry_writable="false"
 
   rm -rf "$artifacts_path"
   report_usage
@@ -146,7 +177,14 @@ extract_archive() {
 
   rm -rf "$artifacts_path"
   mkdir -p "$(dirname "$artifacts_path")"
-  tar xzf "$archive_path" -C "$(dirname "$artifacts_path")"
+  # pigz reads, writes and checks on threads of their own while it inflates, so
+  # an archive of several GB is unpacked sooner where it is installed. The same
+  # gzip either way, and plain tar where it is not
+  if command -v pigz > /dev/null 2>&1; then
+    tar -I pigz -xf "$archive_path" -C "$(dirname "$artifacts_path")"
+  else
+    tar xzf "$archive_path" -C "$(dirname "$artifacts_path")"
+  fi
 
   require_directory_exists "$artifacts_path"
 
@@ -212,6 +250,7 @@ push_artifacts() {
 
   local logs_path
   logs_path=$(mktemp -d)
+  push_logs_path=$logs_path
 
   local -a pids=()
   local -A refs_by_pid=()
@@ -247,6 +286,7 @@ push_artifacts() {
   done
 
   rm -rf "$logs_path"
+  push_logs_path=""
 
   if [[ ${#failed_refs[@]} -gt 0 ]]; then
     for ref in "${failed_refs[@]}"; do
@@ -271,7 +311,10 @@ reap_pushes() {
       running+=("$pid")
       continue
     fi
+    # under the name of its artifact: with several pushes ending together, what
+    # crane said would otherwise have to be matched to an artifact by its order
     if [[ -s ${logs_by_pid[$pid]} ]]; then
+      msg "[INFO] crane on artifact[\"${refs_by_pid[$pid]}\"]:"
       cat >&2 "${logs_by_pid[$pid]}"
     fi
     if ! wait "$pid"; then
