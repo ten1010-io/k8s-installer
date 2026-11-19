@@ -23,13 +23,16 @@
         msg: "No such file or directory of which path is \"{{ archive }}\""
       when: not (archive | ansible.builtin.expanduser) is exists
 
-# The control node is a ki cp node (check-control-node.yml) and already holds
-# the archive, so it reads it where it is. Copying it there went over ssh to the
-# same machine, with a sha1 of the whole archive on each side and one more write
-# of it, before anything was pushed. The other ki cp nodes are given a copy, and
-# so is the control node when root can not read the archive where it is (a
-# root_squash NFS home, a FUSE mount of the login user), as the copy reads it as
-# the user that runs ansible
+# The control node, where the inventory names one and it is a ki cp node of this
+# play, already holds the archive, so it reads it where it is. Copying it there
+# went over ssh to the same machine, with a sha1 of the whole archive on each
+# side and one more write of it, before anything was pushed. The other ki cp
+# nodes are given a copy, and so is the control node when it can not be
+# confirmed that root reads the archive where it is (a root_squash NFS home, a
+# FUSE mount of the login user), as the copy reads it as the user that runs
+# ansible. This playbook does not import check-control-node.yml: with no control
+# node named, or one that is not a ki cp node, every node is given a copy, as
+# before
 - hosts: ki_cp_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
@@ -62,8 +65,9 @@
     - name: Say the archive is copied on the control node as well
       debug:
         msg: >-
-          root can not read {{ archive_abs_path }} where it is, so it is copied to
-          {{ node_archive_path }} as on the other nodes. Put it on a local disk to skip the copy
+          It could not be confirmed that root can read {{ archive_abs_path }} where it is (sudo test -r
+          failed), so it is copied to {{ node_archive_path }} as on the other nodes. Put it on a local disk
+          to skip the copy
       when:
         - inventory_hostname == ki_control_node_ih
         - not (in_place | bool)
