@@ -1,0 +1,46 @@
+# Reports the nodes whose kubelet_reserved_system_cpus works and is probably not
+# what was meant: numa nodes that are not reserved alike, one with no reserved
+# cpu or less than a core of them, and under the static policy without
+# full-pcpus-only a core whose threads are not reserved together.
+#
+# None of those is refused. kubelet runs with every one of them, and which of
+# them is a mistake depends on what the node is for - a machine that hands out
+# whole numa nodes wants them reserved alike, and one that does not may not
+# care. So they are said at the end of every run rather than in the way of it,
+# the way a shortfall of hugepages is said by check-kernel-args.yml.
+#
+# What is refused - a cpu the node does not have, half a core under
+# full-pcpus-only - is refused by check-kubelet-reserved-cpus.yml before
+# anything is applied. This prints those lines as well when it finds them, which
+# it only can when it is run on its own:
+#
+#   ansible-playbook -i inventory.yml playbooks/tasks/report-kubelet-reserved-cpus.yml
+#
+# That is why the values are given to the script as arguments rather than read
+# from the vars file of the node. check-kernel-args.yml is the same shape for
+# the same reason
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Execute check-reserved-cpus.sh
+      shell: >-
+        sudo {{ ki_opt_scripts_path }}/k8s-node/kubelet-policy/check-reserved-cpus.sh
+        --node {{ inventory_hostname }}
+        --reserved-cpus {{ kubelet_reserved_system_cpus | string | quote }}
+        --cpu-manager-policy {{ kubelet_cpu_manager_policy }}
+        --full-pcpus-only {{ kubelet_cpu_manager_full_pcpus_only | lower }}
+      register: shell_result
+      changed_when: false
+      when: kubelet_reserved_system_cpus
+
+    - name: Report how the reserved cpus of this node are laid over its cores and numa nodes
+      debug:
+        msg: "{{ shell_result.stdout_lines }}"
+      when:
+        - shell_result.stdout is defined
+        - shell_result.stdout | trim | length > 0
+
+    - name: "Remove temporary variable[\"shell_result\"]"
+      set_fact:
+        shell_result: null

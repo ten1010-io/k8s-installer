@@ -23,6 +23,12 @@
 # node, and before the snapshot below, which a full disk would fail
 - import_playbook: tasks/check-node-state.yml
 
+# After the checks of the node itself and before anything is written to it. A
+# kubelet_reserved_system_cpus the machine can not take is a kubelet that does
+# not start, which is found out here rather than by the join that waits on it.
+# See the file
+- import_playbook: tasks/check-kubelet-reserved-cpus.yml
+
 - import_playbook: tasks/backup-etcd.yml
 
 - import_playbook: tasks/reconcile-k8s-registry.yml
@@ -62,6 +68,8 @@
 - import_playbook: tasks/check-vfio-pci.yml
 
 - import_playbook: tasks/check-kernel-args.yml
+
+- import_playbook: tasks/report-kubelet-reserved-cpus.yml
 
 - import_playbook: tasks/check-nvidia-cdi.yml
 

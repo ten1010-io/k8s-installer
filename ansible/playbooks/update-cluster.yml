@@ -16,6 +16,11 @@
 # is still as it was. See the file
 - import_playbook: tasks/check-kubelet-restart.yml
 
+# Before anything is applied as well, and for every node rather than for the
+# ones this run changes: a kubelet_reserved_system_cpus the machine can not take
+# is a node drained for a kubelet that does not come back. See the file
+- import_playbook: tasks/check-kubelet-reserved-cpus.yml
+
 - import_playbook: tasks/apply-service-var-changes.yml
 
 # Not under the class["service"] condition of the play before it. What the
@@ -74,6 +79,8 @@
 - import_playbook: tasks/check-vfio-pci.yml
 
 - import_playbook: tasks/check-kernel-args.yml
+
+- import_playbook: tasks/report-kubelet-reserved-cpus.yml
 
 - import_playbook: tasks/check-nvidia-cdi.yml
 

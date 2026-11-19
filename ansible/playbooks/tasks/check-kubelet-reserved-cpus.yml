@@ -1,0 +1,59 @@
+# Refuses a kubelet_reserved_system_cpus the machine it is written for can not
+# take, before anything is applied.
+#
+# validate-hostvars.py has already read the variable as a cpu set. What it can
+# not know on the control node is the machine: whether the numbers are cpus the
+# node has, and whether the threads of a core are in the set together. Those are
+# asked of each node by check-reserved-cpus.sh, which answers from sysfs.
+#
+# Asked here rather than left to kubelet, because of what applying the set is.
+# It is a variable of class["kubelet_policy"]: the node is drained, its
+# checkpoints are taken away and kubelet is brought back with the new set. A
+# kubelet given a cpu the node does not have does not come back - it exits with
+# "reserved-cpus: 0,8 is not a subset of online-cpus: 0-3" every ten seconds,
+# under any cpu manager policy - and by then the pods of the node are gone.
+# Running again does not undo it either: with the inventory put back nothing has
+# changed since the last record, so nothing is applied, and with another set
+# the drain waits on pods a dead kubelet never ends. So it is asked before.
+#
+# Every node that names a set is asked, on every run, and not only the nodes
+# whose set this run changes. A set that is refused is refused wherever it is
+# found: the node that already runs with half a core reserved under
+# full-pcpus-only is the same mistake as the one about to.
+#
+# The lines that only report - the numa nodes reserved unevenly, half a core
+# where full-pcpus-only is off - are not shown here. They are no reason to stop,
+# and report-kubelet-reserved-cpus.yml says them at the end of the run, where
+# what is said is read
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - when: kubelet_reserved_system_cpus
+      block:
+        - name: Execute check-reserved-cpus.sh
+          shell: >-
+            sudo {{ ki_opt_scripts_path }}/k8s-node/kubelet-policy/check-reserved-cpus.sh
+            --node {{ inventory_hostname }}
+            --reserved-cpus {{ kubelet_reserved_system_cpus | string | quote }}
+            --cpu-manager-policy {{ kubelet_cpu_manager_policy }}
+            --full-pcpus-only {{ kubelet_cpu_manager_full_pcpus_only | lower }}
+          register: reserved_cpus_result
+          changed_when: false
+
+        # A task that fails under any_errors_fatal still runs on every node of
+        # the play before the run stops, so each node that was refused says so
+        # and the operator corrects the inventory once
+        - name: "Refuse the reserved cpus of node[\"{{ inventory_hostname }}\"]"
+          fail:
+            msg: |-
+              Variable["kubelet_reserved_system_cpus"] of node["{{ inventory_hostname }}"] does not fit the machine:
+              {{ reserved_cpus_result.stdout_lines | select('match', '\[ERROR\]') | join('\n') }}
+              Nothing was applied. playbooks/list-pci-devices.yml prints the cpus of every numa
+              node of a node, and file["/sys/devices/system/cpu/cpu<n>/topology/thread_siblings_list"]
+              on the node names the threads of the core cpu <n> is on
+          when: reserved_cpus_result.stdout_lines | select('match', '\[ERROR\]') | list | length > 0
+
+        - name: "Remove temporary variable[\"reserved_cpus_result\"]"
+          set_fact:
+            reserved_cpus_result: null
