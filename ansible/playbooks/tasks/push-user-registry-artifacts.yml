@@ -24,10 +24,12 @@
       when: not (archive | ansible.builtin.expanduser) is exists
 
     # Which file the archive is on the machine this runs from: its device, its
-    # inode, its size and when it was written. The play below reads the archive
-    # in place only on a node where the same path shows the same four
+    # inode, its size, when it was written and when its inode last changed. The
+    # play below reads the archive in place only on a node where the same path
+    # shows the same five. The last is there because a copy that keeps the times
+    # of a file (cp -p, rsync -a) can not keep that one
     - name: Execute stat
-      shell: "stat -c '%d:%i:%s:%Y' {{ archive | ansible.builtin.expanduser | ansible.builtin.realpath | quote }}"
+      shell: "stat -c '%d:%i:%s:%Y:%Z' {{ archive | ansible.builtin.expanduser | ansible.builtin.realpath | quote }}"
       register: shell_result
       changed_when: false
 
@@ -62,7 +64,7 @@
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
     # Absolute, because the control node reads it through a shell of its own,
     # under sudo, where ~ and a path relative to here mean another place. The
-    # filters run on the control node, from the directory ansible was started in
+    # filters run on the machine ansible runs on, from the directory it was started in
     archive_abs_path: "{{ archive | ansible.builtin.expanduser | ansible.builtin.realpath }}"
     node_archive_path: >-
       {{ archive_abs_path if in_place | bool
@@ -74,7 +76,7 @@
     - name: Check this node holds the archive and root can read it where it is
       shell: >-
         sudo test -r {{ archive_abs_path | quote }}
-        && sudo stat -c '%d:%i:%s:%Y' {{ archive_abs_path | quote }}
+        && sudo stat -c '%d:%i:%s:%Y:%Z' {{ archive_abs_path | quote }}
       register: shell_result
       changed_when: false
       failed_when: false
@@ -92,8 +94,8 @@
         msg: >-
           It could not be confirmed that this node holds {{ archive_abs_path }} where root can read it
           (sudo test -r failed, or the file at that path is not the one this was started with), so it is
-          copied to {{ node_archive_path }} as on the other nodes. Put it on a local disk of the node
-          this is run from to skip the copy
+          copied to {{ node_archive_path }} as on the other nodes. To skip the copy, put it on a local
+          disk of the node this is run from and have control_node_ih of inventory.yml name that node
       when:
         - inventory_hostname == ki_control_node_ih
         - not (in_place | bool)
