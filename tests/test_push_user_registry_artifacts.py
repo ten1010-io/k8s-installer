@@ -14,7 +14,7 @@ pushing and fails for an artifact that asks it to. So what is checked is the
 shell of the script - the pool, the traps, the order - and not the registry,
 which a run against a real one has to show.
 
-Needs gnu find and a bash of 4.3 or later, as the script does.
+Needs gnu find and a bash of 4.4 or later, as the script does.
 """
 import os
 import signal
@@ -37,14 +37,30 @@ value=$(sed -n "s/^$key: //p")
 echo "${value:-null}"
 """
 
+# RENDER_FAILS names the value of readonly_enabled it fails to render for
 JINJA2 = """#!/usr/bin/env bash
 for arg in "$@"; do
-  case $arg in readonly_enabled=*) echo "${arg#readonly_enabled=}" >> "$STATE/readonly" ;; esac
+  case $arg in
+  readonly_enabled=*)
+    echo "${arg#readonly_enabled=}" >> "$STATE/readonly"
+    [[ ${arg#readonly_enabled=} == "${RENDER_FAILS-}" ]] && exit 1
+    ;;
+  esac
 done
+exit 0
+"""
+
+# The real one, unless the test asks for a node that can not make a directory
+MKTEMP = """#!/usr/bin/env bash
+[[ -n ${MKTEMP_FAILS-} ]] && exit 1
+PATH=${PATH#*:} exec mktemp "$@"
 """
 
 DOCKER = """#!/usr/bin/env bash
 echo "$*" >> "$STATE/docker"
+echo call >> "$STATE/docker-calls"
+[[ -n ${DOCKER_IS_SLOW-} ]] && sleep 1
+exit 0
 """
 
 CURL = """#!/usr/bin/env bash
@@ -86,6 +102,7 @@ class Node:
         self._stub(root / "opt" / "venv" / "bin" / "jinja2", JINJA2)
         self._stub(root / "path" / "docker", DOCKER)
         self._stub(root / "path" / "curl", CURL)
+        self._stub(root / "path" / "mktemp", MKTEMP)
         for path in ("opt/scripts", "etc/ki-cp-user-registry", "var/ki-cp-user-registry", "tmp"):
             (root / path).mkdir(parents=True)
 
@@ -239,10 +256,45 @@ def test_a_signal_stops_the_pushes_and_puts_the_registry_back(node, sent, status
     assert node.lines("readonly") == ["false", "true"]
 
 
+def test_a_second_signal_does_not_stop_the_registry_being_closed(node):
+    process = subprocess.Popen(node.command(2, dict.fromkeys(SIX, "slow")),
+                               env=node.env(DOCKER_IS_SLOW="yes"),
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               preexec_fn=lambda: signal.signal(signal.SIGTERM, signal.SIG_DFL))
+    deadline = time.monotonic() + 60
+    while len(node.lines("pids")) < 2 and time.monotonic() < deadline:
+        time.sleep(0.05)
+    process.send_signal(signal.SIGTERM)
+    # the registry is being taken down and brought up again, a second each
+    while node.lines("readonly") != ["false", "true"] and time.monotonic() < deadline:
+        time.sleep(0.05)
+    process.send_signal(signal.SIGTERM)
+
+    assert process.wait(timeout=60) == 143
+    assert len(node.lines("docker-calls")) == 4
+
+
 def test_a_step_that_fails_in_a_subshell_closes_the_registry_once(node):
     # mktemp fails inside a $(...), where the ERR trap runs as well
-    result = node.run(2, SIX, TMPDIR=str(node.root / "nowhere"))
+    result = node.run(2, SIX, MKTEMP_FAILS="yes")
 
     assert result.returncode == 1
     assert node.pushed() == []
     assert node.lines("readonly") == ["false", "true"]
+
+
+def test_a_registry_that_can_not_be_closed_is_said_and_docker_is_left_alone(node):
+    result = node.run(2, dict(SIX, a="fail"), RENDER_FAILS="true")
+
+    assert result.returncode == 1
+    assert "could not be made readonly again" in result.stderr
+    # down and up for the opening, and nothing after the render that failed:
+    # restarting from the compose.yml of the opening would only look like closing
+    assert len(node.lines("docker-calls")) == 2
+
+
+def test_the_output_of_the_pushes_is_kept_under_the_directory_of_the_installer(node):
+    result = node.run(2, SIX, TMPDIR=str(node.root / "nowhere"))
+
+    assert result.returncode == 0, result.stderr
+    assert list((node.root / "tmp").iterdir()) == []

@@ -261,7 +261,7 @@ ki_cp_user_registry_port: 5001
 # node of 8 cpus or more pushes 4 at once and one of 4 cpus pushes 2.
 #
 # The cpus, because the registry hashes every blob it takes and the connection
-# it arrives on is encrypted, which costs about one core per push in flight.
+# it arrives on is encrypted, which is cpu work for every push in flight.
 # Half of them, because the node is running the rest of the cluster meanwhile.
 #
 # Not more than 4 for now. The archive and the registry share the disk of the

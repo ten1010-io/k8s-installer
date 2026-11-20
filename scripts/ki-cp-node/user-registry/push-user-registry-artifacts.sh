@@ -76,10 +76,15 @@ cleanup() {
   # behind is the main shell's to clean up, once, and it does when the failure
   # reaches it
   [[ $BASHPID == "$$" ]] || return 0
-  trap - SIGINT SIGTERM ERR EXIT
+  # Not to be interrupted from here on. A second ctrl-c that landed between the
+  # down and the up of set_readonly would leave the registry stopped, which is
+  # worse than writable. Ignored rather than reset, because docker compose
+  # inherits a signal that is ignored
+  trap '' SIGINT SIGTERM SIGHUP
+  trap - ERR EXIT
 
   local running
-  running=$(jobs -p)
+  running=$(jobs -rp)
   if [[ -n $running ]]; then
     # shellcheck disable=SC2086
     kill $running 2> /dev/null || true
@@ -91,8 +96,10 @@ cleanup() {
   if [[ ${registry_writable-} == "true" ]]; then
     # Said to nobody. When the connection this ran over is gone, so is what the
     # output was written to, and docker compose dies of that write before it
-    # has done anything, which left the registry writable
-    set_readonly "true" > /dev/null 2>&1 ||
+    # has done anything, which left the registry writable. In a subshell, so
+    # that a registry that does not come back ends the attempt rather than the
+    # cleanup, and the warning is reached
+    (set_readonly "true") > /dev/null 2>&1 ||
       msg "[WARN] The user registry could not be made readonly again: run this again" || true
   fi
 }
@@ -206,10 +213,13 @@ set_readonly() {
               -D readonly_enabled="$readonly_enabled" \
               --format yaml \
               -o "$etc_svc_root_path""/compose.yml" \
-              "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$vars_path"
+              "$SCRIPT_DIR_PATH"/templates/compose.yml.j2 "$vars_path" || return 1
 
-  docker compose -f "$etc_svc_root_path/compose.yml" down
-  docker compose -f "$etc_svc_root_path/compose.yml" up -d
+  # Each step is checked by hand because cleanup calls this where set -e is off,
+  # and going on from a compose.yml that was not rendered would bring the
+  # registry back the way it was and say nothing
+  docker compose -f "$etc_svc_root_path/compose.yml" down || return 1
+  docker compose -f "$etc_svc_root_path/compose.yml" up -d || return 1
   wait_registry_ready 60
 
   return 0
@@ -257,7 +267,7 @@ push_artifacts() {
   local artifacts_path=$1
 
   local logs_path
-  logs_path=$(mktemp -d)
+  logs_path=$(mktemp -d -p "$ki_tmp_root_path")
   push_logs_path=$logs_path
 
   local -a pids=()
@@ -269,6 +279,7 @@ push_artifacts() {
   local layout
   local ref
   for layout in $(find "$artifacts_path" -name oci-layout -printf '%h\n' | sort); do
+    reap_pushes
     [[ ${#failed_refs[@]} -gt 0 ]] && break
     while [[ ${#pids[@]} -ge $ki_cp_user_registry_push_jobs ]]; do
       wait -n || true
@@ -308,14 +319,20 @@ push_artifacts() {
 
 # Takes every push of push_artifacts that has ended out of pids, prints what
 # crane said and records the push in failed_refs when it failed. A push counts as
-# ended once its process is gone: bash reaps a finished job by itself and keeps
-# its status for the wait below. The status is asked for by pid because the
-# wait -n that woke the caller can not say whose it was on the bash of rhel 8
+# ended once bash no longer lists it as a running job, which is asked of bash
+# rather than of the pid: a pid is handed out again once its process is gone.
+# bash keeps the status of a finished job for the wait below, and the status is
+# asked for by pid because the wait -n that woke the caller can not say whose it
+# was on the bash of rhel 8
 reap_pushes() {
+  local alive
+  alive=$(jobs -rp)
+  alive=" ${alive//$'\n'/ } "
+
   local -a running=()
   local pid
   for pid in "${pids[@]}"; do
-    if kill -0 "$pid" 2> /dev/null; then
+    if [[ $alive == *" $pid "* ]]; then
       running+=("$pid")
       continue
     fi
