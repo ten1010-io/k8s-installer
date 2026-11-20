@@ -256,6 +256,28 @@ ki_cp_k8s_registry_port: 5000
 # kubeadm pulls from. What it holds is decided by whoever runs the cluster and
 # carried in with push-user-registry-artifacts.yml, so no release ever fills it
 ki_cp_user_registry_port: 5001
+# How many artifacts push-user-registry-artifacts.sh pushes into that registry
+# at once. Null asks the node: half of its cpus, at least 2 and at most 4, so a
+# node of 8 cpus or more pushes 4 at once and one of 4 cpus pushes 2.
+#
+# The cpus, because the registry hashes every blob it takes and the connection
+# it arrives on is encrypted, which is cpu work for every push in flight.
+# Half of them, because the node is running the rest of the cluster meanwhile.
+#
+# Not more than 4 for now. The archive and the registry share the disk of the
+# node, a ki cp node can also be a control plane node whose etcd writes to that
+# same disk, and some sites run on slow disks, where more pushes only take turns
+# at it while etcd waits behind them. 4 is what was tested; it is raised once a
+# larger count has been measured on a real archive. A blob two images share is
+# skipped by the second push when the registry already holds it, and sent by
+# both when they reach it together: the registry keeps one copy under its
+# digest either way.
+#
+# Set by hand with -e ki_cp_user_registry_push_jobs=<n> on
+# push-user-registry-artifacts.yml, and a number given is used as it is. 1
+# pushes one at a time, the way this always did, which is the answer for a node
+# whose disk etcd can not share
+ki_cp_user_registry_push_jobs: null
 
 # The kubernetes version this cluster runs, which is the patch the release pins
 # for the minor vars.yml asked for. Not set directly anywhere: the minor is the
