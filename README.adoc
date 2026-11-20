@@ -667,7 +667,27 @@ LVM 논리 볼륨이면 `/dev/<vg>/<lv>` 도 재부팅에 안정적인 경로입
   상태가 들어 있습니다
 ====
 
-지정하지 않으면(`null`) 아무것도 하지 않고 기존처럼 루트 디스크를 씁니다.
+빈 디스크는 없지만 이미 마운트된 파일시스템(데이터 디스크 등)이 있으면 `ephemeral_storage_path`
+에 그 위의 디렉토리를 지정합니다. 포맷하지 않고, 디스크를 마운트하던 자리에 그 디렉토리를 bind
+mount 합니다.
+
+[source,yaml]
+----
+k8s_node:
+  hosts:
+    node5:
+      ephemeral_storage_path: "/data/k8s"
+----
+
+* 한 노드에는 `ephemeral_storage_device` 와 `ephemeral_storage_path` 중 *하나만* 지정합니다
+* 디렉토리는 미리 있어야 하고, 루트가 아닌 ext4 또는 xfs 파일시스템 위여야 하며, 그
+  파일시스템은 `/etc/fstab` 으로 부팅 때 마운트되어야 합니다 (`_netdev`, `ro`, `noexec`,
+  `nosuid`, `nodev` 없이). 맞지 않으면 설치가 거기서 멈춥니다
+* kubelet 은 그 파일시스템 전체의 크기와 사용량으로 예약과 축출을 계산합니다. 같은 디스크에
+  둔 다른 데이터가 늘면 파드가 축출될 수 있으니, 가능하면 이 용도로만 쓰는 파일시스템을 줍니다
+* reset 은 그 디렉토리 아래 `kubelet`, `pod-logs`, `containerd` 의 내용만 지우고 나머지는 남깁니다
+
+둘 다 지정하지 않으면(`null`) 아무것도 하지 않고 기존처럼 루트 디스크를 씁니다.
 설계 판단은 link:docs/impl-notes.adoc[구현 노트]에 있습니다.
 
 === 파드와 서비스 서브넷

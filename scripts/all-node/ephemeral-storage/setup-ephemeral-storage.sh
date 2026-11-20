@@ -4,11 +4,12 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--device path] [--mount-path path]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--device path | --path path] [--mount-path path]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
 --device        Block device that holds the ephemeral storage of the node
+--path          Directory of a filesystem that is already mounted, in place of a device
 --mount-path    Directory the device is mounted at
 EOF
   exit
@@ -16,6 +17,7 @@ EOF
 
 parse_params() {
   device=""
+  path=""
   mount_path=""
 
   while :; do
@@ -26,6 +28,11 @@ parse_params() {
     --device)
       [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
       device="${2-}"
+      shift
+      ;;
+    --path)
+      [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
+      path="${2-}"
       shift
       ;;
     --mount-path)
@@ -41,7 +48,9 @@ parse_params() {
 
   args=("$@")
 
-  [[ -z "${device-}" ]] && die "[ERROR] Missing required option: --device"
+  [[ -z "${device-}" && -z "${path-}" ]] && die "[ERROR] Missing required option: --device or --path"
+  [[ -n "${device-}" && -n "${path-}" ]] &&
+    die "[ERROR] Option --device and option --path are both given. A node keeps its ephemeral storage on one of them"
   [[ -z "${mount_path-}" ]] && die "[ERROR] Missing required option: --mount-path"
 
   return 0
@@ -118,6 +127,11 @@ SVC_NAMES=(containerd kubelet)
 ki_opt_scripts_path=$(cd "$SCRIPT_DIR_PATH"/../.. &>/dev/null && pwd -P)
 
 main() {
+  if [[ -n $path ]]; then
+    setup_directory
+    return 0
+  fi
+
   require_block_device
 
   # Checked before the guards below, so that a repeated run against a node that is
@@ -135,7 +149,176 @@ main() {
   local uuid
   uuid=$(get_filesystem_uuid)
 
-  write_fstab_entries "$uuid"
+  write_fstab_entries "UUID=$uuid $mount_path $FS_TYPE defaults 0 2"
+  mount_all
+
+  return 0
+}
+
+# The directory takes the place of the device and nothing else changes: it is
+# bind mounted at the mount path, where the device would be mounted, and from
+# there on the node is laid out the way a device leaves it. That is what lets
+# reset-ephemeral-storage.sh take both apart the same way.
+#
+# Everything is checked before the first line is written. The filesystem is the
+# site's and so is what is on it, so a run that is refused leaves nothing behind
+setup_directory() {
+  require_directory
+  require_directory_apart
+  require_configured_from_directory_or_not_at_all
+
+  if is_configured; then
+    msg "[INFO] Ephemeral storage of directory[\"$path\"] already configured"
+    return 0
+  fi
+
+  require_nothing_half_set_up
+  require_directory_filesystem
+  require_directory_subdirectories_unused
+  require_runtimes_not_enabled
+  require_bind_mount_targets_empty
+
+  # requires-mounts-for has systemd mount the filesystem holding the directory
+  # before this, which it does from the line of /etc/fstab that
+  # require_directory_filesystem asked for
+  #
+  # rslave, because the directory is shared with the filesystem it is on, as
+  # every mount of a systemd host is. Left that way, each volume kubelet mounts
+  # for a pod would show up under the directory of the site as well, where a
+  # backup or a cleanup of that disk walks into it and an unmount there takes it
+  # from the pod. A slave still receives the mounts of the site and hands none
+  # back
+  write_fstab_entries "$path $mount_path none bind,rslave,x-systemd.requires-mounts-for=$path 0 0"
+  mount_all
+
+  return 0
+}
+
+# Given the way it is written into /etc/fstab and compared with what is there:
+# absolute, with no link and no dot on the way, and made of characters a field
+# of fstab holds as they are. Never made here. A directory that is missing is a
+# path spelled wrong or a disk that is not mounted yet, and making it would put
+# the data on whatever filesystem happens to be underneath
+require_directory() {
+  [[ $path =~ ^/[A-Za-z0-9._/@+-]*$ ]] ||
+    die "[ERROR] Directory[\"$path\"] is not an absolute path of letters, digits and . _ - @ + /"
+  [[ ! -e $path ]] && die "[ERROR] No such file or directory of which path is \"$path\". It is not made here: mount the filesystem and make the directory first"
+  [[ ! -d $path ]] && die "[ERROR] File[\"$path\"] is not a directory"
+
+  local real_path
+  real_path=$(realpath -e "$path")
+  [[ $real_path != "$path" ]] &&
+    die "[ERROR] Directory[\"$path\"] is \"$real_path\" once its links and dots are followed. Give that path"
+
+  return 0
+}
+
+# Neither inside nor around the mount path and the three paths that are bind
+# mounted, which would mount the directory into itself
+require_directory_apart() {
+  local other
+  for other in "$mount_path" "$KUBELET_PATH" "$POD_LOGS_PATH" "$CONTAINERD_PATH"; do
+    if [[ $path = "$other" || $path = "$other"/* || $other = "$path"/* ]]; then
+      die "[ERROR] Directory[\"$path\"] holds or is inside[\"$other\"], which this mounts onto"
+    fi
+  done
+
+  return 0
+}
+
+# What the block in /etc/fstab was written from, whichever of the two it was:
+# the first field of its first entry
+configured_source() {
+  sed -n "/^$FSTAB_BEGIN_MARKER\$/{n;p;}" "$FSTAB_PATH" | cut -d' ' -f1
+
+  return 0
+}
+
+# is_configured does not look at what the node was set up from, so a node that
+# was given another directory, or a device, would be reported as done
+require_configured_from_directory_or_not_at_all() {
+  local source
+  source=$(configured_source)
+
+  local error_msg="[ERROR] Ephemeral storage is already set up from[\"$source\"], not from directory[\"$path\"]."
+  error_msg+=" Take the node out with remove-node and add it back with add-node"
+  [[ -n $source && $source != "$path" ]] && die "$error_msg"
+
+  return 0
+}
+
+# A run that stopped part way has mounts up that mounting again would stack
+# another on top of. reset-ephemeral-storage.sh finishes taking those apart
+require_nothing_half_set_up() {
+  local target
+  for target in "$mount_path" "$KUBELET_PATH" "$POD_LOGS_PATH" "$CONTAINERD_PATH"; do
+    if is_mountpoint "$target"; then
+      die "[ERROR] Directory[\"$target\"] is already a mount point, left by a run that did not finish. Reset the node first"
+    fi
+  done
+
+  return 0
+}
+
+# What the device gets by being formatted here has to be asked of a filesystem
+# that is the site's.
+#
+# Not the root filesystem, which is what this exists to get the data off, and
+# where a directory ends up when the disk meant for it is not mounted. Told by
+# the device rather than by where it is mounted, since a bind mount of a
+# directory of the root filesystem is still the root filesystem. ext4 or
+# xfs, which is what containerd is run on; that also leaves out anything reached
+# over the network and anything kept in memory. Mounted without ro, noexec,
+# nosuid or nodev, since the root filesystems of the containers run from here.
+#
+# And mounted by a line of /etc/fstab, without _netdev. The bind mount waits for
+# the filesystem at boot through the unit systemd makes of that line; a
+# filesystem mounted by hand would not be there after a reboot, and the bind
+# mount would be made from the empty directory underneath it. One that waits for
+# the network is mounted after the local filesystems the bind mounts belong to
+require_directory_filesystem() {
+  local fs_target fs_type fs_options
+  fs_target=$(findmnt -nro TARGET -T "$path") || die "[ERROR] Fail to find the filesystem of directory[\"$path\"]"
+  fs_type=$(findmnt -nro FSTYPE -T "$path")
+  fs_options=$(findmnt -nro OPTIONS -T "$path")
+
+  [[ $(stat -c %d "$path") = "$(stat -c %d /)" ]] &&
+    die "[ERROR] Directory[\"$path\"] is on the root filesystem. Give a directory of another filesystem, and check that it is mounted"
+  [[ $fs_type != ext4 && $fs_type != xfs ]] &&
+    die "[ERROR] Directory[\"$path\"] is on a[\"$fs_type\"] filesystem, expected ext4 or xfs"
+
+  local option
+  for option in ro noexec nosuid nodev; do
+    [[ ,$fs_options, = *,$option,* ]] &&
+      die "[ERROR] Filesystem[\"$fs_target\"] is mounted with option[\"$option\"], which containers can not run under"
+  done
+
+  local fstab_options
+  fstab_options=$(findmnt --fstab -nro OPTIONS --mountpoint "$fs_target") ||
+    die "[ERROR] Filesystem[\"$fs_target\"] has no line in $FSTAB_PATH. It has to be mounted from there at boot, before the bind mounts"
+  [[ ,$fstab_options, = *,_netdev,* ]] &&
+    die "[ERROR] Filesystem[\"$fs_target\"] is mounted with option[\"_netdev\"] in $FSTAB_PATH. Give a directory of a local disk"
+
+  return 0
+}
+
+# Looked at through the directory itself, before anything is mounted. A link is
+# refused because the data would be kept where it points, and the reset, which
+# does not follow one, would leave that data in place
+require_directory_subdirectories_unused() {
+  local entry
+  for entry in "${BIND_MOUNTS[@]}"; do
+    [[ -L $path/${entry%%:*} ]] &&
+      die "[ERROR] File[\"$path/${entry%%:*}\"] is a symbolic link. Remove it, or give another directory"
+    require_directory_empty "$path/${entry%%:*}" \
+      "It holds data of an earlier installation, or of something else. Empty it, or give another directory"
+  done
+
+  return 0
+}
+
+# The rest of a set up, the same from a device and from a directory
+mount_all() {
   "$ki_opt_scripts_path"/systemctl.sh reload
 
   mkdir -p "$mount_path"
@@ -201,6 +384,7 @@ require_bind_mount_targets_empty() {
 require_subdirectories_empty() {
   local reason="Device[\"$device\"] holds data of an earlier installation."
   reason+=" Wipe it with \"wipefs -a $device\" to reuse the device"
+  [[ -n $path ]] && reason="Directory[\"$path\"] holds data of an earlier installation"
 
   local entry
   for entry in "${BIND_MOUNTS[@]}"; do
@@ -297,13 +481,13 @@ probe_device() {
 # path, but requires-mounts-for says it outright rather than relying on the
 # version of systemd the node happens to have
 write_fstab_entries() {
-  local uuid=$1
+  local mount_path_entry=$1
 
   remove_fstab_entries
 
   {
     echo "$FSTAB_BEGIN_MARKER"
-    echo "UUID=$uuid $mount_path $FS_TYPE defaults 0 2"
+    echo "$mount_path_entry"
 
     local entry
     for entry in "${BIND_MOUNTS[@]}"; do
