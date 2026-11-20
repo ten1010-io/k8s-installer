@@ -137,7 +137,9 @@ def test_a_device_and_a_directory_for_the_ephemeral_storage_are_refused(hostvars
     hostvars["node2"]["ephemeral_storage_device"] = "/dev/vdb"
     hostvars["node2"]["ephemeral_storage_path"] = "/data/k8s"
 
-    assert_refused(hostvars, naming="ephemeral_storage_path")
+    report = assert_refused(hostvars, naming="ephemeral_storage_device is set as well")
+    # the report quotes the path, not the rest of what the node was given
+    assert "ansible_host" not in report
 
 
 def test_handing_over_every_gpu_without_naming_a_device_is_refused(hostvars):

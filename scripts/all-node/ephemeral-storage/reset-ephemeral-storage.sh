@@ -98,9 +98,10 @@ SVC_NAMES=(containerd kubelet)
 ki_opt_scripts_path=$(cd "$SCRIPT_DIR_PATH"/../.. &>/dev/null && pwd -P)
 
 # Whether the node was set up from a device, read before the entries go: the
-# first of them mounts the device, and is a bind mount when the node was given a
-# directory. Only a device is the installer's to delete in without looking
-# twice, so a node whose entries are already gone is treated as the other kind
+# first of them mounts the device by its uuid, and is a bind mount when the node
+# was given a directory. Only a device is the installer's to delete in without
+# looking twice, so anything else, entries already gone or edited by hand
+# included, is treated as the other kind
 of_device="false"
 
 main() {
@@ -114,7 +115,7 @@ main() {
 
   local first_entry
   first_entry=$(sed -n "/^$FSTAB_BEGIN_MARKER\$/{n;p;}" "$FSTAB_PATH")
-  if [[ -n $first_entry && $first_entry != *" none bind,"* ]]; then
+  if [[ $first_entry = UUID=* ]]; then
     of_device="true"
   fi
 

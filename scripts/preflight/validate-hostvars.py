@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Literal, Optional, Annotated, Union
 
 import yaml
 from pydantic import BaseModel, ValidationError, StringConstraints, ConfigDict, field_validator, Field, \
-    PositiveInt, NonNegativeInt, model_validator
+    PositiveInt, NonNegativeInt
 
 FQDN_PATTERN = r"^((?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,}$"
 K8S_MINOR_VERSION_PATTERN = r"^[0-9]+\.[0-9]+$"
@@ -1363,12 +1363,14 @@ class VarsModel(BaseModel):
     # on the node by setup-ephemeral-storage.sh, which runs before this does
     ephemeral_storage_path: Optional[PurePosixPath] = None
 
-    @model_validator(mode="after")
-    def one_place_for_the_ephemeral_storage(self) -> VarsModel:
-        if self.ephemeral_storage_device is not None and self.ephemeral_storage_path is not None:
-            raise ValueError(
-                "ephemeral_storage_device and ephemeral_storage_path are both set. A node is given one of them")
-        return self
+    # On the field rather than on the model, so that what the report quotes is
+    # this one path and not every variable of the node
+    @field_validator("ephemeral_storage_path")
+    @classmethod
+    def one_place_for_the_ephemeral_storage(cls, path: Optional[PurePosixPath], info) -> Optional[PurePosixPath]:
+        if path is not None and info.data.get("ephemeral_storage_device") is not None:
+            raise ValueError("ephemeral_storage_device is set as well. A node is given one of them")
+        return path
 
     internal_network_subnets: list[IPv4Network]
 

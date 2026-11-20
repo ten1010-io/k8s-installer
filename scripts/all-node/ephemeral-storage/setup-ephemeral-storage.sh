@@ -181,7 +181,14 @@ setup_directory() {
   # requires-mounts-for has systemd mount the filesystem holding the directory
   # before this, which it does from the line of /etc/fstab that
   # require_directory_filesystem asked for
-  write_fstab_entries "$path $mount_path none bind,x-systemd.requires-mounts-for=$path 0 0"
+  #
+  # rslave, because the directory is shared with the filesystem it is on, as
+  # every mount of a systemd host is. Left that way, each volume kubelet mounts
+  # for a pod would show up under the directory of the site as well, where a
+  # backup or a cleanup of that disk walks into it and an unmount there takes it
+  # from the pod. A slave still receives the mounts of the site and hands none
+  # back
+  write_fstab_entries "$path $mount_path none bind,rslave,x-systemd.requires-mounts-for=$path 0 0"
   mount_all
 
   return 0
@@ -257,7 +264,9 @@ require_nothing_half_set_up() {
 # that is the site's.
 #
 # Not the root filesystem, which is what this exists to get the data off, and
-# where a directory ends up when the disk meant for it is not mounted. ext4 or
+# where a directory ends up when the disk meant for it is not mounted. Told by
+# the device rather than by where it is mounted, since a bind mount of a
+# directory of the root filesystem is still the root filesystem. ext4 or
 # xfs, which is what containerd is run on; that also leaves out anything reached
 # over the network and anything kept in memory. Mounted without ro, noexec,
 # nosuid or nodev, since the root filesystems of the containers run from here.
@@ -269,11 +278,11 @@ require_nothing_half_set_up() {
 # the network is mounted after the local filesystems the bind mounts belong to
 require_directory_filesystem() {
   local fs_target fs_type fs_options
-  fs_target=$(findmnt -nro TARGET -T "$path")
+  fs_target=$(findmnt -nro TARGET -T "$path") || die "[ERROR] Fail to find the filesystem of directory[\"$path\"]"
   fs_type=$(findmnt -nro FSTYPE -T "$path")
   fs_options=$(findmnt -nro OPTIONS -T "$path")
 
-  [[ $fs_target = / ]] &&
+  [[ $(stat -c %d "$path") = "$(stat -c %d /)" ]] &&
     die "[ERROR] Directory[\"$path\"] is on the root filesystem. Give a directory of another filesystem, and check that it is mounted"
   [[ $fs_type != ext4 && $fs_type != xfs ]] &&
     die "[ERROR] Directory[\"$path\"] is on a[\"$fs_type\"] filesystem, expected ext4 or xfs"

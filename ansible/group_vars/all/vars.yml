@@ -34,7 +34,8 @@ ephemeral_storage_device: null
 # filesystem that /etc/fstab mounts at boot, without ro, noexec, nosuid, nodev
 # or _netdev. Its kubelet, pod-logs and containerd subdirectories are used and
 # have to be empty or absent; a reset empties those three and leaves everything
-# else in the directory alone
+# else in the directory alone. Keep it out of ki_var_root_path and
+# docker_root_path, which a reset removes whole
 #
 # kubelet sizes and evicts by the whole filesystem, so what else is kept on it
 # counts against the pods. Like the device, it is only applied while a node is
