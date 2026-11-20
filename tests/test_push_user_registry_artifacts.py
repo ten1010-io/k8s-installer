@@ -223,8 +223,12 @@ def test_every_failed_push_of_those_running_is_named(node):
     (signal.SIGHUP, 129),
 ])
 def test_a_signal_stops_the_pushes_and_puts_the_registry_back(node, sent, status):
+    # The signal is put back to what a login shell has. Whatever starts the
+    # tests may have it ignored, and bash can not trap a signal it was handed
+    # ignored
     process = subprocess.Popen(node.command(2, dict.fromkeys(SIX, "slow")), env=node.env(),
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               preexec_fn=lambda: signal.signal(sent, signal.SIG_DFL))
     deadline = time.monotonic() + 60
     while len(node.lines("pids")) < 2 and time.monotonic() < deadline:
         time.sleep(0.05)
