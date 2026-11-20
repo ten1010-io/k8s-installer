@@ -23,6 +23,22 @@
         msg: "No such file or directory of which path is \"{{ archive }}\""
       when: not (archive | ansible.builtin.expanduser) is exists
 
+    # Which file the archive is on the machine this runs from: its device, its
+    # inode, its size and when it was written. The play below reads the archive
+    # in place only on a node where the same path shows the same four
+    - name: Execute stat
+      shell: "stat -c '%d:%i:%s:%Y' {{ archive | ansible.builtin.expanduser | ansible.builtin.realpath | quote }}"
+      register: shell_result
+      changed_when: false
+
+    - name: "Set_fact variable[\"archive_file_id\"]"
+      set_fact:
+        archive_file_id: "{{ shell_result.stdout | trim }}"
+
+    - name: "Remove temporary variable[\"shell_result\"]"
+      set_fact:
+        shell_result: null
+
 # The control node, where the inventory names one and it is a ki cp node of this
 # play, already holds the archive, so it reads it where it is. Copying it there
 # went over ssh to the same machine, with a sha1 of the whole archive on each
@@ -30,9 +46,15 @@
 # nodes are given a copy, and so is the control node when it can not be
 # confirmed that root reads the archive where it is (a root_squash NFS home, a
 # FUSE mount of the login user), as the copy reads it as the user that runs
-# ansible. This playbook does not import check-control-node.yml: with no control
-# node named, or one that is not a ki cp node, every node is given a copy, as
-# before
+# ansible.
+#
+# This playbook does not import check-control-node.yml, so the node the
+# inventory calls the control node is not taken at its word. It reads in place
+# only when the file at that path is the very file this run was given: with
+# control_node_ih pointing at another machine, a file of the same path there is
+# some other archive, and pushing it would leave the nodes holding different
+# artifacts. With no control node named, one that is not a ki cp node or one
+# that is another machine, every node is given a copy, as before
 - hosts: ki_cp_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
@@ -49,8 +71,10 @@
     - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
       shell: "{{ ki_create_tmp_root_cmd }}"
 
-    - name: Check root can read the archive where it is
-      shell: "sudo test -r {{ archive_abs_path | quote }}"
+    - name: Check this node holds the archive and root can read it where it is
+      shell: >-
+        sudo test -r {{ archive_abs_path | quote }}
+        && sudo stat -c '%d:%i:%s:%Y' {{ archive_abs_path | quote }}
       register: shell_result
       changed_when: false
       failed_when: false
@@ -60,14 +84,16 @@
       set_fact:
         in_place: >-
           {{ inventory_hostname == ki_control_node_ih
-             and (shell_result.rc | default(1)) == 0 }}
+             and (shell_result.rc | default(1)) == 0
+             and (shell_result.stdout | default('') | trim) == hostvars['localhost']['archive_file_id'] }}
 
     - name: Say the archive is copied on the control node as well
       debug:
         msg: >-
-          It could not be confirmed that root can read {{ archive_abs_path }} where it is (sudo test -r
-          failed), so it is copied to {{ node_archive_path }} as on the other nodes. Put it on a local disk
-          to skip the copy
+          It could not be confirmed that this node holds {{ archive_abs_path }} where root can read it
+          (sudo test -r failed, or the file at that path is not the one this was started with), so it is
+          copied to {{ node_archive_path }} as on the other nodes. Put it on a local disk of the node
+          this is run from to skip the copy
       when:
         - inventory_hostname == ki_control_node_ih
         - not (in_place | bool)
