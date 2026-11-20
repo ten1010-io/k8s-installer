@@ -72,6 +72,10 @@ die() {
 # and a registry still writable, which takes a push from anywhere until the next
 # run of this puts it back
 cleanup() {
+  # set -E hands the ERR trap to the subshell of a $(...) as well. What is left
+  # behind is the main shell's to clean up, once, and it does when the failure
+  # reaches it
+  [[ $BASHPID == "$$" ]] || return 0
   trap - SIGINT SIGTERM ERR EXIT
 
   local running
@@ -85,7 +89,11 @@ cleanup() {
     rm -rf "$push_logs_path"
   fi
   if [[ ${registry_writable-} == "true" ]]; then
-    set_readonly "true" || msg "[WARN] The user registry could not be made readonly again: run this again"
+    # Said to nobody. When the connection this ran over is gone, so is what the
+    # output was written to, and docker compose dies of that write before it
+    # has done anything, which left the registry writable
+    set_readonly "true" > /dev/null 2>&1 ||
+      msg "[WARN] The user registry could not be made readonly again: run this again" || true
   fi
 }
 

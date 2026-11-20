@@ -269,8 +269,9 @@ ki_cp_user_registry_port: 5001
 # same disk, and some sites run on slow disks, where more pushes only take turns
 # at it while etcd waits behind them. 4 is what was tested; it is raised once a
 # larger count has been measured on a real archive. A blob two images share is
-# pushed once either way, since the registry already holds it when the second
-# asks.
+# skipped by the second push when the registry already holds it, and sent by
+# both when they reach it together: the registry keeps one copy under its
+# digest either way.
 #
 # Set by hand with -e ki_cp_user_registry_push_jobs=<n> on
 # push-user-registry-artifacts.yml, and a number given is used as it is. 1
