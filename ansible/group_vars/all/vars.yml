@@ -25,6 +25,22 @@ docker_root_path: "/var/lib/docker"
 # again after a restart. See docs/impl-notes.adoc
 ephemeral_storage_device: null
 
+# Directory holding the same paths, for a node that has no blank device to give
+# but does have a filesystem already mounted, a data disk say. It is bind
+# mounted where the device would be mounted, and nothing is formatted. A node is
+# given this or ephemeral_storage_device, never both
+#
+# The directory has to exist, on an ext4 or xfs filesystem other than the root
+# filesystem that /etc/fstab mounts at boot, without ro, noexec, nosuid, nodev
+# or _netdev. Its kubelet, pod-logs and containerd subdirectories are used and
+# have to be empty or absent; a reset empties those three and leaves everything
+# else in the directory alone
+#
+# kubelet sizes and evicts by the whole filesystem, so what else is kept on it
+# counts against the pods. Like the device, it is only applied while a node is
+# being provisioned, and it must survive a reboot. See docs/impl-notes.adoc
+ephemeral_storage_path: null
+
 # Kernel command line arguments this node boots with, on top of what the
 # distribution puts there. Set per node in inventory.yml, since what a node has
 # to boot with follows from what it holds.

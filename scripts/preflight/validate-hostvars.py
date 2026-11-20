@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Literal, Optional, Annotated, Union
 
 import yaml
 from pydantic import BaseModel, ValidationError, StringConstraints, ConfigDict, field_validator, Field, \
-    PositiveInt, NonNegativeInt
+    PositiveInt, NonNegativeInt, model_validator
 
 FQDN_PATTERN = r"^((?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,}$"
 K8S_MINOR_VERSION_PATTERN = r"^[0-9]+\.[0-9]+$"
@@ -1345,7 +1345,7 @@ class VarsModel(BaseModel):
             raise ValueError("path must be absolute")
         return path
 
-    @field_validator("ephemeral_storage_device")
+    @field_validator("ephemeral_storage_device", "ephemeral_storage_path")
     @classmethod
     def must_be_absolute_when_set(cls, path: Optional[PurePosixPath]) -> Optional[PurePosixPath]:
         if path is not None and not path.is_absolute():
@@ -1359,6 +1359,16 @@ class VarsModel(BaseModel):
 
     # None means the node keeps its ephemeral storage on the root filesystem
     ephemeral_storage_device: Optional[PurePosixPath] = None
+    # A directory in place of the device. What the directory has to be is asked
+    # on the node by setup-ephemeral-storage.sh, which runs before this does
+    ephemeral_storage_path: Optional[PurePosixPath] = None
+
+    @model_validator(mode="after")
+    def one_place_for_the_ephemeral_storage(self) -> VarsModel:
+        if self.ephemeral_storage_device is not None and self.ephemeral_storage_path is not None:
+            raise ValueError(
+                "ephemeral_storage_device and ephemeral_storage_path are both set. A node is given one of them")
+        return self
 
     internal_network_subnets: list[IPv4Network]
 

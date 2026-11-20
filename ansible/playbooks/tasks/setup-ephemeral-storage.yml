@@ -6,16 +6,21 @@
 #
 # That puts it before setup-vars-file.yml too, so the script takes its input as
 # arguments rather than reading the vars file. See docs/impl-notes.adoc
+#
+# A node is given a device or a directory. One given both is passed both, and
+# the script refuses that before it touches anything, which is sooner than
+# validate-hostvars.py gets to say so
 - hosts: all:!localhost:!broken_node
   gather_facts: false
   any_errors_fatal: true
   vars:
-    device_arg: "--device {{ ephemeral_storage_device }}"
+    device_arg: "{{ '--device ' ~ ephemeral_storage_device if ephemeral_storage_device is not none else '' }}"
+    path_arg: "{{ '--path ' ~ (ephemeral_storage_path | quote) if ephemeral_storage_path is not none else '' }}"
     mount_path_arg: "--mount-path {{ ki_ephemeral_root_path }}"
   tasks:
     - when:
         - ki_is_target_node | bool
-        - ephemeral_storage_device is not none
+        - ephemeral_storage_device is not none or ephemeral_storage_path is not none
       block:
         - name: Execute setup-ephemeral-storage.sh
-          shell: "sudo {{ ki_opt_scripts_path }}/all-node/ephemeral-storage/setup-ephemeral-storage.sh {{ device_arg }} {{ mount_path_arg }}"
+          shell: "sudo {{ ki_opt_scripts_path }}/all-node/ephemeral-storage/setup-ephemeral-storage.sh {{ device_arg }} {{ path_arg }} {{ mount_path_arg }}"
