@@ -137,7 +137,7 @@ else add NA E-VIP "VIP" "pass --vip <ip> to check (VRRP/keepalived L2 reach)"; f
 ncpu=$(nproc 2>/dev/null || echo 1); la1=$(cut -d' ' -f1 /proc/loadavg 2>/dev/null)
 iowait="?"; has vmstat && iowait=$(vmstat 1 2 2>/dev/null | tail -1 | awk '{print $16}')
 ratio=$(awk -v l="${la1:-0}" -v n="$ncpu" 'BEGIN{printf "%.2f",(n>0?l/n:l)}')
-if awk -v r="$ratio" 'BEGIN{exit !(r>1.5)}'; then add WARN E-LOAD "own load" "load1=${la1} / ${ncpu}cpu = ${ratio}x (high), iowait=${iowait}% -> ease it: lower install concurrency (aipub_install_dag_jobs=1), a quieter time"
+if awk -v r="$ratio" 'BEGIN{exit !(r>1.5)}'; then add WARN E-LOAD "own load" "load1=${la1} / ${ncpu}cpu = ${ratio}x (high), iowait=${iowait}% -> ease it: lower the installer's concurrency, or run at a quieter time"
 else add PASS E-LOAD "own load" "load1=${la1} / ${ncpu}cpu = ${ratio}x, iowait=${iowait}%"; fi
 
 # disk IO latency: small synchronous writes ms/op — when slow, pods deploy one slow at a time and the next deploy times out
