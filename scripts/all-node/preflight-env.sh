@@ -100,7 +100,7 @@ if [ -n "$PEERS" ]; then
       pn=${pp%%:*}; lb=${pp#*:}
       if tcp "$ip" "$pn"; then add PASS E-PORT "port->$ip" "$lb($pn) open"; else add WARN E-PORT "port->$ip" "$lb($pn) closed (fine when not installed yet)"; fi
     done
-    if ping -c1 -W2 -M do -s 1472 "$ip" >/dev/null 2>&1; then add PASS E-PMTU "MTU->$ip" "a 1500 packet passes (MTU ok)";
+    if ping -c1 -W2 -M "do" -s 1472 "$ip" >/dev/null 2>&1; then add PASS E-PMTU "MTU->$ip" "a 1500 packet passes (MTU ok)";
     elif ping -c1 -W2 "$ip" >/dev/null 2>&1; then add WARN E-PMTU "MTU->$ip" "ping reaches it but a 1500 packet does not — suspect MTU/fragmentation (VXLAN is ~1450)";
     else add WARN E-PMTU "MTU->$ip" "no ping reply (host down or ICMP blocked) — cannot judge MTU. Compare with E-PORT (TCP)"; fi
   done
