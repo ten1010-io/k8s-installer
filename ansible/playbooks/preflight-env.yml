@@ -59,7 +59,10 @@
 
     - name: "Set_fact variable[\"preflight_env_fail\"] from the SUMMARY line"
       set_fact:
-        preflight_env_fail: "{{ preflight_env_result.stdout | regex_search('(?m)^SUMMARY .*') | default('', true) | regex_search('fail=[0-9]+') | default('fail=0', true) | regex_replace('fail=', '') }}"
+        preflight_env_fail: >-
+          {{ preflight_env_result.stdout | regex_search('(?m)^SUMMARY .*')
+          | default('', true) | regex_search('fail=[0-9]+')
+          | default('fail=0', true) | regex_replace('fail=', '') }}
 
     - name: "Fail when a node does not meet the environment requirements"
       fail:
