@@ -16,6 +16,12 @@
 
 - import_playbook: tasks/check-node-state.yml
 
+# After the checks of the node itself and before anything is written to it. A
+# kubelet_reserved_system_cpus the machine can not take is a kubelet that does
+# not start, which is found out here rather than by the join that waits on it.
+# See the file
+- import_playbook: tasks/check-kubelet-reserved-cpus.yml
+
 # Before anything is built on the node, because this is the last point at which
 # rebooting it is free. See tasks/setup-boot-config.yml
 - import_playbook: tasks/setup-boot-config.yml
@@ -91,6 +97,8 @@
 - import_playbook: tasks/check-vfio-pci.yml
 
 - import_playbook: tasks/check-kernel-args.yml
+
+- import_playbook: tasks/report-kubelet-reserved-cpus.yml
 
 - import_playbook: tasks/check-nvidia-cdi.yml
 
