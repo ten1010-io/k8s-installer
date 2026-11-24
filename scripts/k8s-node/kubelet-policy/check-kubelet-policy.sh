@@ -81,7 +81,14 @@ parse_params "$@"
 # The configuration kubelet is running with. kubeadm writes it from the cluster
 # baseline and the patch of this node, and it is the file kubelet is started
 # with, so it is what the node runs rather than what the inventory meant
-KUBELET_CONFIG_PATH=/var/lib/kubelet/config.yaml
+#
+# Overridable so that this can be pointed at a file of a test, the way the sysfs
+# paths of reserved-cpus-common.sh are
+KUBELET_CONFIG_PATH=${KUBELET_CONFIG_PATH:-/var/lib/kubelet/config.yaml}
+
+# How a set of cpus is laid over the cores and the numa nodes of this machine.
+# See reserved-cpus-common.sh
+source "$SCRIPT_DIR_PATH"/reserved-cpus-common.sh
 
 # Says which cpu, memory and topology policies kubelet runs under on this node,
 # for a monitoring system to read.
@@ -97,7 +104,13 @@ KUBELET_CONFIG_PATH=/var/lib/kubelet/config.yaml
 # Read off the file rather than asked of kubelet. kubelet does answer, over
 # /configz with a client certificate, and the file is what that answer is made
 # from. A kubelet that is not running has no /configz and still has the file,
-# and the file is what it will come up with
+# and the file is what it will come up with.
+#
+# The cpus kubelet keeps for the system are said with them, counted on each numa
+# node, because that is the other half of what a numa node of this machine has
+# to hand out. Read off the same file for the same reason: what is exported is
+# the set in force, which the inventory only says once it has been applied. See
+# reserved_metrics_text
 main() {
   local cpu_static=0
   local memory_static=0
@@ -137,6 +150,7 @@ policy_of() {
 
 print_metrics() {
   metrics_text "$1" "$2" "$3"
+  reserved_metrics_text
 
   return 0
 }
@@ -155,13 +169,54 @@ ki_node_kubelet_topology_manager_policy{policy="$3"} 1
 EOF
 }
 
+# The cpus reservedSystemCPUs names, counted on each numa node that has cpus, and
+# the cores it holds some threads of and not all.
+#
+# A numa node with none is written as 0 rather than left out, so that "a numa
+# node with nothing reserved" is a value to compare against and not a series
+# that is missing. A node that names no set writes neither metric: kubelet then
+# picks the cpus itself, as many as its cpu reservations add up to, and a 0
+# would say that nothing is reserved where the truth is that this can not see
+# which. The same goes for a machine that does not say which cpus it has.
+#
+# Counted in threads, which is the unit of the set. The half reserved cores are
+# counted under any policy: whether one matters is for whoever reads it beside
+# ki_node_kubelet_cpu_manager_static to say
+reserved_metrics_text() {
+  local reserved_cpu_set
+  reserved_cpu_set=$(policy_of reservedSystemCPUs "")
+
+  [[ -n $reserved_cpu_set && -n $(online_cpu_list) ]] || return 0
+
+  load_reserved_cpus "$reserved_cpu_set"
+
+  local id
+  local count
+  local whole
+
+  echo "# HELP ki_node_kubelet_reserved_system_cpus The cpus kubelet of this node keeps for the system on each numa node, in threads"
+  echo "# TYPE ki_node_kubelet_reserved_system_cpus gauge"
+  while IFS=$'	' read -r id count whole; do
+    echo "ki_node_kubelet_reserved_system_cpus{numa=\"$id\"} $count"
+  done < <(numa_reserved_lines)
+
+  echo "# HELP ki_node_kubelet_reserved_system_cpus_half_cores The cores kubelet of this node keeps some threads of for the system and not all"
+  echo "# TYPE ki_node_kubelet_reserved_system_cpus_half_cores gauge"
+  echo "ki_node_kubelet_reserved_system_cpus_half_cores $(half_reserved_core_lines | grep -c . || true)"
+
+  return 0
+}
+
 # Replaced rather than appended to, and moved into place, because a collector
 # reads whatever is there when it is scraped. check-kernel-args.sh is the same
 # shape for the same reason
 write_metrics_file() {
   mkdir -p "$(dirname "$metrics_path")"
 
-  metrics_text "$1" "$2" "$3" > "$metrics_path".tmp
+  {
+    metrics_text "$1" "$2" "$3"
+    reserved_metrics_text
+  } > "$metrics_path".tmp
 
   chmod 0644 "$metrics_path".tmp
   mv -f "$metrics_path".tmp "$metrics_path"
