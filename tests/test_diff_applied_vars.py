@@ -379,3 +379,51 @@ def test_every_classified_variable_a_node_can_hold_is_always_defined(hostvars):
     for ih in ("node1", "node2"):
         missing = sorted(classified - set(hostvars[ih]) - {"control_node_ih"})
         assert missing == [], f"{ih} holds no value for {missing}"
+
+
+def test_a_class_a_node_was_being_given_is_applied_again_though_nothing_changed(hostvars):
+    """A run that failed after writing the kubelet configuration of a node, and
+    an inventory put back to what the record says. The values agree and the node
+    does not hold them."""
+    record_as_applied(hostvars)
+    hostvars["node2"]["ki_applying_classes"] = ["kubelet_policy"]
+
+    result = diff(hostvars)
+
+    assert changed(result, "kubelet_policy") == [("node2", None)]
+    assert changed(result, "kubelet") == []
+    assert result["summary"] == [
+        '[kubelet_policy] node["node2"] was being given this class when the run before stopped,'
+        ' so it is applied again'
+    ]
+
+
+def test_a_node_whose_class_changed_as_well_is_filed_once(hostvars):
+    record_as_applied(hostvars)
+    hostvars["node2"]["ki_applying_classes"] = ["kubelet_policy", "kubelet_policy"]
+    hostvars["node2"]["kubelet_reserved_system_cpus"] = "0,4"
+
+    result = diff(hostvars)
+
+    assert changed(result, "kubelet_policy") == [("node2", "kubelet_reserved_system_cpus")]
+
+
+def test_each_class_a_node_was_being_given_is_applied_again(hostvars):
+    record_as_applied(hostvars)
+    hostvars["node1"]["ki_applying_classes"] = ["kubelet"]
+    hostvars["node2"]["ki_applying_classes"] = ["kubelet", "kubelet_policy"]
+
+    result = diff(hostvars)
+
+    assert changed(result, "kubelet") == [("node1", None), ("node2", None)]
+    assert changed(result, "kubelet_policy") == [("node2", None)]
+
+
+def test_a_mark_that_names_no_class_this_playbook_applies_is_left_alone(hostvars):
+    record_as_applied(hostvars)
+    hostvars["node2"]["ki_applying_classes"] = ["no_such_class", "immutable"]
+
+    result = diff(hostvars)
+
+    assert all(result["changes"][cls] == [] for cls in result["changes"])
+    assert result["summary"] == []

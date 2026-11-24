@@ -18,6 +18,21 @@
       set_fact:
         shell_result: null
 
+    # The classes a run began applying to this node and did not get to record.
+    # Read beside the record because it is what says the record is behind: see
+    # ki_etc_applying_classes_path
+    - name: "Read file[\"{{ ki_etc_applying_classes_path }}\"]"
+      shell: "sudo cat {{ ki_etc_applying_classes_path }} 2>/dev/null || true"
+      register: shell_result
+
+    - name: Set_fact variable[\"ki_applying_classes\"]
+      set_fact:
+        ki_applying_classes: "{{ shell_result.stdout_lines | map('trim') | select | unique | list }}"
+
+    - name: Remove temporary variable[\"shell_result\"]
+      set_fact:
+        shell_result: null
+
 - hosts: localhost
   gather_facts: false
   any_errors_fatal: true

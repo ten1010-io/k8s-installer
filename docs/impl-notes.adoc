@@ -1221,6 +1221,89 @@ After cpu setting is overwritten  kubeReserved={...} systemReserved={"cpu":"2"}
 그래서 순서를 뒤집었고, `update-k8s-node-kubelet.sh` 는 kubelet 을 시작한 뒤 유닛이 실제로 도는지
 두 번 확인합니다. 도는 kubelet 과 재시작을 기다리는 kubelet 은 한 번만 물어서는 구분되지 않습니다.
 
+=== 실패한 적용은 노드에 표식을 남깁니다
+
+기록(`applied-vars.yml`)은 런의 맨 끝에 씁니다. 실패한 런이 노드를 "실제로 남은 상태" 로 적어 두게 하려는
+것인데, 그 추론이 깨지는 자리가 하나 있습니다 — **노드에 이미 쓴 뒤에 실패하고, 운영자가 값을 되돌리는**
+경우입니다. 기록은 옛 값, 인벤토리도 옛 값이라 차이가 없고, 노드만 실패한 값을 들고 있습니다. 다른
+클래스에서는 "같은 값으로 한 번 완주시킨 뒤 바꾸라" 가 답이지만 kubelet 설정에서는 그럴 수 없습니다.
+kubelet 이 거부하는 값은 완주하지 못합니다.
+
+그래서 kubelet 설정을 쓰는 두 클래스(`kubelet`, `kubelet_policy`)는 노드에 쓰기 직전에 그 노드의
+`/etc/k8s-installer/applying-classes` 에 클래스 이름을 한 줄 적습니다. `record-applied-state.yml` 이 기록을
+쓰면서 자기가 기록한 클래스의 줄을 지웁니다. `diff-applied-vars.yml` 이 기록과 함께 이 파일을 읽고,
+`diff-applied-vars.py` 는 줄이 남은 노드를 **값이 같아도** 그 클래스의 변경으로 올립니다(요약에는 `was being
+given this class when the run before stopped, so it is applied again`). 그 노드에서 그 클래스의 변수가
+실제로 바뀌었으면 이미 같은 적용을 거치므로 더하지 않습니다.
+
+적는 자리:
+
+* `kubelet_policy` — 드레인 **뒤**, `update-k8s-node-kubelet.sh --reset-cpu-manager-state` 직전. 드레인이
+  PodDisruptionBudget 에 막혀 실패한 런은 노드에 아무것도 쓰지 않았으므로 표식도 없습니다.
+* `kubelet` — 각 노드의 `update-k8s-node-kubelet.sh` 직전, 그리고 기준선을 올리는 노드에서
+  `upload-k8s-kubelet-config.sh` 직전. 기준선 ConfigMap 이 이 클래스가 처음 쓰는 것이라, 거기와 첫 노드
+  사이에서 멈춘 런은 어느 기록에도 없는 기준선을 남깁니다. `kubelet_policy` 쪽의 업로드에는 적지 않습니다 —
+  기준선은 정책을 담지 않고, 적으면 드레인이 실패한 흔한 런마다 다음 실행이 모든 노드의 kubelet 을
+  재시작하게 됩니다.
+
+=== kubelet 이 없는 노드는 드레인할 수 없습니다
+
+표식만으로는 돌아오지 않습니다. 다시 적용하려면 그 노드를 드레인해야 하는데, 퇴거는 그 노드의 kubelet 이
+파드를 끝내야 끝나고 kubelet 은 죽어 있습니다. `kubectl drain` 은 타임아웃(5분)까지 기다리다 실패합니다.
+그 노드의 파드는 어차피 아무도 돌리고 있지 않습니다.
+
+그래서 드레인 전에 `check-kubelet-running.sh` 가 **노드 자신에게** 유닛을 묻습니다(2초 간격으로 세 번 —
+설정을 거부하는 kubelet 은 10초마다 0.25초씩만 살아 있어 한 번 물으면 걸릴 수 있습니다. 노드 오브젝트의
+`Ready` 는 죽은 kubelet 의 마지막 말이라 묻지 않습니다). 돌지 않으면 `drain-node.sh --cordon-only` 로
+새 파드만 막고, 설정을 다시 쓰고 체크포인트를 치우고 kubelet 을 올린 뒤 `Ready` 를 기다려 uncordon
+합니다. 건너뛴 노드는 `[WARN]` 으로 알립니다.
+
+대가는 그 노드에 남아 있던 컨테이너가 정상 퇴거 없이 새 정책의 kubelet 에 다시 admit 된다는 것입니다.
+kubelet 이 없는 노드에는 정상 퇴거를 해 줄 주체가 없어 다른 길이 없고, 체크포인트를 치웠으므로 올라온
+kubelet 은 자기가 받은 설정으로 처음부터 할당합니다. `kubelet` 클래스가 드레인하는 경우
+(`allow_draining_nodes`)도 같은 물음을 거칩니다.
+
+==== 2026-11-23 검수
+
+EC2 t3.xlarge 단일 노드(4 vCPU, 16GiB, Ubuntu 22.04.5, k8s 1.36.4, flannel). 고치기 전의 같은 박스 실측
+(2026-11-19): `static` + `kubelet_reserved_system_cpus: "0,8"` 로 실패한 뒤 값을 되돌려 돌리면 `No variable
+changed` 로 rc 0 이고 노드는 `reservedSystemCPUs: 0,8` 과 죽은 kubelet 을 든 채 남았고, 다른 값으로 돌리면
+`drain-node.sh` 가 5분 뒤 실패했습니다.
+
+* *정책, 되돌림.* `"0,8"` 적용 → 드레인 → 표식 → `kubelet is not running 5s after…` 로 rc 2(45초),
+  `applying-classes` 에 `kubelet_policy`. 인벤토리를 되돌려 재실행 → 요약에 `was being given this class`,
+  `check-kubelet-running.sh` 가 `false`, cordon 만, `[WARN]`, 설정 다시 쓰기, `Ready`, uncordon, rc 0(55초).
+  kubelet active, 설정에 `reservedSystemCPUs` 없음, 표식 파일 비어 있음. 그 다음 실행은 `No variable changed`.
+* *정책, 다른 값.* 같은 실패 뒤 `"0,2"` 로 재실행 → 같은 경로로 rc 0(55초), `reservedSystemCPUs: 0,2`.
+* *kubelet 클래스.* `kubelet_system_reserved_memory: 100Gi`(용량 16GiB) → kubelet 이 `invalid Node
+  Allocatable configuration. Resource "memory" has a reservation of … but capacity of …` 로 거부, rc 2(34초),
+  표식 `kubelet`. 되돌려 재실행 → `[kubelet] node["node1"] was being given this class…`, 기준선 업로드와
+  재시작, rc 0(54초), kubelet active. 고치기 전 이 클래스의 "변경 없음" 은 이 박스에서 따로 재현하지
+  않았습니다 — 기록이 같은 자리에서 쓰이므로 같은 일이 납니다.
+* *평소.* `kubelet_max_pods: 120`(kubelet 클래스)과 `kubelet_reserved_system_cpus` 제거(정책 클래스, kubelet
+  이 살아 있음 → `check-kubelet-running.sh` `true` → 드레인) 모두 rc 0 이고 끝에 표식이 남지 않습니다.
+
+==== 2026-11-24 검수 — 세 노드
+
+EC2 t3.xlarge 세 대(node1 ki cp + k8s cp + 제어, node2·node3 워커 `static`), 같은 OS 와 버전.
+
+* *kubelet 클래스, 셋 중 하나.* node2 에만 `kubelet_system_reserved_memory: 100Gi` → node1 재시작 뒤 node2 에서
+  rc 2(52초). 표식은 node1·node2 에 `kubelet`, node3 은 손대지 않아 없음. 되돌려 재실행 → 두 노드가 `was
+  being given this class`, 세 노드 재시작, rc 0, 표식 없음.
+* *독점 CPU 를 쥔 컨테이너가 남은 채 cordon 경로.* node2(`reservedSystemCPUs: 1,3`)에 Guaranteed cpu 1
+  파드(체크포인트 `{'pin': '0'}`)를 두고 위처럼 kubelet 을 죽인 뒤, 예약을 **그 컨테이너가 쥔 CPU 위로**
+  옮겨(`0,2`) 재실행 → `check-kubelet-running.sh` `false`, cordon 만, `[WARN]`, 체크포인트 삭제, rc 0(111초).
+  파드는 `Running`·재시작 0·**같은 컨테이너**(id 와 생성 시각 그대로)이고, 체크포인트는 `{'pin': '1'}` ·
+  `defaultCpuSet 0,2-3`, 컨테이너 프로세스의 `Cpus_allowed_list` 와 cgroup `cpuset.cpus.effective` 가 `1`.
+  올라온 kubelet 이 돌던 컨테이너에 새 독점 CPU 를 주고 cpuset 을 옮겼습니다.
+* *정책 클래스, 셋 중 하나, 되돌림.* node3 의 예약 CPU 를 바꾸며 같은 메모리 값으로 kubelet 을 거부시키면
+  node3 만 드레인 → 표식 → rc 2(38초). 인벤토리를 되돌려 재실행 → node3 만 `was being given this class`,
+  cordon, 다시 쓰기, rc 0(59초). node2 는 어느 런에서도 드레인되지 않았습니다. 그 다음 실행은 `No variable
+  changed` 이고 세 노드 모두 표식이 없습니다.
+
+재지 않은 것: 다시 admit 이 **거부되는** 경우(예: 올라온 설정으로는 그 컨테이너가 쥘 CPU 가 모자랄 때),
+Memory Manager `Static` 으로 메모리를 고정한 컨테이너.
+
 === 같은 부팅 안의 재시작이 컨테이너를 죽이는 노드가 있습니다
 
 `kubelet` 클래스는 "다시 쓰고 재시작" 이고, 그 근거는 재시작이 돌던 컨테이너를 건드리지 않는다는

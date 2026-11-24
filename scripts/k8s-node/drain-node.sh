@@ -4,11 +4,13 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path] <node>
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path] [--cordon-only] <node>
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
 --vars-path     File path
+--cordon-only   Stop the node being given new pods and move nothing off it,
+                for a node whose kubelet is not running to end them
 Arguments:
 node            The name the node has in the cluster
 EOF
@@ -17,12 +19,14 @@ EOF
 
 parse_params() {
   vars_path=""
+  cordon_only="false"
 
   while :; do
     case "${1-}" in
     -h | --help) print_usage ;;
     -v | --verbose) set -x ;;
     --no-color) NO_COLOR=1 ;;
+    --cordon-only) cordon_only="true" ;;
     --vars-path)
       [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
       vars_path="${2-}"
@@ -102,7 +106,27 @@ main() {
 
   local knn=${args[0]}
 
-  drain_k8s_node "$knn"
+  if [[ $cordon_only = "true" ]]; then
+    cordon_k8s_node "$knn"
+  else
+    drain_k8s_node "$knn"
+  fi
+
+  return 0
+}
+
+# The half of a drain that needs nothing of the node. Evicting a pod is only
+# finished when the kubelet of its node has ended it, so on a node whose kubelet
+# is not running a drain waits out its timeout and fails over pods nothing is
+# running. What is still worth doing there is keeping new pods away while the
+# node is worked on, and the caller is the one that knows the kubelet is down:
+# check-kubelet-running.sh, asked on the node
+cordon_k8s_node() {
+  local knn=$1
+
+  msg "[INFO] Cordoning k8s node[\"$knn\"] without moving its pods"
+  kubectl cordon "$knn" ||
+    die "[ERROR] Failed to cordon the k8s node[\"$knn\"]"
 
   return 0
 }

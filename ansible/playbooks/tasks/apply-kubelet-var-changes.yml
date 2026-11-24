@@ -7,11 +7,20 @@
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
-    - name: Execute upload-k8s-kubelet-config.sh
-      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/upload-k8s-kubelet-config.sh {{ vars_path_arg }}"
-      when:
+    - when:
         - inventory_hostname == k8s_cp_nodes[0]
         - hostvars['localhost']['ki_var_changes']['kubelet'] | length > 0
+      block:
+        # The baseline is the first thing of this class that is written, and a
+        # run that stops between it and the first node leaves the cluster
+        # holding a baseline no record speaks of. Marked on the node that
+        # uploads it, so that the class is applied again and the baseline with
+        # it. See ki_etc_applying_classes_path
+        - name: "Mark class[\"kubelet\"] as being applied to this node"
+          shell: "sudo sh -c 'mkdir -p {{ ki_etc_root_path }} && echo kubelet >> {{ ki_etc_applying_classes_path }}'"
+
+        - name: Execute upload-k8s-kubelet-config.sh
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/upload-k8s-kubelet-config.sh {{ vars_path_arg }}"
 
 # Then every node writes its own, which is the baseline patched with what was
 # calculated for the capacity of that node, and restarts kubelet to read it.
@@ -60,15 +69,35 @@
             - kubelet_restart_result.stdout | length > 0
             - allow_draining_nodes is not defined
 
+        # Before the node is written to, so that a run that stops from here on
+        # leaves the node saying its record is behind. See
+        # ki_etc_applying_classes_path
+        - name: "Mark class[\"kubelet\"] as being applied to this node"
+          shell: "sudo sh -c 'mkdir -p {{ ki_etc_root_path }} && echo kubelet >> {{ ki_etc_applying_classes_path }}'"
+
         - name: Execute update-k8s-node-kubelet.sh
           shell: "{{ scripts }}/k8s-node/update-k8s-node-kubelet.sh {{ vars_path_arg }}"
           when: kubelet_restart_result.stdout | length == 0
 
         - when: kubelet_restart_result.stdout | length > 0
           block:
+            # A drain waits for the kubelet of the node to end the pods it
+            # evicts, so a node whose kubelet is down is asked first and only
+            # cordoned. See check-kubelet-running.sh
+            - name: Execute check-kubelet-running.sh
+              shell: "{{ scripts }}/k8s-node/check-kubelet-running.sh"
+              register: kubelet_running_result
+              changed_when: false
+
             - name: Execute drain-node.sh
               shell: "{{ scripts }}/k8s-node/drain-node.sh {{ vars_path_arg }} {{ knn }}"
               delegate_to: "{{ k8s_cp_nodes[0] }}"
+              when: kubelet_running_result.stdout | trim == "true"
+
+            - name: Execute drain-node.sh --cordon-only
+              shell: "{{ scripts }}/k8s-node/drain-node.sh {{ vars_path_arg }} --cordon-only {{ knn }}"
+              delegate_to: "{{ k8s_cp_nodes[0] }}"
+              when: kubelet_running_result.stdout | trim != "true"
 
             # A plain restart. The containers that held the cpus are gone, so
             # there is nothing left for the restarted kubelet to refuse, and the

@@ -4,7 +4,10 @@
 Reads the hostvars of the run on stdin, compares every classified variable of
 every node against what the node recorded in applied-vars.yml, and files each
 difference under the class constant-vars.yml gives the variable. What a record
-does not hold is not read as unchanged: see baseline_of
+does not hold is not read as unchanged: see baseline_of.
+
+A class a node was being given when the run before stopped is filed as well,
+whatever the values say: see unfinished_changes
 """
 from __future__ import annotations
 
@@ -58,12 +61,14 @@ def main():
             continue
 
         node_hostvars = hostvars[ih]
+        unfinished = unfinished_classes(node_hostvars, changes)
         applied = node_hostvars.get("ki_applied_vars")
         # A node nothing has recorded yet, which is every node of a cluster built
         # before there was a record. Nothing can be said about what changed, so
         # the run takes what the node has now as the starting point and says so
         if not applied:
             baseline_ihs.append(ih)
+            unfinished_changes(changes, ih, unfinished)
             continue
 
         for name, cls in class_of.items():
@@ -92,6 +97,8 @@ def main():
             }
             changes[class_on_node(cls, name, node_hostvars, applied, fallbacks, memory_reservation_vars,
                                   cpu_reservation_vars)].append(change)
+
+        unfinished_changes(changes, ih, unfinished)
 
     blocking = [(cls, changes[cls]) for cls in BLOCKING_CLASSES if changes[cls]]
     if blocking:
@@ -248,13 +255,56 @@ def runs_or_ran(policy_name: str, value: str, node_hostvars: dict, applied: dict
     return node_hostvars.get(policy_name) == value or ran_before == value
 
 
+def unfinished_classes(node_hostvars: dict, changes: Dict[str, List[dict]]) -> List[str]:
+    """The classes a run began applying to this node and never recorded.
+
+    A name that is no class of this release, or one of a class that is refused
+    rather than applied, is a line nothing here could have written and is left
+    alone rather than turned into something to apply.
+    """
+    return sorted(cls for cls in set(node_hostvars.get("ki_applying_classes") or [])
+                  if cls in changes and cls not in BLOCKING_CLASSES)
+
+
+def unfinished_changes(changes: Dict[str, List[dict]], ih: str, unfinished: List[str]):
+    """Files a class a node was being given when the run before stopped as a change of that node.
+
+    The record is written at the end of a run, so one that failed after it wrote
+    to a node left the record saying what the node held before. Compared against
+    that, an inventory put back to the old values is nothing to apply, and the
+    node goes on holding what failed - measured, a kubelet given a configuration
+    it refuses stays down through every run after the one that gave it. The
+    playbook marks the node before it writes to it and the mark goes with the
+    record, so a mark still there is a node whose record does not say what it
+    holds, and the class is applied to it again.
+
+    Filed only where no variable of the class changed on the node. One that did
+    already takes the node through the same apply.
+    """
+    for cls in unfinished:
+        if any(change["ih"] == ih for change in changes[cls]):
+            continue
+
+        changes[cls].append({
+            "ih": ih,
+            "name": None,
+            "applied": None,
+            "current": None,
+            "compared_with": "unfinished",
+        })
+
+
 def build_summary(changes: Dict[str, List[dict]]) -> List[str]:
-    return [
-        f"[{cls}] node[\"{change['ih']}\"] variable[\"{change['name']}\"]"
-        f" {fmt_before(change)} -> {fmt(change['current'])}{fmt_compared_with(change)}"
-        for cls in sorted(changes)
-        for change in changes[cls]
-    ]
+    return [summary_line(cls, change) for cls in sorted(changes) for change in changes[cls]]
+
+
+def summary_line(cls: str, change: dict) -> str:
+    if change["compared_with"] == "unfinished":
+        return (f"[{cls}] node[\"{change['ih']}\"] was being given this class when the run before stopped,"
+                " so it is applied again")
+
+    return (f"[{cls}] node[\"{change['ih']}\"] variable[\"{change['name']}\"]"
+            f" {fmt_before(change)} -> {fmt(change['current'])}{fmt_compared_with(change)}")
 
 
 def print_blocking(blocking: List[tuple]):

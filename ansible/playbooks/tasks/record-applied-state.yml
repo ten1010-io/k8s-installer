@@ -16,9 +16,10 @@
   gather_facts: false
   any_errors_fatal: true
   vars:
+    recorded_class_names: >-
+      {{ ki_var_classes.keys() | list if ki_recorded_classes == "all" else ki_recorded_classes }}
     recordable_names: >-
-      {{ (ki_var_classes.keys() | list if ki_recorded_classes == "all" else ki_recorded_classes)
-         | map("extract", ki_var_classes) | flatten }}
+      {{ recorded_class_names | map("extract", ki_var_classes) | flatten }}
   tasks:
     # Rather than a default of every class, which is what this did before and is
     # the shape that goes wrong quietly: a class added later and forgotten here
@@ -67,6 +68,15 @@
           {% endfor %}
         dest: "{{ ki_etc_applied_vars_path }}"
       become: yes
+
+    # With the record, and only the classes this playbook recorded. A class
+    # that is still marked is one whose record is behind what the node holds, and
+    # a playbook that did not apply it has not caught the record up. See
+    # ki_etc_applying_classes_path
+    - name: "Take the classes this run recorded out of file[\"{{ ki_etc_applying_classes_path }}\"]"
+      shell: >-
+        sudo sh -c 'test ! -f {{ ki_etc_applying_classes_path }}
+        || sed -i -E "/^({{ recorded_class_names | join("|") }})$/d" {{ ki_etc_applying_classes_path }}'
 
     # The release that produced the state recorded above. A cluster upgrade reads
     # it to learn where it is starting from, which nothing else on the node can

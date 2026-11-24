@@ -143,6 +143,17 @@ ki_etc_nodes_path: "{{ ki_etc_root_path }}/nodes.yml"
 # what is in it is what the node is actually running with. update-cluster.yml
 # compares vars.yml against this to work out what changed and what that needs
 ki_etc_applied_vars_path: "{{ ki_etc_root_path }}/applied-vars.yml"
+# The classes of ki_var_classes a run began applying to this node and did not
+# get to record, one name a line. The record above is written last, so a run
+# that fails after it has written to a node leaves the record saying what the
+# node held before, and an inventory put back to that reads as nothing to do
+# while the node holds what failed. A playbook writes the class here before it
+# touches the node and record-applied-state.yml takes it away with the record,
+# so a line that is still here is a node update-cluster.yml applies the class to
+# again whatever the values say. Only the classes written through the kubelet
+# configuration of a node are marked: that is the file a refused value leaves a
+# node unable to start from
+ki_etc_applying_classes_path: "{{ ki_etc_root_path }}/applying-classes"
 # Where each k8s cp node keeps its etcd snapshots. Under the variable data of
 # the installer rather than /var/backups, so that everything it writes on a node
 # is under one root. On the root filesystem, which is why the count is bounded
