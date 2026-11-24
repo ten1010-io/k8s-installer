@@ -59,6 +59,34 @@
         msg: "{{ shell_result.stderr_lines }}"
       when: shell_result.stderr_lines | length > 0
 
+# kube-apiserver of 5.0.x got audit and the token webhook of AIPub by an edit of
+# its static pod manifest, which kubeadm does not know of and writes over at the
+# first upgrade. --check refused above unless vars.yml declares all of it; here
+# kubeadm is given it, at the version the cluster runs now, and every k8s cp node
+# writes its manifests from that - so what the upgrade later writes is what runs
+# now. Measured without this step: the upgrade turned audit off and took the
+# token webhook away
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute adopt-legacy-node.sh --sync-cluster-config
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/adopt-legacy-node.sh {{ vars_path_arg }} --sync-cluster-config"
+      when: inventory_hostname == k8s_cp_nodes[0]
+
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute update-k8s-cp-config.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/update-k8s-cp-config.sh {{ vars_path_arg }}"
+      when: inventory_hostname in k8s_cp_nodes
+
 - hosts: ki_cp_node:!broken_node
   gather_facts: false
   any_errors_fatal: true
@@ -78,6 +106,13 @@
     # haproxy of 5.0.x has no such socket
     - name: Execute setup-k8s-cp-lb.sh --update
       shell: "{{ scripts }}/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh {{ vars_path_arg }} --update"
+
+    # The time client of a ki cp node of 5.0.x follows ki-cp.ki.local, the ntp
+    # server the node runs itself, which hands out a correction it does not
+    # apply. check-node-state.sh refuses that before an upgrade. This installer
+    # points a ki cp node at ki_cp_ntp_server_upstream_servers instead
+    - name: Execute setup-ntp-client.sh
+      shell: "{{ scripts }}/all-node/ntp-client/setup-ntp-client.sh {{ vars_path_arg }}"
 
 - hosts: k8s_node:ki_cp_node:!broken_node
   gather_facts: false

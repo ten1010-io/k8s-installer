@@ -35,7 +35,12 @@
           shell: "{{ lb_admin_cmd }} drain {{ inventory_hostname }}"
           delegate_to: "{{ item }}"
           loop: "{{ ki_cp_ihs }}"
-          when: inventory_hostname in k8s_cp_nodes
+          # With one k8s cp node there is no other backend to send the traffic to,
+          # and a drained last backend is no apiserver at all: the drain of the node
+          # that comes next goes through the vip and would find nothing behind it
+          when:
+            - inventory_hostname in k8s_cp_nodes
+            - k8s_cp_nodes | length > 1
 
         - name: Execute drain-node.sh
           shell: "{{ scripts }}/k8s-node/drain-node.sh {{ vars_path_arg }} {{ knn }}"
