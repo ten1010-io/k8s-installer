@@ -1,0 +1,85 @@
+# Takes a snapshot of every node before an upgrade, for rollback-cluster.yml
+# to go back to. See scripts/all-node/snapshot/snapshot-node.sh for what one
+# holds.
+#
+#   -e snapshot_id=<name>                default pre-upgrade-<utc time>
+#   -e snapshot_packages_dir=<path>      on the control node, the package files
+#                                        of the versions the nodes run now. Its
+#                                        <distribution><major>.<minor> directory
+#                                        is copied to each node, or the whole of
+#                                        it when there is none. For a cluster of
+#                                        the 5.0.x installer that is
+#                                        /var/lib/ki-env/bin/linux-packages, the
+#                                        default. For a cluster of this
+#                                        installer it is the bundle of the
+#                                        release it runs
+#   -e snapshot_allow_missing_packages=true
+#                                        take it even where a package file is
+#                                        missing. That package then stays at the
+#                                        upgraded version after a rollback
+#
+# etcd is taken on every k8s cp node. A rollback restores the one of the first
+# k8s cp node on all of them, so the members agree on one state.
+- import_playbook: tasks/begin-playbook.yml
+  vars:
+    playbook: "snapshot-cluster"
+
+- import_playbook: tasks/prepare-vars.yml
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Set_fact variable[\"snapshot_id\"]
+      set_fact:
+        snapshot_id: "{{ snapshot_id | default('pre-upgrade-' + lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ')) }}"
+        snapshot_packages_dir: "{{ snapshot_packages_dir | default('/var/lib/ki-env/bin/linux-packages') }}"
+
+- hosts: k8s_node:ki_cp_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    snapshot_id: "{{ hostvars['localhost']['snapshot_id'] }}"
+    packages_root: "{{ hostvars['localhost']['snapshot_packages_dir'] }}"
+    os_dir: "{{ node_os['distribution'] }}{{ node_os['major_version'] }}.{{ node_os['minor_version'] }}"
+    node_packages_dir: "{{ ki_tmp_root_path }}/snapshot-packages"
+    allow_missing_arg: "{{ '--allow-missing-packages' if (snapshot_allow_missing_packages | default(false) | bool) else '' }}"
+  tasks:
+    - name: "Check directory[\"{{ packages_root }}/{{ os_dir }}\"] on the control node"
+      stat:
+        path: "{{ packages_root }}/{{ os_dir }}"
+      register: os_dir_stat
+      delegate_to: localhost
+
+    - name: "Create directory[\"{{ ki_tmp_root_path }}\"]"
+      shell: "{{ ki_create_tmp_root_cmd }}"
+
+    - name: Copy the package files of the release the node runs
+      copy:
+        src: "{{ (packages_root + '/' + os_dir + '/') if os_dir_stat.stat.exists else (packages_root + '/') }}"
+        dest: "{{ node_packages_dir }}/"
+      become: yes
+
+    - name: Execute snapshot-node.sh
+      shell: >-
+        sudo {{ ki_opt_scripts_path }}/all-node/snapshot/snapshot-node.sh {{ vars_path_arg }}
+        --id {{ snapshot_id }} --packages-dir {{ node_packages_dir }} {{ allow_missing_arg }}
+      register: shell_result
+
+    - name: Print where the snapshot is
+      debug:
+        msg: "{{ shell_result.stderr_lines }}"
+
+  post_tasks:
+    - name: "Delete directory[\"{{ node_packages_dir }}\"]"
+      shell: "sudo rm -rf {{ node_packages_dir }}"
+
+- hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Print how to go back to it
+      debug:
+        msg: "Snapshot[\"{{ snapshot_id }}\"] taken. rollback-cluster.yml -e snapshot_id={{ snapshot_id }} -e confirm_data_loss= puts the cluster back to it"
+
+- import_playbook: tasks/reset-vars-file.yml
