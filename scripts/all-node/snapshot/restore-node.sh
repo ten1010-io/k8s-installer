@@ -116,6 +116,20 @@ restore_packages_and_files() {
     apt-mark hold kubeadm kubelet kubectl >/dev/null 2>&1 || true
   fi
 
+  # Every ki cp service down before its compose files go back. docker is
+  # restarted below, and a container of the upgraded release still standing then
+  # comes back up on its own, with a bind mount whose source the snapshot does
+  # not have - docker makes a directory there, and the next setup of that
+  # service fails on a directory where it writes a file. Measured: the
+  # extra zone file of ki-cp-dns-server. services brings back the ones of the
+  # snapshot
+  if command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
+    local name
+    for name in $(docker compose ls -a --format json | $yq_cmd -p json '.[].Name'); do
+      docker compose -p "$name" down
+    done
+  fi
+
   local p
   while read -r p; do
     [[ -e $p ]] && mv "$p" "$p.before-rollback-$stamp"

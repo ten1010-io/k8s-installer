@@ -196,7 +196,8 @@ sync_cluster_config() {
     die "[ERROR] Failed to read kubeadm-config of the cluster"
 
   tmp_vars=$(mktemp)
-  trap 'rm -f "$tmp_vars"' RETURN
+  # Expanded now: the trap runs after the local is gone
+  trap "rm -f '$tmp_vars'; trap - RETURN" RETURN
   cp "$vars_path" "$tmp_vars"
   $yq_cmd -i ".k8s_version = \"$($yq_cmd '.kubernetesVersion' <<<"$current")\"" "$tmp_vars"
 
@@ -205,6 +206,13 @@ sync_cluster_config() {
     local now next
     now=$($yq_cmd ".$key // \"\"" <<<"$current")
     next=$($yq_cmd "select(.kind == \"ClusterConfiguration\") | .$key // \"\"" <<<"$rendered")
+    # Left out of the template is left to kubeadm, which fills in its default
+    if [[ -z $next ]]; then
+      case $key in
+      networking.dnsDomain) next="cluster.local" ;;
+      etcd.local.dataDir) next="/var/lib/etcd" ;;
+      esac
+    fi
     [[ $now = "$next" ]] ||
       die "[ERROR] vars.yml renders $key \"$next\" but the cluster has \"$now\". A takeover keeps it as it is; make vars.yml say \"$now\""
   done
