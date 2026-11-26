@@ -105,10 +105,16 @@ main() {
   # what takes that away
   $jinja2_cmd --format yaml -o "/etc/containerd/config.d/99-nvidia.toml" "$SCRIPT_DIR_PATH"/templates/config.d/99-nvidia.toml.j2 "$vars_path"
 
-  # Restarting containerd tears down every container of the node, so an update is
-  # meant to run against a node that has been drained first. A node that does not
-  # have containerd enabled yet is set up rather than restarted, so that an update
-  # which failed part way through the cluster can simply be repeated
+  # An update is meant to run against a node that has been drained first.
+  # Restarting containerd does not take the containers of the node down with it:
+  # the shims hold them and the daemon that comes back picks them up, and
+  # measured with containerd 2.3 every container a drain had left on a node kept
+  # its pid across the restart. But what this file changes is how a container is
+  # set up, so one that is already running only gets it by being made again, and
+  # a daemon that does not come back under a new file is better met on a node
+  # that is running nothing. A node that does not have containerd enabled yet is
+  # set up rather than restarted, so that an update which failed part way
+  # through the cluster can simply be repeated
   if [[ $update = "true" && $("$ki_opt_scripts_path"/systemctl.sh is-enabled containerd) = "true" ]]; then
     "$ki_opt_scripts_path"/systemctl.sh restart containerd
   else

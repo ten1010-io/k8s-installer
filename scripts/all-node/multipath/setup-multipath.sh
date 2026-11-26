@@ -189,8 +189,13 @@ turn_off() {
 # extended regular expressions, found anywhere in the string. An nvme path has
 # no vendor file, and multipath calls the vendor of every one of them NVME
 require_maps_stay_named() {
-  local devices
-  devices=$($yq_cmd '.multipath_devices // [] | .[] | .vendor, .product' < "$vars_path")
+  # Two lists read side by side rather than one of pairs. yq is not jq here:
+  # ".[] | .vendor, .product" prints every vendor and then every product
+  # whichever way it is bracketed, so a pair read off consecutive lines is the
+  # vendor of one device against the vendor of the next
+  local vendor_regexes=() product_regexes=()
+  mapfile -t vendor_regexes < <($yq_cmd '.multipath_devices // [] | .[] | .vendor' < "$vars_path")
+  mapfile -t product_regexes < <($yq_cmd '.multipath_devices // [] | .[] | .product' < "$vars_path")
 
   local errors=""
   local dm name slave vendor product
@@ -204,7 +209,7 @@ require_maps_stay_named() {
       product=$(read_trimmed "$slave/device/model")
       [[ -z $vendor && $(basename "$slave") = nvme* ]] && vendor="NVME"
 
-      [[ $(is_named_device "$devices" "$vendor" "$product") = "true" ]] && continue
+      [[ $(is_named_device "$vendor" "$product") = "true" ]] && continue
 
       errors+="\n  map[\"$name\"] path[\"$(basename "$slave")\"] vendor[\"$vendor\"] product[\"$product\"]"
     done
@@ -216,21 +221,19 @@ require_maps_stay_named() {
   return 0
 }
 
-# devices is what yq printed for multipath_devices: the vendor of an entry on
-# one line and its product on the next
+# Reads vendor_regexes and product_regexes of the caller, which bash lets a
+# function do: entry i of one belongs with entry i of the other
 is_named_device() {
-  local devices=$1
-  local vendor=$2
-  local product=$3
+  local vendor=$1
+  local product=$2
 
-  local vendor_regex product_regex
-  while IFS= read -r vendor_regex && IFS= read -r product_regex; do
-    [[ -z $vendor_regex ]] && continue
-    if [[ $vendor =~ $vendor_regex && $product =~ $product_regex ]]; then
+  local i
+  for i in "${!vendor_regexes[@]}"; do
+    if [[ $vendor =~ ${vendor_regexes[$i]} && $product =~ ${product_regexes[$i]} ]]; then
       echo "true"
       return 0
     fi
-  done <<< "$devices"
+  done
 
   echo "false"
 
