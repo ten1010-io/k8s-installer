@@ -139,7 +139,11 @@ iscsi_restore_node_state() {
     [[ -z $unit ]] && continue
 
     if [[ $active_before = "inactive" && $(iscsi_unit_active_word "$unit") = "active" ]]; then
-      systemctl stop "$unit"
+      # Not every unit can be stopped by hand. iscsi-shutdown.service of a rhel
+      # comes up beside iscsid as a dependency, refuses a manual stop and
+      # does its one job when the machine goes down, so it is left where it is
+      systemctl stop "$unit" 2>/dev/null ||
+        echo >&2 "[INFO] Unit[\"$unit\"] does not take a stop by hand and is left as it is"
     fi
     if [[ $enabled_before = "disabled" && $(iscsi_unit_enabled_word "$unit") = "enabled" ]]; then
       systemctl disable "$unit" > /dev/null 2>&1

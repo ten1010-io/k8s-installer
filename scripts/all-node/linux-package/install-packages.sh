@@ -834,8 +834,11 @@ restore_storage_units() {
     read -r enabled_before active_before <<< "${storage_units_before[$unit]:-disabled inactive}"
 
     if [[ $active_before = "inactive" && $(storage_unit_active_word "$unit") = "active" && $in_use = "false" ]]; then
-      systemctl stop "$unit"
-      msg "[INFO] Unit[\"$unit\"] was started by its package and was not running before, so it is stopped again. whether this node runs it is decided by the variables of the node"
+      # A unit that refuses a stop by hand is one that came up as the
+      # dependency of another, and goes with it
+      if systemctl stop "$unit" 2>/dev/null; then
+        msg "[INFO] Unit[\"$unit\"] was started by its package and was not running before, so it is stopped again. whether this node runs it is decided by the variables of the node"
+      fi
     fi
     if [[ $enabled_before = "disabled" && $(storage_unit_enabled_word "$unit") = "enabled" ]]; then
       systemctl disable "$unit" > /dev/null 2>&1

@@ -119,7 +119,8 @@ multipath_restore_node_state() {
     [[ -z $unit ]] && continue
 
     if [[ $active_before = "inactive" && $(multipath_unit_active_word "$unit") = "active" ]]; then
-      systemctl stop "$unit"
+      systemctl stop "$unit" 2>/dev/null ||
+        echo >&2 "[INFO] Unit[\"$unit\"] does not take a stop by hand and is left as it is"
     fi
     if [[ $enabled_before = "disabled" && $(multipath_unit_enabled_word "$unit") = "enabled" ]]; then
       systemctl disable "$unit" > /dev/null 2>&1
