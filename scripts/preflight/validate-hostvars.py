@@ -1345,7 +1345,7 @@ class VarsModel(BaseModel):
             raise ValueError("path must be absolute")
         return path
 
-    @field_validator("ephemeral_storage_device")
+    @field_validator("ephemeral_storage_device", "ephemeral_storage_path")
     @classmethod
     def must_be_absolute_when_set(cls, path: Optional[PurePosixPath]) -> Optional[PurePosixPath]:
         if path is not None and not path.is_absolute():
@@ -1359,6 +1359,18 @@ class VarsModel(BaseModel):
 
     # None means the node keeps its ephemeral storage on the root filesystem
     ephemeral_storage_device: Optional[PurePosixPath] = None
+    # A directory in place of the device. What the directory has to be is asked
+    # on the node by setup-ephemeral-storage.sh, which runs before this does
+    ephemeral_storage_path: Optional[PurePosixPath] = None
+
+    # On the field rather than on the model, so that what the report quotes is
+    # this one path and not every variable of the node
+    @field_validator("ephemeral_storage_path")
+    @classmethod
+    def one_place_for_the_ephemeral_storage(cls, path: Optional[PurePosixPath], info) -> Optional[PurePosixPath]:
+        if path is not None and info.data.get("ephemeral_storage_device") is not None:
+            raise ValueError("ephemeral_storage_device is set as well. A node is given one of them")
+        return path
 
     internal_network_subnets: list[IPv4Network]
 

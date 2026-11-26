@@ -121,6 +121,27 @@ def test_an_apiserver_volume_with_a_relative_path_is_refused(hostvars):
     assert_refused(hostvars, naming="hostPath")
 
 
+def test_a_directory_for_the_ephemeral_storage_is_accepted(hostvars):
+    hostvars["node2"]["ephemeral_storage_path"] = "/data/k8s"
+
+    assert_accepted(hostvars)
+
+
+def test_a_directory_for_the_ephemeral_storage_that_is_not_absolute_is_refused(hostvars):
+    hostvars["node2"]["ephemeral_storage_path"] = "data/k8s"
+
+    assert_refused(hostvars, naming="ephemeral_storage_path")
+
+
+def test_a_device_and_a_directory_for_the_ephemeral_storage_are_refused(hostvars):
+    hostvars["node2"]["ephemeral_storage_device"] = "/dev/vdb"
+    hostvars["node2"]["ephemeral_storage_path"] = "/data/k8s"
+
+    report = assert_refused(hostvars, naming="ephemeral_storage_device is set as well")
+    # the report quotes the path, not the rest of what the node was given
+    assert "ansible_host" not in report
+
+
 def test_handing_over_every_gpu_without_naming_a_device_is_refused(hostvars):
     hostvars["node2"]["gpu_passthrough"] = True
     hostvars["node2"]["vfio_pci_device_ids"] = []

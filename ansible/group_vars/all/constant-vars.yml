@@ -171,6 +171,12 @@ ki_etc_applied_release_path: "{{ ki_etc_root_path }}/applied-release"
 # mounted onto them. See docs/impl-notes.adoc
 ki_ephemeral_root_path: "{{ ki_var_root_path }}/ephemeral"
 
+# The fallback for a variable of vars.yml. An upgrade keeps the vars.yml of the
+# user, so a cluster taking the release that added it has no line for it, and
+# the play that sets up the ephemeral storage would be reading a name that does
+# not exist
+ephemeral_storage_path: null
+
 internal_network_ip: null
 internal_network_zone: "ki.local"
 internal_network_ki_cp_dns_name: "ki-cp.{{ internal_network_zone }}"
@@ -774,6 +780,7 @@ ki_var_classes:
   node_rebuild:
     - docker_root_path
     - ephemeral_storage_device
+    - ephemeral_storage_path
     - internal_network_ip
     - k8s_cp
     - ki_var_root_path

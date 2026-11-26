@@ -76,6 +76,9 @@ k8s_node:
       # The device given here holds everything kubelet accounts as ephemeral
       # storage. It gets formatted, so it has to be a disk with nothing on it
       #ephemeral_storage_device: "/dev/disk/by-id/nvme-eui.0123456789abcdef"
+      # Or, on a node with no blank device, a directory of a filesystem that is
+      # already mounted. Nothing is formatted
+      #ephemeral_storage_path: "/data/k8s"
       # A node that runs virtual machines with a passed through gpu lines the
       # vcpus, the memory and the gpu of a guest up on one numa node, and puts
       # the guest memory on hugepages reserved at boot. The policies are per

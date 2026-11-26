@@ -97,6 +97,13 @@ SVC_NAMES=(containerd kubelet)
 
 ki_opt_scripts_path=$(cd "$SCRIPT_DIR_PATH"/../.. &>/dev/null && pwd -P)
 
+# Whether the node was set up from a device, read before the entries go: the
+# first of them mounts the device by its uuid, and is a bind mount when the node
+# was given a directory. Only a device is the installer's to delete in without
+# looking twice, so anything else, entries already gone or edited by hand
+# included, is treated as the other kind
+of_device="false"
+
 main() {
   if ! is_configured; then
     msg "[INFO] Ephemeral storage not configured. nothing to reset"
@@ -105,6 +112,12 @@ main() {
   fi
 
   require_runtimes_not_running
+
+  local first_entry
+  first_entry=$(sed -n "/^$FSTAB_BEGIN_MARKER\$/{n;p;}" "$FSTAB_PATH")
+  if [[ $first_entry = UUID=* ]]; then
+    of_device="true"
+  fi
 
   unmount_bind_mounts
   clear_subdirectories
@@ -173,6 +186,16 @@ clear_subdirectories() {
     return 0
   fi
 
+  # -xdev stops at another filesystem, which a mount left under a directory of
+  # the site need not be: a bind mount of the same filesystem is deleted
+  # through. So with a directory nothing is deleted while anything is mounted
+  # below the mount path
+  local left
+  left=$(findmnt -rno TARGET | grep "^$mount_path/" || true)
+  if [[ $of_device != "true" && -n $left ]]; then
+    die "[ERROR] Still mounted under[\"$mount_path\"]: ${left//$'\n'/, }. Unmount them and reset again"
+  fi
+
   local entry
   local path
   for entry in "${BIND_MOUNTS[@]}"; do
@@ -217,6 +240,15 @@ remove_fstab_entries() {
 remove_mount_path() {
   if is_mountpoint "$mount_path"; then
     die "[ERROR] Directory[\"$mount_path\"] is still a mount point"
+  fi
+  # With a directory behind it, the mount path is the whole directory of the
+  # site for as long as the bind mount is up, and the check above is all that
+  # says it is not. rmdir removes the mount point when it is one and nothing
+  # when it is not
+  if [[ $of_device != "true" ]]; then
+    rmdir "$mount_path"
+
+    return 0
   fi
   rm -rf "$mount_path"
 
