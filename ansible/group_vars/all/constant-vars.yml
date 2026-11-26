@@ -364,6 +364,19 @@ kernel_cmdline_extra_args: []
 kernel_modules_extra: []
 sysctl_extra: {}
 
+# The fallbacks for the iscsi initiator, the multipath and the containerd
+# variables vars.yml carries, for the same reason: a cluster taking the release
+# that added them has a vars.yml with no line for any of them. Off and empty is
+# also what every such cluster was running, since none of this was the
+# installer's before the lines existed - whatever a node holds of it was put
+# there by its image or by hand, and off is what leaves that alone
+iscsi_initiator_enabled: false
+iscsi_initiator_settings: {}
+multipath_enabled: false
+multipath_defaults: {}
+multipath_devices: []
+containerd_device_ownership_from_security_context: false
+
 # The pci devices of a node to bind to vfio-pci, as vendor:device, set per node
 # in inventory.yml. Empty leaves the node alone: neither the bootloader nor the
 # initramfs is touched on a node that names none
@@ -742,6 +755,32 @@ ki_var_classes:
   node_kernel:
     - kernel_modules_extra
     - sysctl_extra
+  # Written onto the node as the configuration of a daemon and applied to the
+  # running node in the same step, the way the class above is: iscsid is started
+  # or told to start again, multipathd is told to read its file again. Nothing
+  # is drained and nothing is rebooted, and what is already attached stays
+  # attached - a session is the kernel's and a map that did not change is left
+  # where it is.
+  #
+  # Turning one of the two off puts the node back to what it was before this
+  # installer turned it on, and is refused on a node that still holds a session
+  # or a map. That refusal is a question for the machine rather than for the
+  # diff, so it is check-node-storage.yml asking each node before anything is
+  # applied, and the class stays one this playbook applies
+  node_storage:
+    - iscsi_initiator_enabled
+    - iscsi_initiator_settings
+    - multipath_enabled
+    - multipath_defaults
+    - multipath_devices
+  # Rendered into the configuration of containerd, which reads it as it starts.
+  # Applied by writing the file again and restarting containerd, on a node that
+  # was drained for it, one node at a time: what these change is how a container
+  # is set up, so a container that is already running only gets it by being
+  # made again. apply-container-runtime-var-changes.yml says what the drain is
+  # and is not for
+  container_runtime:
+    - containerd_device_ownership_from_security_context
   # Read by the kernel as the node boots, so writing it onto the node is not
   # applying it. Applied by writing what the node has to boot with and then
   # rebooting the node for it, one node at a time and the way reboot-nodes.yml

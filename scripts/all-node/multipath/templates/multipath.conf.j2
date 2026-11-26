@@ -1,0 +1,29 @@
+{#- A yaml true reaches here as a python bool, which renders as the word "True"
+    and is not a value multipath takes. It is told yes and no instead, which is
+    how every flag of this file is spelt -#}
+# Written by k8s-installer. multipath_defaults and multipath_devices of this
+# node. Edited by hand, it is written over the next time a playbook runs
+
+defaults {
+{%- for key, value in (multipath_defaults | default({}, true)).items() %}
+    {{ key }} "{{ ('yes' if value else 'no') if value is boolean else value }}"
+{%- endfor %}
+}
+
+# Every device is left alone ...
+blacklist {
+    device {
+        vendor ".*"
+        product ".*"
+    }
+}
+
+# ... but the ones named here, which are the only ones brought together
+blacklist_exceptions {
+{%- for device in multipath_devices | default([], true) %}
+    device {
+        vendor "{{ device.vendor }}"
+        product "{{ device.product }}"
+    }
+{%- endfor %}
+}

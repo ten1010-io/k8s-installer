@@ -352,6 +352,14 @@ harvest_rpm_all() {
   harvest ethtool ethtool
   harvest iproute iproute iproute-tc
   harvest socat socat
+  # The iscsi initiator, multipath and the scsi tools a person reaches for when
+  # either misbehaves. On every node whether or not it uses them: a node that
+  # is told to later has no repository to ask (install-packages.sh says how
+  # they are kept from starting)
+  harvest iscsi-initiator-utils iscsi-initiator-utils
+  harvest device-mapper-multipath device-mapper-multipath
+  harvest sg3_utils sg3_utils
+  harvest lsscsi lsscsi
   # The headers of the gnutls and selinux chains, which the rhel 8 bundle has
   # always carried and a site may build against. Last, so that each one meets
   # the library it wants at the exact version the directories before it laid
@@ -429,6 +437,14 @@ harvest_deb_all() {
     "docker-ce-rootless-extras=$docker_version" "docker-buildx-plugin=$buildx_version" "docker-compose-plugin=$compose_version"
   harvest ethtool ethtool
   harvest socat socat
+  # The iscsi initiator, multipath and the scsi tools a person reaches for when
+  # either misbehaves, for the reason given beside the rpms. The server images
+  # of ubuntu already hold all four, so on those a directory carries only what
+  # the image holds older; a minimal install has none of them
+  harvest open-iscsi open-iscsi
+  harvest multipath-tools multipath-tools
+  harvest sg3-utils sg3-utils
+  harvest lsscsi lsscsi
 
   # setup-venv.sh lays these down before install-packages.sh has touched the
   # node, in this order, so they are a group of their own. The GA image carries

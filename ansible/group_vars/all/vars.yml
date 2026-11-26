@@ -81,6 +81,109 @@ kernel_cmdline_extra_args: []
 kernel_modules_extra: []
 sysctl_extra: {}
 
+# Whether this node is an iscsi initiator, and the settings its sessions are
+# made with. Set per node in inventory.yml, since which nodes are given volumes
+# over iscsi follows from what runs on them; set here, it is every node.
+#
+#   iscsi_initiator_enabled: true
+#   iscsi_initiator_settings:
+#     node.session.timeo.replacement_timeout: 120
+#     node.session.scan: "manual"
+#
+# What this is for is a volume that reaches a node as a lun. This installer
+# brings kubernetes up and not the storage on top of it, so whatever attaches
+# the lun - a csi driver, usually - is installed afterwards, and what it needs of
+# the node had nowhere to be declared: the iscsi daemon running, and a name the
+# storage system can tell the node by. Done by hand after the node has joined,
+# it is done too late: a csi node plugin reads the name when its pod starts and
+# registers the node with what it found.
+#
+# On, the node is made an initiator while it is being built, before it joins:
+# iscsid is enabled and started, and the node is given an initiator name when
+# it has none. A name it already has is kept. Two nodes holding the same name -
+# machines cloned from one image - are told apart before anything is applied:
+# the one that is not yet an initiator and holds no session is given a new name,
+# and two that are both in use are refused with their names.
+#
+# iscsi_initiator_settings are keys of iscsid.conf, laid over the file the node
+# held. A session reads them when it is made, so a setting changed here reaches
+# the sessions made after it. A yes or no is written as the word, in quotes.
+#
+# Off, which is the default, the installer does not touch the initiator of the
+# node at all. The packages are on every node either way, so that one can be
+# turned on later without the node having to reach a repository; a node whose
+# image shipped the daemon running keeps it running, and one whose image did
+# not is left without.
+#
+# Turned on for a node that is already running, update-cluster.yml applies it
+# without draining the node, and says at the end which nodes were given a name:
+# whatever on them reads it at startup has to be started again. Turned off, the
+# node is put back to what it was before, which is refused while the node holds
+# a session
+iscsi_initiator_enabled: false
+iscsi_initiator_settings: {}
+
+# Whether multipath on this node is this installer's to configure, and what it
+# brings together. Set per node in inventory.yml, like the initiator above.
+#
+#   multipath_enabled: true
+#   multipath_defaults:
+#     find_multipaths: "no"
+#     user_friendly_names: "yes"
+#   multipath_devices:
+#     - vendor: "EXAMPLE"
+#       product: "LUN.*"
+#
+# What this is for is a volume that reaches a node over more than one path.
+# Without multipath the node sees one disk a path, and whatever opens one of
+# them loses the volume when that path goes.
+#
+# On, /etc/multipath.conf is written whole from these variables and multipathd
+# is enabled and started, or told to read the file again when it was already
+# running. The file excludes every device and then excepts the ones of
+# multipath_devices, so what is named is brought together and nothing else is
+# touched - not the disk the node boots from, not an nvme drive, not the device
+# of ephemeral_storage_device. vendor and product are regular expressions matched
+# against what the device reports, as multipath.conf itself takes them, and at
+# least one device has to be named.
+#
+# multipath_defaults are keys of the defaults section of that file. A key
+# multipath does not know is refused when the file is written rather than left
+# in it to be ignored.
+#
+# A node that already holds a multipath map made of a device not named here is
+# refused: the file this writes would not bring that map together again at the
+# next boot.
+#
+# Off, which is the default, the installer does not touch multipath of the node
+# at all - a server image that ships multipathd running with a configuration of
+# its own keeps both. Turned off after it was on, the node is given back the
+# file it held before and the unit as it was, which is refused while the node
+# holds a map
+multipath_enabled: false
+multipath_defaults: {}
+multipath_devices: []
+
+# Whether containerd gives a device handed to a container the user and the group
+# the container runs as.
+#
+# Left off, a block device a pod is given - a raw block volume, which is what a
+# PersistentVolumeClaim with volumeMode: Block is - appears in the container
+# owned by root, whatever runAsUser and fsGroup the pod asked for. A container
+# that does not run as root can then not open the volume it was given, and what
+# it reports is a permission error on a device it can see. On, the device is
+# given the uid and the gid of the container.
+#
+# Cluster wide on purpose, in this file rather than per node, and the preflight
+# refuses it on a node. Whether a pod can open its volume would otherwise depend
+# on where it was scheduled.
+#
+# containerd reads it as it starts, and what it changes is how a container is
+# set up. So on a cluster that is already running update-cluster.yml applies it
+# to one node at a time: the node is drained, its containerd is restarted with
+# the new configuration, and the node is put back before the next one is taken
+containerd_device_ownership_from_security_context: false
+
 internal_network_subnets:
   - "192.168.0.0/24"
 

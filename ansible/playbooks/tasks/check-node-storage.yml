@@ -1,0 +1,87 @@
+# Asks every node what applying the iscsi initiator and the multipath variables
+# would be refused for, and decides which nodes are given a new initiator name.
+# Nothing is changed here.
+#
+# Apart from apply-node-storage.yml, which imports it, because update-cluster.yml
+# asks first and applies much later: a run that is going to refuse has to refuse
+# before it has changed anything. What is refused is a variable turned off under
+# a node that still holds a session or a map, and multipath turned on over a
+# map the new configuration would not bring together. See the two scripts.
+#
+# The initiator name is the one question no node can answer about itself, since
+# what can be wrong with it is another node holding the same one. So every node
+# is asked what it holds - every one of them, not only the ones this run is
+# setting up, because the node a new one collides with is by definition one
+# that was already there - and plan-iscsi-initiator-names.py reads the answers
+# side by side. What it decides is kept on localhost as ki_iscsi_new_name_ihs,
+# which apply-node-storage.yml reads
+- hosts: all:!localhost:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    scripts: "sudo {{ ki_opt_scripts_path }}"
+  tasks:
+    - name: Execute setup-iscsi-initiator.sh --check
+      shell: "{{ scripts }}/all-node/iscsi-initiator/setup-iscsi-initiator.sh {{ vars_path_arg }} --check"
+      changed_when: false
+      when: ki_is_target_node | bool
+
+    - name: Execute setup-multipath.sh --check
+      shell: "{{ scripts }}/all-node/multipath/setup-multipath.sh {{ vars_path_arg }} --check"
+      changed_when: false
+      when: ki_is_target_node | bool
+
+    - name: Execute get-iscsi-initiator-state.sh
+      shell: "{{ scripts }}/all-node/iscsi-initiator/get-iscsi-initiator-state.sh {{ vars_path_arg }}"
+      register: shell_result
+      changed_when: false
+
+    - name: Set_fact variable[\"ki_iscsi_initiator_state\"]
+      set_fact:
+        ki_iscsi_initiator_state: "{{ shell_result.stdout | from_yaml }}"
+
+    - name: Remove temporary variable[\"shell_result\"]
+      set_fact:
+        shell_result: null
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    tmp_input_path: "{{ ki_tmp_root_path }}/tmp-input.yml"
+  tasks:
+    - name: "Create output directory[\"{{ ki_tmp_root_path }}\"]"
+      shell: "{{ ki_create_tmp_root_cmd }}"
+
+    - name: Write temporary file for cli input
+      copy:
+        content: "{{ hostvars | to_yaml }}"
+        dest: "{{ tmp_input_path }}"
+      become: yes
+
+    - name: Execute plan-iscsi-initiator-names.py
+      shell: >-
+        sudo {{ ansible_python_interpreter }} {{ ki_opt_scripts_path }}/preflight/plan-iscsi-initiator-names.py
+        < {{ tmp_input_path }}
+      register: shell_result
+      changed_when: false
+
+    - name: Remove temporary file for cli input
+      shell: "sudo rm {{ tmp_input_path }}"
+
+    - name: Set_fact variable[\"ki_iscsi_new_name_ihs\"]
+      set_fact:
+        ki_iscsi_new_name_ihs: "{{ (shell_result.stdout | from_yaml)['new_name_ihs'] }}"
+
+    - name: Remove temporary variable[\"shell_result\"]
+      set_fact:
+        shell_result: null
+
+    - name: Report the nodes that are given a new iscsi initiator name
+      debug:
+        msg: >-
+          Node[{{ ki_iscsi_new_name_ihs | join(", ") }}] holds an iscsi initiator name another
+          node holds too, has not been made an initiator by this installer and holds no
+          session, so it is given a name of its own as it is set up
+      when: ki_iscsi_new_name_ihs | length > 0

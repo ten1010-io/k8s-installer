@@ -32,6 +32,11 @@
   vars:
     script: all-node/nfs-client/setup-nfs-client.sh
 
+# After the packages, which is where the daemons come from, and well before the
+# node joins the cluster: whatever attaches a volume to a node reads the name of
+# its iscsi initiator as it starts. See tasks/apply-node-storage.yml
+- import_playbook: tasks/apply-node-storage.yml
+
 - import_playbook: tasks/run-all-node-script.yml
   vars:
     script: all-node/crictl/setup-crictl.sh

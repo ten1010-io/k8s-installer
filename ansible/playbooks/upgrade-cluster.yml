@@ -29,6 +29,11 @@
 # See the file
 - import_playbook: tasks/check-kubelet-reserved-cpus.yml
 
+# Before anything is written too, for the variables apply-node-storage.yml
+# applies below: what a node would refuse is asked of it while the cluster is
+# still as it was. See the file
+- import_playbook: tasks/check-node-storage.yml
+
 - import_playbook: tasks/backup-etcd.yml
 
 - import_playbook: tasks/reconcile-k8s-registry.yml
@@ -36,6 +41,13 @@
 - import_playbook: tasks/apply-k8s-cp-extra-files.yml
 
 - import_playbook: tasks/upgrade-k8s-nodes.yml
+
+# After the nodes have been walked, which is what puts the packages of this
+# release on them: the release that added these variables is also the one that
+# added the daemons they configure. A cluster that turns one on in the same run
+# as the upgrade is applied here, and one that leaves them off has nothing done
+# to it. See the file
+- import_playbook: tasks/apply-node-storage.yml
 
 # Here as well as in update-cluster.yml, because what the release before this one
 # left on the node objects is nothing: a cluster reaches this release by being
@@ -56,10 +68,16 @@
 # node_kernel is here because upgrade-k8s-nodes.yml writes those files on every
 # node it walks. Left out, a cluster that came up this way would carry no record
 # of what it was given, and the next update-cluster.yml would read today's
-# inventory as the starting point rather than as a change to apply
+# inventory as the starting point rather than as a change to apply.
+#
+# node_storage and container_runtime are here for the same reason. The first is
+# applied by apply-node-storage.yml above, and the second by
+# upgrade-k8s-nodes.yml, which writes the configuration of containerd again and
+# restarts it on every node it walks, drained
 - import_playbook: tasks/record-applied-state.yml
   vars:
-    ki_recorded_classes: ["cluster_upgrade", "service", "no_action", "node_metadata", "node_kernel"]
+    ki_recorded_classes: ["cluster_upgrade", "service", "no_action", "node_metadata", "node_kernel",
+                          "node_storage", "container_runtime"]
 
 - import_playbook: tasks/reset-vars-file.yml
 
@@ -70,6 +88,8 @@
 - import_playbook: tasks/check-kernel-args.yml
 
 - import_playbook: tasks/report-kubelet-reserved-cpus.yml
+
+- import_playbook: tasks/report-node-storage.yml
 
 - import_playbook: tasks/check-nvidia-cdi.yml
 

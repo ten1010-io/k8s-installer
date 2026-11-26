@@ -29,6 +29,18 @@ SYSCTL_KEY_PATTERN = r"^[A-Za-z0-9_][A-Za-z0-9_./-]*$"
 # because it reads the file back rather than the inventory. Everything a sysctl
 # holds is one line: a number, several of them, or a word
 SYSCTL_VALUE_PATTERN = r"^\S([^\n\r]*\S)?$"
+# A key of iscsid.conf: dotted words, some of them indexed
+# (node.conn[0].timeo.noop_out_interval)
+ISCSI_SETTING_KEY_PATTERN = r"^[A-Za-z][A-Za-z0-9_]*(\[[0-9]+\])?(\.[A-Za-z][A-Za-z0-9_]*(\[[0-9]+\])?)*$"
+# One line, for the reason a sysctl value is: it becomes the right hand side of
+# a line of iscsid.conf, and a newline in it is a second setting nobody looked at
+ISCSI_SETTING_VALUE_PATTERN = r"^\S([^\n\r]*\S)?$"
+# A keyword of the defaults section of multipath.conf
+MULTIPATH_KEY_PATTERN = r"^[a-z][a-z0-9_]*$"
+# What is written between a pair of quotes in multipath.conf: one line, and no
+# quote of its own, which would end the value where it stands and leave the rest
+# of it to be read as configuration
+MULTIPATH_VALUE_PATTERN = r'^[^\n\r"]+$'
 # An iana zone name: Area/Location, sometimes with a third part, and the few
 # single word ones like UTC. The zone has to exist on the node as well, which
 # only the node can say, so this is the shape and not the answer
@@ -152,7 +164,8 @@ def kernel_reads_hugepages_node_format(node_os: dict) -> Optional[bool]:
 # in vars.yml. ki_var_classes covers both files, so a name in it is a name the
 # inventory may carry too, and these are the ones where that would be accepted
 # and then not mean anything
-CLUSTER_WIDE_VARS = frozenset({"k8s_kube_proxy_enabled", "kubelet_server_tls_bootstrap"})
+CLUSTER_WIDE_VARS = frozenset({"k8s_kube_proxy_enabled", "kubelet_server_tls_bootstrap",
+                               "containerd_device_ownership_from_security_context"})
 
 
 def main():
@@ -169,6 +182,7 @@ def main():
     validate_k8s_subnets(hostvars_errors, hostvars)
     validate_kernel_cmdline_extra_args(hostvars_errors, hostvars)
     validate_node_kernel_config(hostvars_errors, hostvars)
+    validate_node_storage(hostvars_errors, hostvars)
     validate_gpu_passthrough(hostvars_errors, hostvars)
     validate_k8s_node_metadata(hostvars_errors, hostvars)
     validate_kubelet_policy(hostvars_errors, hostvars)
@@ -964,6 +978,40 @@ def sysctl_key_of(key) -> str:
     return str(key).replace("/", ".")
 
 
+def validate_node_storage(hostvars_errors: List[HostvarsError], hostvars):
+    """Rejects a node told to run multipath and given nothing to bring together.
+
+    The multipath.conf this installer writes excludes every device and excepts
+    the ones multipath_devices names. With none named it excludes every device
+    and excepts nothing, which is a daemon that is running, a variable that says
+    multipath is on, and a lun that arrives as two unrelated disks all the same.
+    Nothing on the node would say so until a path went and the volume went with
+    it.
+
+    Whether the devices named are the ones the storage of the site presents is
+    not checked here. That needs a lun, and the place it shows is the map
+    multipath does or does not make of it
+    """
+    for ih in sorted(hostvars):
+        if ih == "localhost":
+            continue
+
+        node_hostvars = hostvars[ih]
+        if not node_hostvars.get("multipath_enabled"):
+            continue
+        if node_hostvars.get("multipath_devices"):
+            continue
+
+        error = HostvarsError(ih,
+                              ("multipath_enabled",),
+                              str(node_hostvars["multipath_enabled"]),
+                              "Variable[\"multipath_enabled\"] is true on a node whose variable"
+                              "[\"multipath_devices\"] is empty. The configuration written for that node"
+                              " excludes every device it is not told of, so name the vendor and the"
+                              " product of the devices to bring together or set this false")
+        hostvars_errors.append(error)
+
+
 def validate_gpu_passthrough(hostvars_errors: List[HostvarsError], hostvars):
     """Rejects a node told to hand over every gpu and given no device to hand.
 
@@ -1470,6 +1518,9 @@ class VarsModel(BaseModel):
     # something a model over one node's variables can see, so that half is
     # validate_cluster_wide_vars reading inventory.yml as a file
     kubelet_server_tls_bootstrap: bool
+    # The same: a property of the cluster, refused on a node by
+    # validate_cluster_wide_vars
+    containerd_device_ownership_from_security_context: bool
 
     kubelet_ki_cp_extra_cpu: Annotated[str, StringConstraints(pattern=CPU_QUANTITY_PATTERN)]
     kubelet_ki_cp_extra_memory: Annotated[str, StringConstraints(pattern=STORAGE_SIZE_PATTERN)]
@@ -1511,6 +1562,19 @@ class ConstantVarsModel(BaseModel):
         if not path.is_absolute():
             raise ValueError("path must be absolute")
         return path
+
+    @field_validator("iscsi_initiator_settings", mode="before")
+    @classmethod
+    def flag_is_written_as_a_word(cls, settings):
+        # iscsid.conf spells a flag Yes or No, and a yaml true is neither: it
+        # would be written as the word "true", which iscsid does not read as
+        # one. Refused here, since int takes a bool without a word otherwise
+        if isinstance(settings, dict):
+            for key, value in settings.items():
+                if isinstance(value, bool):
+                    raise ValueError(f"the value of {key} is a yaml boolean. iscsid.conf spells a flag"
+                                     " Yes or No, so write the word in quotes")
+        return settings
 
     @field_validator("sysctl_extra")
     @classmethod
@@ -1583,6 +1647,21 @@ class ConstantVarsModel(BaseModel):
         Annotated[Union[Annotated[str, StringConstraints(pattern=SYSCTL_VALUE_PATTERN)], int, bool],
                   Field(union_mode='left_to_right')]]
 
+    # Whether a node is an iscsi initiator and whether its multipath is this
+    # installer's, with what each is configured with. The values are written
+    # into iscsid.conf and multipath.conf as they are given
+    iscsi_initiator_enabled: bool
+    iscsi_initiator_settings: Dict[
+        Annotated[str, StringConstraints(pattern=ISCSI_SETTING_KEY_PATTERN)],
+        Annotated[Union[Annotated[str, StringConstraints(pattern=ISCSI_SETTING_VALUE_PATTERN)], int],
+                  Field(union_mode='left_to_right')]]
+    multipath_enabled: bool
+    multipath_defaults: Dict[
+        Annotated[str, StringConstraints(pattern=MULTIPATH_KEY_PATTERN)],
+        Annotated[Union[Annotated[str, StringConstraints(pattern=MULTIPATH_VALUE_PATTERN)], bool, int],
+                  Field(union_mode='left_to_right')]]
+    multipath_devices: List[MultipathDeviceModel]
+
     provision_reboot: bool
     gpu_passthrough: bool
 
@@ -1593,6 +1672,28 @@ class ConstantVarsModel(BaseModel):
 
     target_nodes: List[str] | None
     target_node_op: str | None
+
+
+class MultipathDeviceModel(BaseModel):
+    """A device multipath brings together, as the device section of
+    multipath.conf names one: two regular expressions, matched against the
+    vendor and the product the device reports."""
+    model_config = ConfigDict(regex_engine='python-re', extra='forbid')
+
+    @field_validator("vendor", "product")
+    @classmethod
+    def must_be_a_regular_expression(cls, expression: str) -> str:
+        # multipath compiles these as posix extended expressions, which python
+        # reads nearly all of. One that does not compile here is a line
+        # multipath drops from the file, and with it the device it named
+        try:
+            re.compile(expression)
+        except re.error as e:
+            raise ValueError(f"not a regular expression: {e}") from e
+        return expression
+
+    vendor: Annotated[str, StringConstraints(pattern=MULTIPATH_VALUE_PATTERN)]
+    product: Annotated[str, StringConstraints(pattern=MULTIPATH_VALUE_PATTERN)]
 
 
 class NodeTaintModel(BaseModel):

@@ -1,0 +1,36 @@
+# Says which nodes were given an iscsi initiator name by this run that they did
+# not have, or were not using, when the run began.
+#
+# Only the playbooks that work on nodes already in the cluster import this. The
+# name of an initiator is read once, by whatever reads it, as that starts: a
+# csi node plugin registers the node under the name it found when its pod came
+# up, and a pod that came up before the node had one goes on offering the node
+# without it, so a volume attached there never shows up. On a node being built
+# nothing is running yet and the order takes care of itself, which is why
+# setup-cluster.yml and add-node.yml have nothing to say here. On a node that
+# was already running, turning the variable on is the one case this installer
+# can not finish by itself: it does not know what on the node reads the name,
+# and restarting somebody's pods is not its call. So it says so
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: "Set_fact variable[\"ki_iscsi_new_initiator_ihs\"]"
+      set_fact:
+        ki_iscsi_new_initiator_ihs: []
+
+    - name: Collect the nodes whose iscsi initiator name is new
+      set_fact:
+        ki_iscsi_new_initiator_ihs: "{{ ki_iscsi_new_initiator_ihs + [item] }}"
+      loop: "{{ groups['all'] | difference(['localhost']) | difference(ki_broken_nodes) }}"
+      when: hostvars[item]['ki_iscsi_initiator_name_is_new'] | default(false) | bool
+
+    - name: Report the nodes whose iscsi initiator name is new
+      debug:
+        msg: >-
+          [WARN] Node[{{ ki_iscsi_new_initiator_ihs | join(", ") }}] was made an iscsi initiator,
+          or was given a new initiator name, by this run. Whatever reads the initiator name of
+          a node when it starts - a csi node plugin does - was started before the name was
+          there and has to be started again on these nodes, or the volumes attached to them
+          do not appear
+      when: ki_iscsi_new_initiator_ihs | length > 0

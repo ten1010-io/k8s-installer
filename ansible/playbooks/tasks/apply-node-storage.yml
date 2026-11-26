@@ -1,0 +1,54 @@
+# Makes the nodes iscsi initiators and writes their multipath configuration, as
+# the variables of each node say. class["node_storage"] of ki_var_classes.
+#
+# Run whole rather than only for what changed, the same as
+# apply-node-kernel-config.yml and for the same reason: each script renders its
+# file from the variables and compares it with what the node holds, so a node
+# already holding what it is asked for costs a render and nothing is restarted
+# for it. A variable turned off is applied by the same run, since each script
+# keeps on the node the record of what it turned on and puts the node back from
+# it.
+#
+# A node neither variable was ever on for is left exactly as it is by both
+# scripts, whatever its image shipped running.
+#
+# The questions come first, in check-node-storage.yml: what would be refused,
+# and which nodes share an initiator name. A playbook that builds a node imports
+# this after the packages are on it and before the node joins the cluster, and
+# that order is the point of doing it here at all. Whatever attaches a volume
+# to a node reads the name of the initiator when it starts, on the node, and one
+# that started before there was a name has registered the node without one
+- import_playbook: check-node-storage.yml
+
+- hosts: all:!localhost:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    scripts: "sudo {{ ki_opt_scripts_path }}"
+    new_name_arg: >-
+      {{ "--new-initiator-name" if inventory_hostname in hostvars['localhost']['ki_iscsi_new_name_ihs'] else "" }}
+  tasks:
+    - when: ki_is_target_node | bool
+      block:
+        - name: Execute setup-iscsi-initiator.sh
+          shell: "{{ scripts }}/all-node/iscsi-initiator/setup-iscsi-initiator.sh {{ vars_path_arg }} {{ new_name_arg }}"
+          register: shell_result
+
+        # What the script says on stdout when the name of this node is one
+        # nothing that was already running has read. report-node-storage.yml
+        # collects it at the end of the run
+        - name: Set_fact variable[\"ki_iscsi_initiator_name_is_new\"]
+          set_fact:
+            ki_iscsi_initiator_name_is_new: "{{ 'initiator-name-is-new' in shell_result.stdout }}"
+
+        - name: Remove temporary variable[\"shell_result\"]
+          set_fact:
+            shell_result: null
+
+        # After the initiator. Neither needs the other to be set up, and a lun
+        # that arrives before multipathd is up is picked up when it starts, but
+        # this is the order a person would do it in and the order the paths
+        # appear in
+        - name: Execute setup-multipath.sh
+          shell: "{{ scripts }}/all-node/multipath/setup-multipath.sh {{ vars_path_arg }}"

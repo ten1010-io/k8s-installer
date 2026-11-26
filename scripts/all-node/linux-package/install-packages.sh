@@ -106,7 +106,23 @@ RHEL_ERASED_PACKAGES=(systemd-timesyncd ntp chrony podman runc systemd-container
 UBUNTU_REMOVED_PACKAGES=(ntp chrony)
 
 # The directories of an ubuntu, in the order the dependencies between them want
-UBUNTU_DEB_DIRS=(nfs-common systemd dbus pigz slirp containerd iptables ebtables conntrack nftables docker nvidia-container-toolkit ethtool socat)
+UBUNTU_DEB_DIRS=(nfs-common systemd dbus pigz slirp containerd iptables ebtables conntrack nftables docker nvidia-container-toolkit ethtool socat open-iscsi multipath-tools sg3-utils lsscsi)
+
+# The units of the iscsi initiator and of multipath, under every name the
+# distributions give them, sockets before the services they start.
+#
+# Those packages go onto every node, so that either can be turned on for a node
+# later without it having to reach a repository, and whether a node runs them is
+# decided by iscsi_initiator_enabled and multipath_enabled, which
+# setup-iscsi-initiator.sh and setup-multipath.sh apply after this. A package
+# does not wait to be asked: a deb starts its daemon as it is configured, and an
+# rpm enables its units through the presets of the distribution. So what each of
+# these units was before the packages went in is written down, and put back
+# after (remember_storage_units, restore_storage_units). A node that had none
+# of them ends the install with none of them running, and a node whose image
+# shipped multipathd up - the ubuntu server images do - still has it up
+STORAGE_UNITS=(iscsid.socket iscsiuio.socket multipathd.socket iscsid.service iscsiuio.service open-iscsi.service iscsi.service iscsi-init.service iscsi-onboot.service iscsi-shutdown.service multipathd.service)
+declare -A storage_units_before
 
 # The arguments plan-rpm-install.py is given on this node: which packages are
 # the release's own and go in at their version whatever the node holds
@@ -161,6 +177,7 @@ main() {
 
 ubuntu2204_install() {
   require_packages_installable
+  remember_storage_units
   set_k8s_packages_path ubuntu22.04
   require_declared_packages ubuntu22.04 deb
   setup_deb_plan_args ubuntu22.04
@@ -184,6 +201,7 @@ ubuntu2204_install() {
 
   "$ki_opt_scripts_path/systemctl.sh" reload
 
+  restore_storage_units
   settle_units
 
   return 0
@@ -191,6 +209,7 @@ ubuntu2204_install() {
 
 ubuntu2404_install() {
   require_packages_installable
+  remember_storage_units
   set_k8s_packages_path ubuntu24.04
   require_declared_packages ubuntu24.04 deb
   setup_deb_plan_args ubuntu24.04
@@ -214,6 +233,7 @@ ubuntu2404_install() {
 
   "$ki_opt_scripts_path/systemctl.sh" reload
 
+  restore_storage_units
   settle_units
 
   return 0
@@ -247,6 +267,7 @@ rhel_install() {
   local os_dir=$1
 
   require_packages_installable
+  remember_storage_units
   set_k8s_packages_path "$os_dir"
   require_declared_packages "$os_dir" rpm
   setup_rpm_plan_args
@@ -262,7 +283,10 @@ rhel_install() {
   fi
   # iptables: iptables itself on 8, iptables-nft from 9 on. devel: the headers of
   # what came before, which only the rhel 8 bundle carries; empty on the others
-  dirs+=(iptables nftables docker nvidia-container-toolkit ethtool iproute socat devel)
+  # The iscsi initiator, multipath and the scsi tools beside them, before devel,
+  # which is last for the reason tools/build-bundle-packages.sh gives
+  dirs+=(iptables nftables docker nvidia-container-toolkit ethtool iproute socat)
+  dirs+=(iscsi-initiator-utils device-mapper-multipath sg3_utils lsscsi devel)
 
   local base="$ki_opt_bundle_path/linux-packages/$os_dir/$arch"
   rhel_require_installable "$base" "${dirs[@]}"
@@ -300,6 +324,7 @@ rhel_install() {
 
   "$ki_opt_scripts_path/systemctl.sh" reload
 
+  restore_storage_units
   settle_units
 
   return 0
@@ -744,6 +769,80 @@ settle_units() {
   # that could not change and rolled itself back. "kubeadm upgrade node" is what
   # rewrites that file, which is why the old binary has to keep running until
   # then. begin_apt keeps needrestart from doing the same thing from outside
+  return 0
+}
+
+# What each unit of STORAGE_UNITS is before a package is laid down: whether it
+# is enabled and whether it is active. A unit the node does not have is neither,
+# which is what makes one rule cover both a node that had the packages and a
+# node that did not
+remember_storage_units() {
+  local unit
+  for unit in "${STORAGE_UNITS[@]}"; do
+    storage_units_before[$unit]="$(storage_unit_enabled_word "$unit") $(storage_unit_active_word "$unit")"
+  done
+
+  return 0
+}
+
+# Puts every unit of STORAGE_UNITS back to what remember_storage_units found.
+#
+# Only ever back down: a unit that was not enabled is disabled again and one
+# that was not active is stopped again. Nothing a package took down is brought
+# back up here, because none of these packages takes its daemon down for good -
+# a daemon restarted by its own upgrade is active before and after.
+#
+# A daemon that came up while the packages went in is not stopped under a node
+# that holds an iscsi session or a multipath map. Nothing this installs makes
+# either, so on such a node something else was using the daemon, and whatever
+# started it is not this script's to undo
+restore_storage_units() {
+  local in_use="false"
+  local path
+  for path in /sys/class/iscsi_session/session* /sys/block/dm-*/dm/uuid; do
+    [[ -e $path ]] || continue
+    [[ $path = */dm/uuid && $(< "$path") != mpath-* ]] && continue
+    in_use="true"
+  done
+
+  local unit enabled_before active_before
+  for unit in "${STORAGE_UNITS[@]}"; do
+    read -r enabled_before active_before <<< "${storage_units_before[$unit]}"
+
+    if [[ $active_before = "inactive" && $(storage_unit_active_word "$unit") = "active" && $in_use = "false" ]]; then
+      systemctl stop "$unit"
+      msg "[INFO] Unit[\"$unit\"] was started by its package and was not running before, so it is stopped again. whether this node runs it is decided by the variables of the node"
+    fi
+    if [[ $enabled_before = "disabled" && $(storage_unit_enabled_word "$unit") = "enabled" ]]; then
+      systemctl disable "$unit" > /dev/null 2>&1
+      msg "[INFO] Unit[\"$unit\"] was enabled by its package and was not enabled before, so it is disabled again"
+    fi
+  done
+
+  return 0
+}
+
+storage_unit_enabled_word() {
+  local unit=$1
+
+  if [[ $(systemctl is-enabled "$unit" 2>/dev/null) = "enabled" ]]; then
+    echo "enabled"
+  else
+    echo "disabled"
+  fi
+
+  return 0
+}
+
+storage_unit_active_word() {
+  local unit=$1
+
+  if systemctl -q is-active "$unit" 2>/dev/null; then
+    echo "active"
+  else
+    echo "inactive"
+  fi
+
   return 0
 }
 

@@ -21,6 +21,11 @@
 # is a node drained for a kubelet that does not come back. See the file
 - import_playbook: tasks/check-kubelet-reserved-cpus.yml
 
+# Before anything is applied as well: an iscsi initiator or a multipath turned
+# off under a node that still holds a session or a map is refused by the node
+# itself, and so are two nodes in use under one initiator name. See the file
+- import_playbook: tasks/check-node-storage.yml
+
 - import_playbook: tasks/apply-service-var-changes.yml
 
 # Not under the class["service"] condition of the play before it. What the
@@ -47,6 +52,14 @@
 - import_playbook: tasks/apply-node-metadata.yml
 
 - import_playbook: tasks/apply-node-kernel-config.yml
+
+- import_playbook: tasks/apply-node-storage.yml
+
+# After the class above, so that a node made an iscsi initiator by this run is
+# one before its pods are evicted and made again: what comes back on it then
+# starts on a node that already has its name. And before class["node_reboot"],
+# for the reason given there
+- import_playbook: tasks/apply-container-runtime-var-changes.yml
 
 # After every class that restarts something on a node, so that a node rebooted
 # for this is rebooted once and comes back with the rest already applied, and
@@ -81,6 +94,8 @@
 - import_playbook: tasks/check-kernel-args.yml
 
 - import_playbook: tasks/report-kubelet-reserved-cpus.yml
+
+- import_playbook: tasks/report-node-storage.yml
 
 - import_playbook: tasks/check-nvidia-cdi.yml
 

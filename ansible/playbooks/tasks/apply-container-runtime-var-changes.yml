@@ -1,0 +1,145 @@
+# Applies the changes of class["container_runtime"]: the configuration of
+# containerd is written again and containerd is restarted under it, one node at
+# a time.
+#
+# A node is drained first and put back after. A restart of containerd leaves the
+# containers it was running where they are - the shims hold them, and the
+# daemon that comes back picks them up - so on a good day the drain moves pods
+# that would have been fine. It is there for the other days. What this class
+# changes is how a container is set up, which a container already running was
+# not: a pod that needed the new setting to open its device only gets it by
+# being made again, and a node whose containerd does not come back under the
+# new file is a node whose pods nothing is looking after. Drained, the first is
+# done by the eviction and the second happens on a node that is running nothing.
+#
+# The shape is that of reboot-k8s-nodes.yml without the reboot: the cluster is
+# asked whether it can lose a node, a control plane node is taken out of the
+# load balancer of every ki cp node, and the node is waited for before the next
+# one is taken.
+#
+# Only the nodes the diff filed under this class are taken. The variables of the
+# class are cluster wide, so that is normally every node or none, and it is the
+# diff that says which rather than this file assuming it
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    scripts: "sudo {{ ki_opt_scripts_path }}"
+    lb_admin_cmd: "sudo {{ ki_opt_scripts_path }}/ki-cp-node/k8s-cp-lb/lb-admin.sh {{ vars_path_arg }}"
+    ki_cp_ihs: "{{ groups['ki_cp_node'] | difference(ki_broken_nodes) }}"
+    knn: "{{ ih_to_hostname_dict[inventory_hostname] | lower | replace('_', '-') }}"
+    changed_ihs: "{{ hostvars['localhost']['ki_var_changes']['container_runtime'] | map(attribute='ih') | unique | list }}"
+    # Where the kubectl work is done: another control plane node wherever there
+    # is one, for the reason reboot-k8s-nodes.yml gives. The apiserver of this
+    # node is a container of the runtime being restarted
+    cp_helper: >-
+      {{ (k8s_cp_nodes | difference([inventory_hostname]) | difference(ki_broken_nodes)
+          + [inventory_hostname]) | first }}
+  tasks:
+    - when: inventory_hostname in changed_ihs
+      block:
+        - name: Execute check-k8s-cluster-healthy.sh
+          shell: "{{ scripts }}/k8s-node/check-k8s-cluster-healthy.sh {{ vars_path_arg }}"
+          delegate_to: "{{ cp_helper }}"
+
+        - name: Take this node out of the load balancer of every ki cp node
+          shell: "{{ lb_admin_cmd }} drain {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+          when: inventory_hostname in k8s_cp_nodes
+
+        - name: Execute drain-node.sh
+          shell: "{{ scripts }}/k8s-node/drain-node.sh {{ vars_path_arg }} {{ knn }}"
+          delegate_to: "{{ cp_helper }}"
+
+        - name: Execute setup-containerd.sh --update
+          shell: "{{ scripts }}/all-node/containerd/setup-containerd.sh {{ vars_path_arg }} --update"
+
+        # systemctl returns as soon as the unit has been started, which says
+        # nothing of whether containerd took the file it was started under. The
+        # script asks the runtime itself, over the socket kubelet uses
+        - name: Execute wait-containerd-running.sh
+          shell: "{{ scripts }}/all-node/containerd/wait-containerd-running.sh {{ vars_path_arg }}"
+
+        - name: Execute wait-k8s-apiserver.sh
+          shell: "{{ scripts }}/k8s-node/wait-k8s-apiserver.sh {{ vars_path_arg }}"
+          when: inventory_hostname in k8s_cp_nodes
+
+        - name: Execute wait-k8s-node-ready.sh
+          shell: "{{ scripts }}/k8s-node/wait-k8s-node-ready.sh {{ vars_path_arg }} {{ knn }}"
+          delegate_to: "{{ cp_helper }}"
+
+        - name: Execute check-k8s-cluster-healthy.sh
+          shell: "{{ scripts }}/k8s-node/check-k8s-cluster-healthy.sh {{ vars_path_arg }}"
+          delegate_to: "{{ cp_helper }}"
+
+        - name: Execute uncordon-node.sh
+          shell: "{{ scripts }}/k8s-node/uncordon-node.sh {{ vars_path_arg }} {{ knn }}"
+          delegate_to: "{{ cp_helper }}"
+
+        - name: Put this node back into the load balancer of every ki cp node
+          shell: "{{ lb_admin_cmd }} ready {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+          when: inventory_hostname in k8s_cp_nodes
+
+        # Before the next node is taken out. Moving on while this one is not
+        # being given traffic again would take the control plane down to one
+        # fewer node than it looks like
+        - name: Wait for every ki cp node to be giving this node traffic again
+          shell: "{{ lb_admin_cmd }} wait-ready {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+          when: inventory_hostname in k8s_cp_nodes
+
+      # A node left drained and out of the load balancer takes no work for good,
+      # which is worse than the failure that got here. Putting it back is
+      # attempted and the run stops after that, with the nodes after it in the
+      # inventory still running the configuration they had. Nothing is recorded
+      # by a run that stops, so the next one finds the same change and starts
+      # again from the first node, where writing a file that is already there
+      # costs a drain and a restart and changes nothing
+      rescue:
+        - name: Execute uncordon-node.sh
+          shell: "{{ scripts }}/k8s-node/uncordon-node.sh {{ vars_path_arg }} {{ knn }}"
+          delegate_to: "{{ cp_helper }}"
+          ignore_errors: yes
+
+        - name: Put this node back into the load balancer of every ki cp node
+          shell: "{{ lb_admin_cmd }} ready {{ inventory_hostname }}"
+          delegate_to: "{{ item }}"
+          loop: "{{ ki_cp_ihs }}"
+          when: inventory_hostname in k8s_cp_nodes
+          ignore_errors: yes
+
+        - name: Report that applying the container runtime configuration failed
+          fail:
+            msg: >-
+              Applying the configuration of containerd to node["{{ inventory_hostname }}"]
+              failed. Uncordoning it and putting it back into the load balancer of every ki cp
+              node were both attempted, and the two tasks above this one say whether they were
+              reached. The nodes after it in the inventory were not touched
+
+# The nodes that run containerd and no kubelet: a ki cp node that is not a k8s
+# node. Nothing schedules onto them, so there is nothing to drain, and the ki cp
+# services are containers of docker, which a restart of containerd leaves
+# running the same way. They are written all the same, so that the file a node
+# holds does not depend on which group it is in
+- hosts: all:!localhost:!broken_node:!k8s_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    scripts: "sudo {{ ki_opt_scripts_path }}"
+    changed_ihs: "{{ hostvars['localhost']['ki_var_changes']['container_runtime'] | map(attribute='ih') | unique | list }}"
+  tasks:
+    - when: inventory_hostname in changed_ihs
+      block:
+        - name: Execute setup-containerd.sh --update
+          shell: "{{ scripts }}/all-node/containerd/setup-containerd.sh {{ vars_path_arg }} --update"
+
+        - name: Execute wait-containerd-running.sh
+          shell: "{{ scripts }}/all-node/containerd/wait-containerd-running.sh {{ vars_path_arg }}"

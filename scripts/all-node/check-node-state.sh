@@ -159,6 +159,7 @@ main() {
   check_time_source "$(get_node_check_severity)"
   check_kernel_modules "$(get_node_check_severity)"
   check_vip_carrier "$(get_node_check_severity)"
+  check_node_storage
   require_no_etcd_alarm
 
   if [[ $playbook = "setup-cluster" ]]; then
@@ -411,6 +412,39 @@ check_kernel_modules() {
   fi
 
   msg "[INFO] Kernel[\"$(uname -r)\"] can not load module[ $missing]. Kernel[\"$bundle_version\"] of the bundle is installed and this node is rebooted before anything is built on it"
+
+  return 0
+}
+
+# Whether the iscsi initiator and the multipath this installer turned on for
+# this node are still up.
+#
+# Asked only of a node that was actually set up - the variable is on and the
+# state directory the setup script leaves is there - so a node that is being
+# built, or one the variable was turned on for a moment ago, has nothing to
+# answer for yet. The directory names are those of iscsi-initiator-common.sh and
+# multipath-common.sh.
+#
+# Reported and never refused. A daemon that is down is not a reason to keep an
+# operator from the cluster: what it takes down is the volumes of that one node,
+# the playbooks that apply these variables start it again, and a run that was
+# refused for it could not
+check_node_storage() {
+  local ki_etc_root_path
+  ki_etc_root_path=$($yq_cmd '.ki_etc_root_path' < "$vars_path")
+
+  if [[ $($yq_cmd '.iscsi_initiator_enabled // false' < "$vars_path") = "true" && -d $ki_etc_root_path/iscsi-initiator ]]; then
+    systemctl -q is-active iscsid.service 2>/dev/null ||
+      msg "[WARN] Variable[\"iscsi_initiator_enabled\"] is on for this node and unit[\"iscsid.service\"] is not active. The sessions of the node are not being looked after, and no new one can be made. update-cluster.yml starts it again"
+
+    grep -q '^InitiatorName=.' /etc/iscsi/initiatorname.iscsi 2>/dev/null ||
+      msg "[WARN] Variable[\"iscsi_initiator_enabled\"] is on for this node and file[\"/etc/iscsi/initiatorname.iscsi\"] names no initiator. update-cluster.yml gives the node a name again"
+  fi
+
+  if [[ $($yq_cmd '.multipath_enabled // false' < "$vars_path") = "true" && -d $ki_etc_root_path/multipath ]]; then
+    systemctl -q is-active multipathd.service 2>/dev/null ||
+      msg "[WARN] Variable[\"multipath_enabled\"] is on for this node and unit[\"multipathd.service\"] is not active. A path that fails is not being failed over, and a new volume is not brought together. update-cluster.yml starts it again"
+  fi
 
   return 0
 }

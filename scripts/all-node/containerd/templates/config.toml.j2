@@ -12,6 +12,13 @@ version = 4
       sandbox = "{{ internal_network_ki_cp_dns_name }}:{{ ki_cp_k8s_registry_port }}/pause:{{ k8s_pause_version }}"
 
   [plugins."io.containerd.cri.v1.runtime"]
+{%- if containerd_device_ownership_from_security_context | default(false) %}
+    # Gives a device handed to a container the user and the group the container
+    # runs as, rather than leaving it root's. A pod that is not root can open a
+    # raw block volume only this way. Written only when it is on, so that a node
+    # of a cluster that never turned it on holds the file it always held
+    device_ownership_from_security_context = true
+{%- endif %}
 
     [plugins."io.containerd.cri.v1.runtime".containerd]
 

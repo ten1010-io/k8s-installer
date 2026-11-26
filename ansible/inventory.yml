@@ -59,6 +59,19 @@ k8s_node:
       #  - "geneve"
       #sysctl_extra:
       #  net.ipv4.conf.all.rp_filter: 0
+      # A node that is given volumes over iscsi: made an initiator while it is
+      # built, with multipath bringing together the devices named and no others.
+      # Both can be turned on for a node that is already running, and
+      # update-cluster.yml applies that without draining it
+      #iscsi_initiator_enabled: true
+      #iscsi_initiator_settings:
+      #  node.session.timeo.replacement_timeout: 120
+      #multipath_enabled: true
+      #multipath_defaults:
+      #  user_friendly_names: "yes"
+      #multipath_devices:
+      #  - vendor: "EXAMPLE"
+      #    product: "LUN.*"
       # Labels and taints to put on the node object of this node. Both are
       # applied by talking to the apiserver, so they can be changed on a node
       # that is already running and update-cluster.yml applies the change.

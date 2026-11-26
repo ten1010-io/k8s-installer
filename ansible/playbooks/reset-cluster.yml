@@ -59,6 +59,18 @@
   vars:
     script: all-node/nfs-client/reset-nfs-client.sh
 
+# Multipath before the initiator, the reverse of the order they were set up in:
+# a map is made of the disks the sessions provide. Each puts back what the node
+# held before this installer turned it on, and leaves alone a node it never
+# turned on or one that still holds a map or a session
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/multipath/reset-multipath.sh
+
+- import_playbook: tasks/run-all-node-script.yml
+  vars:
+    script: all-node/iscsi-initiator/reset-iscsi-initiator.sh
+
 - import_playbook: tasks/run-all-node-script.yml
   vars:
     script: all-node/linux-package/uninstall-packages.sh
