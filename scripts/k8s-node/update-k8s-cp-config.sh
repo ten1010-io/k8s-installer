@@ -117,12 +117,20 @@ main() {
 # is a second thing happening under one word. renew-certs.yml is where that is
 # asked for.
 #
+# etcd upgrade is off as well. It is on by default for this phase too, and it
+# replaces the etcd static pod even when its manifest comes out the same. With one
+# control plane node that takes the only etcd away: the apiserver loses its
+# storage, and kubeadm itself then fails to list the etcd endpoints through it
+# (11-26, the test cluster: "could not retrieve the list of etcd endpoints").
+# Nothing that reaches this script changes etcd.
+#
 # The patches directory is the one kubeadm was given at init and at join, so a
 # release that starts patching a control plane component is not left out here
 rewrite_control_plane() {
   msg "[INFO] Writing the control plane manifests of this node from the configuration of the cluster"
   kubeadm upgrade node phase control-plane \
       --certificate-renewal=false \
+      --etcd-upgrade=false \
       --patches "$ki_etc_kubeadm_path""/patches" ||
     die "[ERROR] Failed to write the control plane manifests of this node"
 
