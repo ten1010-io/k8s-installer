@@ -32,7 +32,7 @@
         --full-pcpus-only {{ kubelet_cpu_manager_full_pcpus_only | lower }}
       register: shell_result
       changed_when: false
-      when: kubelet_reserved_system_cpus
+      when: kubelet_reserved_system_cpus is not none
 
     - name: Report how the reserved cpus of this node are laid over its cores and numa nodes
       debug:

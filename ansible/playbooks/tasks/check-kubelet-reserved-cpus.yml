@@ -28,7 +28,7 @@
   gather_facts: false
   any_errors_fatal: true
   tasks:
-    - when: kubelet_reserved_system_cpus
+    - when: kubelet_reserved_system_cpus is not none
       block:
         - name: Execute check-reserved-cpus.sh
           shell: >-
