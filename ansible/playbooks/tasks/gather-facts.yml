@@ -25,7 +25,7 @@
       block:
         - name: Write temporary file for cli input
           copy:
-            content: "{{ hostvars | to_yaml }}"
+            content: "{{ {inventory_hostname: hostvars[inventory_hostname]} | to_yaml }}"
             dest: "{{ tmp_input_path }}"
           become: yes
 
@@ -118,7 +118,7 @@
       block:
         - name: Write temporary file for cli input
           copy:
-            content: "{{ hostvars | to_yaml }}"
+            content: "{{ {inventory_hostname: hostvars[inventory_hostname]} | to_yaml }}"
             dest: "{{ tmp_input_path }}"
           become: yes
 
