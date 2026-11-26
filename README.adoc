@@ -639,6 +639,122 @@ sysctl `net.ipv4.ip_forward`·`net.bridge.bridge-nf-call-iptables`·
 `sysctl --system` 은 모르는 키를 보고만 하고 넘어가므로, 종료 코드는 그 노드가 실제로 그 값을
 들었는지 말해 주지 않습니다.
 
+=== iSCSI 볼륨을 받는 노드
+
+볼륨이 LUN 으로 노드에 붙는 스토리지를 쓸 때 노드가 갖춰야 하는 것들입니다. 설치본은 쿠버네티스까지만
+세우므로 LUN 을 붙이는 것(보통 CSI 드라이버)은 그 뒤에 올리는데, 그것이 노드에 요구하는 것 — iSCSI
+데몬, 스토리지가 노드를 구분하는 initiator 이름, multipath — 은 적을 자리가 없었습니다. 노드가 클러스터에
+들어간 뒤 손으로 넣으면 **늦습니다**: CSI 노드 플러그인은 파드가 뜰 때 initiator 이름을 읽어 노드를
+등록하므로, 이름이 생기기 전에 뜬 플러그인은 이름 없이 등록한 채로 남고 그 노드에 붙인 볼륨은 나타나지
+않습니다. 설치본이 노드를 만들 때 넣으면 순서가 구조적으로 맞습니다.
+
+변수는 셋으로 나뉩니다. 앞의 둘은 `inventory.yml` 에 노드별로 적고(`vars.yml` 에 적으면 모든 노드),
+마지막 하나는 `vars.yml` 에만 적습니다.
+
+[source,yaml]
+----
+# inventory.yml
+k8s_node:
+  hosts:
+    node3:
+      iscsi_initiator_enabled: true
+      iscsi_initiator_settings:
+        node.session.timeo.replacement_timeout: 120
+      multipath_enabled: true
+      multipath_defaults:
+        user_friendly_names: "yes"
+      multipath_devices:
+        - vendor: "EXAMPLE"
+          product: "LUN.*"
+----
+
+[source,yaml]
+----
+# vars.yml
+containerd_device_ownership_from_security_context: true
+----
+
+셋 다 기본은 **꺼짐**이고, 꺼짐은 "설치본이 그 노드의 그것에 손대지 않는다" 는 뜻입니다. 패키지(Ubuntu
+`open-iscsi`·`multipath-tools`·`sg3-utils`·`lsscsi`, RHEL `iscsi-initiator-utils`·
+`device-mapper-multipath`·`sg3_utils`·`lsscsi`)는 나중에 켤 수 있도록 **모든 노드에** 깔리지만, 패키지가
+스스로 띄우거나 켠 유닛은 설치 직후 설치 전 상태로 되돌립니다. 이미지가 `multipathd` 를 띄운 채로 온
+노드(Ubuntu 서버 이미지)는 띄운 채로, 없던 노드는 꺼진 채로 남습니다.
+
+==== iSCSI initiator
+
+`iscsi_initiator_enabled: true` 인 노드는 클러스터에 들어가기 **전에** initiator 가 됩니다.
+
+* `iscsid` 를 enable 하고 띄웁니다. 부팅 때 다시 로그인하는 유닛(Ubuntu `open-iscsi`, RHEL `iscsi`)도
+  enable 합니다.
+* initiator 이름(`/etc/iscsi/initiatorname.iscsi`)이 없으면 만들고, **있으면 그대로 둡니다.** 스토리지는
+  노드를 이 이름으로 알므로, 세션이 있는 노드의 이름은 바꾸지 않습니다.
+* `iscsi_initiator_settings` 를 그 노드가 들고 있던 `iscsid.conf` 위에 얹습니다. 키는 `iscsid.conf` 의
+  키 그대로이고, 세션은 만들어질 때 이 값을 읽으므로 **바꾼 값은 그 뒤에 만들어지는 세션부터** 적용됩니다.
+  예/아니오 값은 `"Yes"`·`"No"` 처럼 따옴표 안의 단어로 적습니다 (yaml 의 `true` 는 거부합니다).
+
+[IMPORTANT]
+====
+*initiator 이름이 겹치면 안 됩니다.* 스토리지는 initiator 를 이름으로만 구분하므로 이름이 같은 두 노드는
+스토리지에게 한 노드입니다. initiator 가 깔린 이미지를 복제해 만든 노드들이 그렇게 됩니다. 플레이북은
+적용하기 전에 모든 노드의 이름을 모아 봅니다.
+
+* 겹치는 노드 가운데 **아직 설치본이 initiator 로 만든 적이 없고 세션도 없는 노드**는 새 이름을 받습니다.
+  만들고 있는 노드는 언제나 여기에 듭니다.
+* **이미 쓰이고 있는 두 노드가 겹치면** 노드 이름과 함께 거부합니다. 어느 쪽 이름을 바꾸든 그 이름에
+  스토리지가 내준 것이 사라지므로 사람이 정해야 합니다 — 한쪽의 볼륨을 뺀 뒤 그 노드에
+  `iscsi-iname` 으로 새 이름을 넣고 `iscsid` 를 다시 띄웁니다.
+====
+
+==== multipath
+
+`multipath_enabled: true` 인 노드의 `/etc/multipath.conf` 는 설치본이 **통째로** 쓰고, `multipathd` 를
+enable 해 띄웁니다(이미 돌고 있으면 설정을 다시 읽게 합니다).
+
+파일은 **모든 장치를 제외하고 `multipath_devices` 에 적은 장치만 예외로** 둡니다. 묶을 것을 적는 방식이라
+노드마다 다른 로컬 디스크를 나열할 필요가 없고, 적지 않은 장치 — 부팅 디스크, NVMe,
+`ephemeral_storage_device` 의 디스크 — 는 multipath 가 건드리지 않습니다. `vendor` 와 `product` 는 장치가
+보고하는 값에 대는 정규식이고(`multipath.conf` 의 `device` 절 그대로), 켰으면 **하나 이상 적어야** 합니다.
+스토리지가 보고하는 값은 LUN 이 붙은 노드에서 `lsscsi` 로 볼 수 있습니다.
+
+`multipath_defaults` 는 `defaults` 절의 키입니다. multipath 는 모르는 키를 로그에만 남기고 넘어가므로,
+설치본은 파일을 쓴 뒤 multipath 에게 읽혀 보고 **불평이 나오면 파일을 되돌리고 멈춥니다.**
+
+[IMPORTANT]
+====
+*이미 multipath 맵을 쥐고 있는 노드*에서 그 맵의 장치가 `multipath_devices` 에 없으면 거부합니다. 이
+파일은 적지 않은 장치를 전부 제외하므로, 그대로 쓰면 다음 부팅에서 그 맵이 묶이지 않습니다. 그 장치를
+`multipath_devices` 에 적거나 맵을 먼저 내리세요.
+====
+
+==== 컨테이너에 넘기는 장치의 소유권
+
+`containerd_device_ownership_from_security_context: true` 는 containerd 가 컨테이너에 넘기는 블록 장치에
+그 컨테이너의 uid 와 gid 를 줍니다. 끈 채로는 `volumeMode: Block` 볼륨이 파드 안에 **root 소유로**
+나타나서, root 가 아닌 컨테이너는 받은 볼륨을 열지 못합니다 (`Permission denied`).
+
+클러스터 전체의 값이라 `vars.yml` 에만 적고, `inventory.yml` 의 노드에 적으면 플레이북이 시작 전에
+거부합니다. 파드가 볼륨을 열 수 있는지가 어느 노드에 배치됐는지에 따라 달라지면 안 되기 때문입니다.
+
+==== 이미 서 있는 클러스터에서
+
+<<설정 변경 적용>> 이 반영합니다.
+
+* *initiator 와 multipath 를 켜거나 값을 바꾸는 것* 은 드레인 없이 그 자리에서 반영합니다. 이미 붙어 있는
+  세션과 맵은 그대로입니다. 끝에 **이번 실행에서 initiator 이름이 생긴 노드**를 알려 주는데, 그 노드에서
+  이름을 시작할 때 읽는 것(CSI 노드 플러그인)은 **다시 띄워야** 합니다. 설치본은 노드에서 무엇이 그 이름을
+  읽는지 모르고, 남의 파드를 재시작하는 것은 설치본이 정할 일이 아니어서 알리기만 합니다.
+* *끄는 것* 은 그 노드를 설치본이 켜기 전 상태로 되돌립니다 — `iscsid.conf` 와 `multipath.conf`(없었으면
+  없앰), 유닛의 enable·실행 상태. initiator 이름은 남깁니다. **세션이나 맵이 남아 있는 노드에서는
+  거부**하고, 그 실행은 아무것도 적용하지 않습니다. 볼륨을 먼저 빼세요.
+* *`containerd_device_ownership_from_security_context`* 는 노드를 **하나씩 드레인**하고 containerd 를 새
+  설정으로 재시작한 뒤 되돌립니다. containerd 가 그 값으로 돌고 있는지 다시 읽어 확인합니다.
+
+노드를 빼거나(`remove-node.yml`) 클러스터를 지울 때도 같은 되돌리기를 합니다. 세션이나 맵이 남은 노드는
+`[WARN]` 으로 알리고 그대로 둡니다.
+
+`check-node-state.yml` 은 변수를 켜 둔 노드에서 `iscsid` 나 `multipathd` 가 죽어 있으면 `[WARN]` 으로
+알립니다. 막지는 않습니다 — `update-cluster.yml` 이 다시 띄웁니다.
+
 === ephemeral-storage 전용 디스크
 
 노드의 컨테이너 데이터는 기본적으로 루트 디스크에 쌓입니다. 이미지 하나가 크거나 파드 로그가
@@ -997,6 +1113,11 @@ ansible-playbook -i inventory.yml playbooks/update-cluster.yml
 스냅샷을 받고, 제어 노드는 쓰기만 하고 재부팅하라고 알립니다. 다른 클래스를 다 적용한 뒤에 하므로
 재부팅은 한 번이고, 재부팅이 실패하면 그 노드를 되돌리고 멈추며 기록은 남기지 않습니다.
 
+노드를 드레인하는 변수가 하나 더 있습니다. `containerd_device_ownership_from_security_context` 가 바뀌면
+(`container_runtime` 클래스) 노드를 **한 대씩 비우고** containerd 를 새 설정으로 재시작한 뒤 되돌립니다.
+노드의 iSCSI initiator 와 multipath 변수(`node_storage` 클래스)는 드레인 없이 그 자리에서 반영하되,
+세션이나 맵이 남은 노드에서 끄는 것은 적용 전에 거부합니다. 둘 다 <<iSCSI 볼륨을 받는 노드>> 를 보세요.
+
 kubelet 설정 변수(`ki_var_classes` 의 `kubelet` 클래스 — 예약값, `evictionHard`, `kubelet_max_pods` 등)는
 kubelet 재시작으로 적용합니다. 재시작은 돌고 있는 컨테이너를 건드리지 않는 것이 보통이지만, CPU 관리자가
 `static` + `full-pcpus-only` 인 노드에서는 쿠버네티스 1.37 미만의 kubelet 이 재시작 뒤 이미 돌던 파드를
@@ -1007,8 +1128,8 @@ kubelet 재시작으로 적용합니다. 재시작은 돌고 있는 컨테이너
 
 `allow_draining_nodes` 는 **원래 드레인하지 않고 적용하는 변경**(지금은 `kubelet` 클래스)이 필요한 노드를
 드레인해도 된다는 허락입니다. 드레인이 필요 없는 노드는 그대로 재시작하고, 값은 보지 않고 주었는지만 봅니다.
-`kubelet_policy` 클래스, `kernel_cmdline_extra_args` 의 재부팅, <<클러스터 업그레이드>> 처럼 원래 노드를
-드레인하는 경로는 이 변수와 무관하게 드레인합니다.
+`kubelet_policy` 클래스, `container_runtime` 클래스, `kernel_cmdline_extra_args` 의 재부팅,
+<<클러스터 업그레이드>> 처럼 원래 노드를 드레인하는 경로는 이 변수와 무관하게 드레인합니다.
 
 [source,shell]
 ----
