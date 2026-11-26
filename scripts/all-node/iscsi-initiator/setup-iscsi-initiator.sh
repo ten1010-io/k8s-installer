@@ -283,9 +283,10 @@ remember_node_state() {
   cp -p "$ISCSID_CONF_PATH" "$state_path".tmp/iscsid.conf.orig
 
   local unit
-  for unit in "$ISCSID_UNIT" "$login_unit"; do
+  while read -r unit; do
+    [[ -z $unit ]] && continue
     echo "$unit $(iscsi_unit_enabled_word "$unit") $(iscsi_unit_active_word "$unit")"
-  done > "$state_path".tmp/units-before
+  done < <(iscsi_unit_names) > "$state_path".tmp/units-before
 
   mv "$state_path".tmp "$state_path"
 

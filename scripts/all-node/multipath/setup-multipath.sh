@@ -262,8 +262,11 @@ remember_node_state() {
     cp -p "$MULTIPATH_CONF_PATH" "$state_path".tmp/multipath.conf.orig
   fi
 
-  echo "$MULTIPATHD_UNIT $(multipath_unit_enabled_word "$MULTIPATHD_UNIT") $(multipath_unit_active_word "$MULTIPATHD_UNIT")" \
-    > "$state_path".tmp/units-before
+  local unit
+  while read -r unit; do
+    [[ -z $unit ]] && continue
+    echo "$unit $(multipath_unit_enabled_word "$unit") $(multipath_unit_active_word "$unit")"
+  done < <(multipath_unit_names) > "$state_path".tmp/units-before
 
   mv "$state_path".tmp "$state_path"
 

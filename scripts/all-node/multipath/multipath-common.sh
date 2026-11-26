@@ -20,8 +20,9 @@ MULTIPATHD_UNIT=multipathd.service
 # wrote the multipath configuration of this node, and holds what the node was
 # before it did:
 #
-#   units-before         one line a unit: its name, whether it was enabled and
-#                        whether it was active
+#   units-before         one line a unit, for every unit of multipath the
+#                        node had: its name, whether it was enabled and whether
+#                        it was active
 #   multipath.conf.orig  the multipath.conf the node held, when it held one.
 #                        Turning multipath off puts it back, and a node that
 #                        held none is left with none
@@ -32,6 +33,20 @@ MULTIPATHD_UNIT=multipathd.service
 # ubuntu server image is a multipathd that is already running with the
 # configuration the image shipped
 MULTIPATH_STATE_DIR_NAME=multipath
+
+# The units of multipath, as a pattern systemctl matches unit files by. What the
+# node held of every one of them is written down before any is touched, for the
+# reason iscsi-initiator-common.sh gives: enabling one unit can enable another
+MULTIPATH_UNIT_PATTERNS=('multipath*')
+
+# The units that pattern matches on this node, one a line. A template unit is
+# left out: it is neither enabled nor running by itself
+multipath_unit_names() {
+  systemctl list-unit-files --no-legend --type=socket --type=service "${MULTIPATH_UNIT_PATTERNS[@]}" 2>/dev/null |
+    awk '$1 !~ /@/ { print $1 }'
+
+  return 0
+}
 
 # The multipath maps this node holds, one "dm-N name" a line. Read from sysfs
 # rather than asked of multipathd, so that the answer does not depend on the

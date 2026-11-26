@@ -21,8 +21,9 @@ ISCSID_UNIT=iscsid.service
 # The name of the directory under ki_etc_root_path that says this installer set
 # the initiator of this node up, and holds what the node was before it did:
 #
-#   units-before      one line a unit: its name, whether it was enabled and
-#                     whether it was active
+#   units-before      one line a unit, for every unit of the initiator the
+#                     node had: its name, whether it was enabled and whether it
+#                     was active
 #   iscsid.conf.orig  the iscsid.conf the node held, which every render starts
 #                     from and which turning the initiator off puts back
 #
@@ -30,6 +31,24 @@ ISCSID_UNIT=iscsid.service
 # A node the variable was never turned on for has no such directory, and every
 # script here leaves such a node exactly as it found it
 ISCSI_STATE_DIR_NAME=iscsi-initiator
+
+# The units of the initiator, as patterns systemctl matches unit files by. What
+# the node held of every one of them is written down before any is touched, and
+# not only of the two this installer enables, because enabling one unit can
+# enable others: iscsi.service of rhel 9 carries no install target of its own
+# and enables iscsi-onboot.service and iscsi-starter.service in its place. Put
+# back by name, those two would stay enabled on a node the initiator was turned
+# off for
+ISCSI_UNIT_PATTERNS=('iscsi*' 'open-iscsi*')
+
+# The units those patterns match on this node, one a line. A template unit is
+# left out: it is neither enabled nor running by itself
+iscsi_unit_names() {
+  systemctl list-unit-files --no-legend --type=socket --type=service "${ISCSI_UNIT_PATTERNS[@]}" 2>/dev/null |
+    awk '$1 !~ /@/ { print $1 }'
+
+  return 0
+}
 
 # The unit that logs in to the targets a node was told to log in to at boot. It
 # is the one name that differs between the distributions: open-iscsi.service on
@@ -123,7 +142,7 @@ iscsi_restore_node_state() {
       systemctl stop "$unit"
     fi
     if [[ $enabled_before = "disabled" && $(iscsi_unit_enabled_word "$unit") = "enabled" ]]; then
-      systemctl disable "$unit"
+      systemctl disable "$unit" > /dev/null 2>&1
     fi
   done < "$state_path/units-before"
 
