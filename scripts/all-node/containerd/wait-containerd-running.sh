@@ -126,7 +126,7 @@ require_device_ownership_as_declared() {
   want=$($yq_cmd '.containerd_device_ownership_from_security_context // false' < "$vars_path")
 
   local got
-  got=$(crictl info | $yq_cmd -p json '.config.deviceOwnershipFromSecurityContext // false')
+  got=$(crictl info | $yq_cmd -p json '.config.device_ownership_from_security_context // false')
 
   [[ $got = "$want" ]] ||
     die "[ERROR] containerd of this node runs with device_ownership_from_security_context[$got] and variable[\"containerd_device_ownership_from_security_context\"] is $want"
