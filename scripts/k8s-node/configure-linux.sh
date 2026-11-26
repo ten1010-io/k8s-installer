@@ -208,11 +208,13 @@ mask_swap_units() {
   # units that come from somewhere else are left to mask
   systemctl daemon-reload
 
+  # list-unit-files exits with 1 when it finds no unit, which is the usual case
+  # on a node without swap, so its status is not taken as a failure
   local units
   units=$(
     {
-      systemctl list-units --type=swap --all --plain --no-legend --no-pager
-      systemctl list-unit-files --type=swap --no-legend --no-pager
+      systemctl list-units --type=swap --all --plain --no-legend --no-pager || true
+      systemctl list-unit-files --type=swap --no-legend --no-pager || true
     } | awk '$1 ~ /\.swap$/ { print $1 }' | sort -u
   )
 
