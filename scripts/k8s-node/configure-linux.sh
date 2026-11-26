@@ -179,6 +179,54 @@ disable_swap() {
   # stack another "#" onto every swap entry of a node it has run on before
   sed -i '/^[[:space:]]*#/! { /[[:space:]]swap[[:space:]]/ s/^/#/; }' /etc/fstab
 
+  mask_swap_units
+
+  return 0
+}
+
+# Commenting out /etc/fstab does not keep swap off across a reboot when the
+# swap comes from somewhere else: systemd-gpt-auto-generator turns on every
+# partition of the GPT swap type the installer of the OS made, and zram-generator
+# makes a zram swap, at every boot. A node then comes back with swap on and its
+# kubelet keeps failing to start. Masking each swap unit systemd knows of keeps
+# those off for good, as a mask under /etc wins over a unit a generator writes
+# under /run
+mask_swap_units() {
+  [[ -d /run/systemd/system ]] || return 0
+
+  # A generator names its unit after the device, and the device can take
+  # another name at the next boot (sda5 one time, sdb5 the next), which a mask
+  # on today's name would miss. So the two generators are turned off too, by a
+  # link to /dev/null under /etc that wins over the generator of the same name.
+  # gpt-auto also mounts root, /home and the ESP when nothing else names them,
+  # but the OS installers the nodes run put those in /etc/fstab
+  mkdir -p /etc/systemd/system-generators
+  ln -sfn /dev/null /etc/systemd/system-generators/systemd-gpt-auto-generator
+  ln -sfn /dev/null /etc/systemd/system-generators/zram-generator
+
+  # The fstab entries just commented out go away with the reload, so only the
+  # units that come from somewhere else are left to mask
+  systemctl daemon-reload
+
+  local units
+  units=$(
+    {
+      systemctl list-units --type=swap --all --plain --no-legend --no-pager
+      systemctl list-unit-files --type=swap --no-legend --no-pager
+    } | awk '$1 ~ /\.swap$/ { print $1 }' | sort -u
+  )
+
+  # A unit an administrator wrote under /etc cannot be masked, as the mask
+  # would have to replace that file. Such a unit, or any other that refuses the
+  # mask, is stopped and disabled instead and left for the administrator
+  local unit
+  for unit in $units; do
+    if ! systemctl mask --now "$unit"; then
+      systemctl disable --now "$unit"
+      msg "${ORANGE}[WARN] Swap unit \"$unit\" could not be masked, so it is only disabled. Remove its file under /etc if it has one, so that nothing turns it on again${NOFORMAT}"
+    fi
+  done
+
   return 0
 }
 
