@@ -108,20 +108,26 @@ UBUNTU_REMOVED_PACKAGES=(ntp chrony)
 # The directories of an ubuntu, in the order the dependencies between them want
 UBUNTU_DEB_DIRS=(nfs-common systemd dbus pigz slirp containerd iptables ebtables conntrack nftables docker nvidia-container-toolkit ethtool socat open-iscsi multipath-tools sg3-utils lsscsi)
 
-# The units of the iscsi initiator and of multipath, under every name the
-# distributions give them, sockets before the services they start.
+# The units of the iscsi initiator and of multipath, as patterns systemctl
+# matches unit files by, rather than as a list of names.
 #
 # Those packages go onto every node, so that either can be turned on for a node
 # later without it having to reach a repository, and whether a node runs them is
 # decided by iscsi_initiator_enabled and multipath_enabled, which
 # setup-iscsi-initiator.sh and setup-multipath.sh apply after this. A package
 # does not wait to be asked: a deb starts its daemon as it is configured, and an
-# rpm enables its units through the presets of the distribution. So what each of
-# these units was before the packages went in is written down, and put back
-# after (remember_storage_units, restore_storage_units). A node that had none
-# of them ends the install with none of them running, and a node whose image
-# shipped multipathd up - the ubuntu server images do - still has it up
-STORAGE_UNITS=(iscsid.socket iscsiuio.socket multipathd.socket iscsid.service iscsiuio.service open-iscsi.service iscsi.service iscsi-init.service iscsi-onboot.service iscsi-shutdown.service multipathd.service)
+# rpm enables its units through the presets of the distribution and in its own
+# scriptlets. So what each of these units was before the packages went in is
+# written down, and put back after (remember_storage_units,
+# restore_storage_units). A node that had none of them ends the install with
+# none of them running, and a node whose image shipped multipathd up - the
+# ubuntu server images do - still has it up.
+#
+# Patterns, because the names are the distributions' to choose and they do not
+# stay still. A list written from the units of an ubuntu and of the rhel
+# documentation missed iscsi-starter.service, which the rpm of rhel 9 enables by
+# itself, and a node the variables were off for was left with it enabled
+STORAGE_UNIT_PATTERNS=('iscsi*' 'open-iscsi*' 'multipath*')
 declare -A storage_units_before
 
 # The arguments plan-rpm-install.py is given on this node: which packages are
@@ -772,20 +778,37 @@ settle_units() {
   return 0
 }
 
-# What each unit of STORAGE_UNITS is before a package is laid down: whether it
-# is enabled and whether it is active. A unit the node does not have is neither,
-# which is what makes one rule cover both a node that had the packages and a
-# node that did not
-remember_storage_units() {
-  local unit
-  for unit in "${STORAGE_UNITS[@]}"; do
-    storage_units_before[$unit]="$(storage_unit_enabled_word "$unit") $(storage_unit_active_word "$unit")"
-  done
+# The units STORAGE_UNIT_PATTERNS match on this node as it is now, sockets
+# before the services they start, so that a service stopped below is not
+# started again by the socket beside it. A template unit is left out: it is
+# neither enabled nor running by itself
+storage_unit_names() {
+  local names
+  names=$(systemctl list-unit-files --no-legend --type=socket --type=service "${STORAGE_UNIT_PATTERNS[@]}" 2>/dev/null |
+    awk '$1 !~ /@/ { print $1 }')
+
+  grep '\.socket$' <<< "$names" || true
+  grep -v '\.socket$' <<< "$names" | grep . || true
 
   return 0
 }
 
-# Puts every unit of STORAGE_UNITS back to what remember_storage_units found.
+# What each of those units is before a package is laid down: whether it is
+# enabled and whether it is active. A unit the node does not have yet is not
+# written down, and restore_storage_units reads that as neither, which is what
+# makes one rule cover both a node that had the packages and a node that did not
+remember_storage_units() {
+  local unit
+  while read -r unit; do
+    [[ -z $unit ]] && continue
+    storage_units_before[$unit]="$(storage_unit_enabled_word "$unit") $(storage_unit_active_word "$unit")"
+  done < <(storage_unit_names)
+
+  return 0
+}
+
+# Puts every one of those units back to what remember_storage_units found, the
+# ones the packages brought with them included.
 #
 # Only ever back down: a unit that was not enabled is disabled again and one
 # that was not active is stopped again. Nothing a package took down is brought
@@ -806,8 +829,9 @@ restore_storage_units() {
   done
 
   local unit enabled_before active_before
-  for unit in "${STORAGE_UNITS[@]}"; do
-    read -r enabled_before active_before <<< "${storage_units_before[$unit]}"
+  while read -r unit; do
+    [[ -z $unit ]] && continue
+    read -r enabled_before active_before <<< "${storage_units_before[$unit]:-disabled inactive}"
 
     if [[ $active_before = "inactive" && $(storage_unit_active_word "$unit") = "active" && $in_use = "false" ]]; then
       systemctl stop "$unit"
@@ -817,7 +841,7 @@ restore_storage_units() {
       systemctl disable "$unit" > /dev/null 2>&1
       msg "[INFO] Unit[\"$unit\"] was enabled by its package and was not enabled before, so it is disabled again"
     fi
-  done
+  done < <(storage_unit_names)
 
   return 0
 }
