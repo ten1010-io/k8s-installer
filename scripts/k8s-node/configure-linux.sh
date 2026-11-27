@@ -223,9 +223,15 @@ mask_swap_units() {
   # mask, is stopped and disabled instead and left for the administrator
   local unit
   for unit in $units; do
-    if ! systemctl mask --now "$unit"; then
-      systemctl disable --now "$unit"
+    if systemctl mask --now "$unit"; then
+      continue
+    fi
+    # under set -e a failed disable would end the script without a word; swap is
+    # off already (swapoff -a above), so the unit is said and the run goes on
+    if systemctl disable --now "$unit"; then
       msg "${ORANGE}[WARN] Swap unit \"$unit\" could not be masked, so it is only disabled. Remove its file under /etc if it has one, so that nothing turns it on again${NOFORMAT}"
+    else
+      msg "${ORANGE}[WARN] Swap unit \"$unit\" could be neither masked nor disabled: swap is off now, but the unit may turn it on at the next boot. Remove or disable it by hand${NOFORMAT}"
     fi
   done
 
