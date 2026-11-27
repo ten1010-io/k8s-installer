@@ -107,6 +107,19 @@
     - name: Execute setup-k8s-cp-lb.sh --update
       shell: "{{ scripts }}/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh {{ vars_path_arg }} --update"
 
+    # The dns server of 5.0.x validates with the root key its image carries,
+    # KSK-2017 alone, while the root has been signed by KSK-2024 only since it
+    # rolled: every name from the forwarders is a broken trust chain, chrony
+    # finds no upstream and no clock of the cluster is synchronised, which
+    # check-node-state.sh refuses at the start of the upgrade (measured). Rendered
+    # now with the trust anchors of this installer, and the ntp server after it,
+    # which has its upstream to resolve
+    - name: Execute setup-dns-server.sh --update
+      shell: "{{ scripts }}/ki-cp-node/dns-server/setup-dns-server.sh {{ vars_path_arg }} --update"
+
+    - name: Execute setup-ntp-server.sh --update
+      shell: "{{ scripts }}/ki-cp-node/ntp-server/setup-ntp-server.sh {{ vars_path_arg }} --update"
+
     # The time client of a ki cp node of 5.0.x follows ki-cp.ki.local, the ntp
     # server the node runs itself, which hands out a correction it does not
     # apply. check-node-state.sh refuses that before an upgrade. This installer
@@ -120,6 +133,24 @@
   vars:
     vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
   tasks:
+    # What upgrade-cluster.yml asks first. Waited for here, where a clock that
+    # does not come is about the services this playbook just rendered, rather
+    # than refused there. Not fatal: a site without an upstream it can reach
+    # turns the check off with ki_preflight_clock_offset_max_seconds
+    - name: Wait for the clock of the node to be synchronised
+      shell: "timedatectl show -p NTPSynchronized --value"
+      register: clock_result
+      until: clock_result.stdout == "yes"
+      retries: 30
+      delay: 10
+      changed_when: false
+      failed_when: false
+
+    - name: Print a clock that did not synchronise
+      debug:
+        msg: "[WARN] The clock of this node is still not synchronised. upgrade-cluster.yml refuses it; check the upstream of ki_cp_ntp_server_upstream_servers and the dns server of the ki cp nodes"
+      when: clock_result.stdout != "yes"
+
     - name: Execute adopt-legacy-node.sh --record
       shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/adopt-legacy-node.sh {{ vars_path_arg }} --record legacy-{{ legacy_release | default('5.0') }}"
 
