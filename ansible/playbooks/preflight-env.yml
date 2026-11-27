@@ -2,8 +2,9 @@
 # scripts/all-node/preflight-env.sh on every node and, by default, stops the run
 # when a node reports a FAIL, so a customer environment that cannot meet the
 # OS/network requirements (DNS, firewall ports, NTP, MTU, disk, swap, kernel) is
-# caught here instead of midway through an install. Read-only on the nodes: the
-# script only reports and prints the fix as a suggestion, it changes nothing.
+# caught here instead of midway through an install. The script only reports and
+# prints the fix as a suggestion, it changes nothing on the nodes (it times
+# synchronous writes with a 2 MB file it removes at once).
 #
 # Runs on every node (not the control node, not a broken one). The node-to-node
 # checks (ports, path MTU, RTT) need the other nodes' addresses, which are taken
@@ -28,8 +29,10 @@
   tasks:
     - name: "Set_fact variable[\"preflight_env_peers\"] from the other nodes"
       set_fact:
+        # the other nodes, not the control node (localhost) nor one of broken_node, which this play leaves out too
         preflight_env_peers: >-
-          {{ groups['all'] | difference([inventory_hostname])
+          {{ groups['all']
+             | difference(['localhost', inventory_hostname] + (groups['broken_node'] | default([])))
              | map('extract', hostvars, 'ansible_host') | select('string') | list | join(' ') }}
 
     - name: "Execute preflight-env.sh"

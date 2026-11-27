@@ -4,8 +4,9 @@
 #   installed. kubectl is not used: these are the OS and network things a
 #   customer environment often cannot meet, and that stop or slow an install if
 #   they are found only midway — DNS, firewall ports, NTP, MTU, disk, kernel
-#   modules, sysctl, swap. Read-only: it reports and prints the fix as a
-#   suggestion, it changes nothing.
+#   modules, sysctl, swap. It reports and prints the fix as a suggestion and
+#   changes nothing; the one thing it writes is a 2 MB file it removes at once
+#   (in $HOME, to time synchronous writes: E-DISKIO).
 #
 #   Run on each node. Options:
 #     --peers "ip1 ip2 .."   the other nodes, for node<->node ports / MTU / RTT
@@ -27,7 +28,9 @@ while [ $# -gt 0 ]; do case "$1" in
   *) echo "unknown: $1"; exit 2;; esac; done
 ROWS=()
 add(){ ROWS+=("$1|$2|$3|$4"); }   # STATUS|id|name|detail
-g='\033[32m'; r='\033[31m'; y='\033[33m'; d='\033[2m'; o='\033[0m'
+# colours on a terminal only: under ansible the lines are read back (stdout_lines, the TUI), where an escape code
+# would show as text
+if [ -t 1 ]; then g='\033[32m'; r='\033[31m'; y='\033[33m'; d='\033[2m'; o='\033[0m'; else g=''; r=''; y=''; d=''; o=''; fi
 col(){ case $1 in PASS) echo -e "${g}PASS${o}";; FAIL) echo -e "${r}FAIL${o}";; WARN) echo -e "${y}WARN${o}";; *) echo -e "${d}NA${o}";; esac; }
 has(){ command -v "$1" >/dev/null 2>&1; }
 tcp(){ timeout 2 bash -c "exec 3<>/dev/tcp/$1/$2" 2>/dev/null; }
@@ -64,7 +67,9 @@ elif has timedatectl; then
 else add NA E-NTP "NTP/clock" "no chrony/timedatectl"; fi
 
 # swap
-if [ -n "$(swapon --show 2>/dev/null)" ]; then add FAIL E-SWAP "swap" "swap on — kubelet refuses it. Fix: swapoff -a && comment it in /etc/fstab";
+# A WARN, not a FAIL: configure-linux.sh turns swap off on every k8s node (and masks the swap units, so that a reboot
+# does not turn it on again), as the installer loads the modules and sets the sysctl below
+if [ -n "$(swapon --show 2>/dev/null)" ]; then add WARN E-SWAP "swap" "swap on — kubelet refuses it; the installer turns it off (configure-linux.sh). By hand: swapoff -a, comment it in /etc/fstab";
 else add PASS E-SWAP "swap" "off"; fi
 
 # kernel modules
@@ -115,12 +120,19 @@ if [ -n "$EGRESS" ]; then
 else add NA E-PROXY "proxy/external" "proxy env[$pxy]. Pass the needed endpoints with --egress \"host:port ...\""; fi
 
 # CIDR overlap (--pod-cidr / --svc-cidr): a pod/svc range overlapping the customer node network tangles routing
-locnets=$(ip -o -f inet addr show 2>/dev/null | awk '{print $4}' | grep -v '^127\.' | tr '\n' ' ')
-chkcidr(){ local c=$1 lbl=$2 b hit="" n; [ -z "$c" ] && return
-  b=$(echo "$c" | cut -d. -f1-2)
-  for n in $locnets; do [ "$(echo "$n" | cut -d. -f1-2)" = "$b" ] && hit="$n"; done
-  if [ -n "$hit" ]; then add WARN E-CIDR "$lbl CIDR" "$c may overlap the node network $hit at /16 — check by hand"
-  else add PASS E-CIDR "$lbl CIDR" "$c, no /16 overlap with the node network ($locnets)"; fi; }
+# The networks of the node's addresses; a /32 is an address of a pod network on an installed node (cilium), not a
+# network of the site, and is left out
+locnets=$(ip -o -f inet addr show 2>/dev/null | awk '{print $4}' | grep -v '^127\.' | grep -v '/32$' | tr '\n' ' ')
+ip2int(){ local a b c d; IFS=. read -r a b c d <<<"$1"; echo $(( (a<<24) + (b<<16) + (c<<8) + d )); }
+# two CIDRs overlap when they agree on the bits of the shorter prefix
+overlap(){ local n1=${1%/*} p1=${1#*/} n2=${2%/*} p2=${2#*/} p m
+  p=$(( p1 < p2 ? p1 : p2 )); m=$(( p == 0 ? 0 : (0xFFFFFFFF << (32 - p)) & 0xFFFFFFFF ))
+  [ $(( $(ip2int "$n1") & m )) -eq $(( $(ip2int "$n2") & m )) ]; }
+chkcidr(){ local c=$1 lbl=$2 hit="" n; [ -z "$c" ] && return
+  if ! [[ "$c" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]]; then add WARN E-CIDR "$lbl CIDR" "$c is not an IPv4 CIDR"; return; fi
+  for n in $locnets; do overlap "$c" "$n" && hit="$hit $n"; done
+  if [ -n "$hit" ]; then add WARN E-CIDR "$lbl CIDR" "$c overlaps the node network:$hit — routing would tangle"
+  else add PASS E-CIDR "$lbl CIDR" "$c, no overlap with the node network ($locnets)"; fi; }
 if [ -n "$PODCIDR$SVCCIDR" ]; then chkcidr "$PODCIDR" pod; chkcidr "$SVCCIDR" svc
 else add NA E-CIDR "CIDR overlap" "pass --pod-cidr/--svc-cidr to check (node network: $locnets)"; fi
 
