@@ -107,6 +107,19 @@ check_snapshot() {
 restore_packages_and_files() {
   systemctl stop kubelet
 
+  # Every ki cp service down before its compose files go back. docker is
+  # restarted below, and a container of the upgraded release still standing then
+  # comes back up on its own, with a bind mount whose source the snapshot does
+  # not have - docker makes a directory there, and the next setup of that
+  # service fails on a directory where it writes a file. Measured: the
+  # extra zone file of ki-cp-dns-server. services brings back the ones of the
+  # snapshot.
+  # Before the packages, while the docker and containerd that started those
+  # containers still run: once dpkg has put an older containerd under them,
+  # docker can no longer stop a container ("tried to kill container, but did not
+  # receive an exit event", measured going back from containerd 2.3 to 1.7)
+  stop_compose_projects
+
   # Every file at once, so dpkg resolves the dependencies among them (kubeadm
   # of the old minor wants the kubelet and cri-tools of that minor)
   local debs=("$snap"/debs/*.deb)
@@ -116,19 +129,10 @@ restore_packages_and_files() {
     apt-mark hold kubeadm kubelet kubectl >/dev/null 2>&1 || true
   fi
 
-  # Every ki cp service down before its compose files go back. docker is
-  # restarted below, and a container of the upgraded release still standing then
-  # comes back up on its own, with a bind mount whose source the snapshot does
-  # not have - docker makes a directory there, and the next setup of that
-  # service fails on a directory where it writes a file. Measured: the
-  # extra zone file of ki-cp-dns-server. services brings back the ones of the
-  # snapshot
-  if command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
-    local name
-    for name in $(docker compose ls -a --format json | $yq_cmd -p json '.[].Name'); do
-      docker compose -p "$name" down
-    done
-  fi
+  # Once more: a run that stopped after dpkg last time comes here with the
+  # packages done and docker unable to stop what still stands, which a restart
+  # of docker on the packages now installed clears
+  stop_compose_projects
 
   local p
   while read -r p; do
@@ -152,6 +156,21 @@ restore_packages_and_files() {
   systemctl is-enabled docker >/dev/null 2>&1 && systemctl restart docker
 
   msg "[INFO] Node[\"$inventory_hostname\"] has the packages and configuration of snapshot[\"$snapshot_id\"]. What it had is kept as *.before-rollback-$stamp"
+
+  return 0
+}
+
+stop_compose_projects() {
+  command -v docker >/dev/null && docker compose version >/dev/null 2>&1 || return 0
+
+  local name
+  for name in $(docker compose ls -a --format json | $yq_cmd -p json '.[].Name'); do
+    docker compose -p "$name" down && continue
+    msg "[WARN] Failed to take compose project[\"$name\"] down. Restarting docker and trying once more"
+    systemctl restart docker
+    docker compose -p "$name" down ||
+      die "[ERROR] Failed to take compose project[\"$name\"] down even after a restart of docker"
+  done
 
   return 0
 }
