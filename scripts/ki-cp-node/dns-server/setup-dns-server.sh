@@ -168,7 +168,8 @@ create_named_conf_options_file() {
     recursion="no"
   fi
   if [[ $ki_cp_dns_dnssec_validation = "true" ]]; then
-    dnssec_validation="auto"
+    # Paired with the root trust anchors of IANA in the template
+    dnssec_validation="yes"
   else
     dnssec_validation="no"
   fi

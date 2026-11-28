@@ -17,10 +17,13 @@ options {
 {% endfor -%}
 {{"        "}}};
 
-        //========================================================================
-        // If BIND logs error messages about the root key being expired,
-        // you will need to update your keys.  See https://www.isc.org/bind-keys
-        //========================================================================
+        // "yes" with the trust anchors below rather than "auto": the root key
+        // built into the bind9 image is KSK-2017 (20326) alone, and the root
+        // zone is signed by KSK-2024 (38696) only since it rolled. Measured on
+        // BIND 9.18.18 of the image: "auto" stayed at "20326 ; initializing
+        // managed", every name from the forwarders came back as a broken trust
+        // chain, chrony found no upstream, and check-node-state.sh refused the
+        // upgrade for an unsynchronised clock
         dnssec-validation {{ dnssec_validation }};
 
         listen-on-v6 { any; };
@@ -39,3 +42,14 @@ options {
 
         allow-recursion { any; };
 };
+{%- if dnssec_validation == "yes" %}
+
+// The root trust anchors IANA publishes, KSK-2017 and KSK-2024
+// (https://data.iana.org/root-anchors/root-anchors.xml). initial-ds starts
+// RFC 5011 tracking from them, so named follows a later roll by itself as long
+// as one of these still signs the root
+trust-anchors {
+        . initial-ds 20326 8 2 "E06D44B80B8F1D39A95C0B0D7C65D08458E880409BBC683457104237C7F8EC8D";
+        . initial-ds 38696 8 2 "683D2D0ACB8C9B712A1948B27F741219298D0A450D612C483AF444A4C0FB2B16";
+};
+{%- endif %}

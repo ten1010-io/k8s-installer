@@ -1,0 +1,160 @@
+# Takes over a cluster built by the installer of AIPub 5.0.x (/var/lib/ki-env),
+# so that the playbooks of this installer - upgrade-cluster.yml first of all -
+# can run against it. Nothing of the cluster is rebuilt and no workload moves.
+#
+# Before this, on the control node:
+#   1. setup.sh of this release (the old installer has no /opt/k8s-installer)
+#   2. inventory.yml and vars.yml of this installer, written for the cluster as
+#      it is: the same nodes, addresses, VIPs, subnets and k8s_minor_version of
+#      the kubernetes it runs now. The old vars.yml can not be used as it is -
+#      validate-hostvars refuses every variable this installer does not know
+#   3. setup-k8s-installer.yml, which puts this installer on every node
+#   4. snapshot-cluster.yml, which is what rollback-cluster.yml goes back to
+#
+# Then this. A node it has finished records applied-release "legacy-<version>"
+# (-e legacy_release=, default 5.0), which is what upgrade-cluster.yml asks
+# before it upgrades a cluster. A run that stops half way leaves no node
+# recorded, so the upgrade goes on refusing until this has run to the end.
+- import_playbook: tasks/begin-playbook.yml
+  vars:
+    playbook: "adopt-legacy"
+
+- import_playbook: tasks/prepare-vars.yml
+
+- hosts: k8s_node:ki_cp_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute adopt-legacy-node.sh --check
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/adopt-legacy-node.sh {{ vars_path_arg }} --check"
+
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    knn: "{{ ih_to_hostname_dict[inventory_hostname] | lower | replace('_', '-') }}"
+  tasks:
+    # Every play of this installer names a node by what its hostname lowers
+    # to. A cluster that registered its nodes under other names can not be
+    # driven by it, and finding that out at the drain of an upgrade is too late
+    - name: Check the cluster knows node[\"{{ knn }}\"]
+      shell: "sudo kubectl --kubeconfig /etc/kubernetes/admin.conf get node {{ knn }} -o name"
+      delegate_to: "{{ k8s_cp_nodes[0] }}"
+      changed_when: false
+
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute adopt-legacy-node.sh --prepare
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/adopt-legacy-node.sh {{ vars_path_arg }} --prepare"
+      register: shell_result
+
+    - name: Print the kubelet settings the next upgrade changes
+      debug:
+        msg: "{{ shell_result.stderr_lines }}"
+      when: shell_result.stderr_lines | length > 0
+
+# kube-apiserver of 5.0.x got audit and the token webhook of AIPub by an edit of
+# its static pod manifest, which kubeadm does not know of and writes over at the
+# first upgrade. --check refused above unless vars.yml declares all of it; here
+# kubeadm is given it, at the version the cluster runs now, and every k8s cp node
+# writes its manifests from that - so what the upgrade later writes is what runs
+# now. Measured without this step: the upgrade turned audit off and took the
+# token webhook away
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute adopt-legacy-node.sh --sync-cluster-config
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/adopt-legacy-node.sh {{ vars_path_arg }} --sync-cluster-config"
+      when: inventory_hostname == k8s_cp_nodes[0]
+
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    - name: Execute update-k8s-cp-config.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/update-k8s-cp-config.sh {{ vars_path_arg }}"
+      when: inventory_hostname in k8s_cp_nodes
+
+- hosts: ki_cp_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+    scripts: "sudo {{ ki_opt_scripts_path }}"
+  tasks:
+    - name: Execute adopt-legacy-ki-cp.sh
+      shell: "{{ scripts }}/ki-cp-node/adopt/adopt-legacy-ki-cp.sh {{ vars_path_arg }}"
+
+    - name: Execute setup-user-registry.sh --update
+      shell: "{{ scripts }}/ki-cp-node/user-registry/setup-user-registry.sh {{ vars_path_arg }} --update"
+
+    # Rendered now rather than at the upgrade, which drains a k8s cp node out of
+    # this load balancer through its admin socket before it updates it. The
+    # haproxy of 5.0.x has no such socket
+    - name: Execute setup-k8s-cp-lb.sh --update
+      shell: "{{ scripts }}/ki-cp-node/k8s-cp-lb/setup-k8s-cp-lb.sh {{ vars_path_arg }} --update"
+
+    # The dns server of 5.0.x validates with the root key its image carries,
+    # KSK-2017 alone, while the root has been signed by KSK-2024 only since it
+    # rolled: every name from the forwarders is a broken trust chain, chrony
+    # finds no upstream and no clock of the cluster is synchronised, which
+    # check-node-state.sh refuses at the start of the upgrade (measured). Rendered
+    # now with the trust anchors of this installer, and the ntp server after it,
+    # which has its upstream to resolve
+    - name: Execute setup-dns-server.sh --update
+      shell: "{{ scripts }}/ki-cp-node/dns-server/setup-dns-server.sh {{ vars_path_arg }} --update"
+
+    - name: Execute setup-ntp-server.sh --update
+      shell: "{{ scripts }}/ki-cp-node/ntp-server/setup-ntp-server.sh {{ vars_path_arg }} --update"
+
+    # The time client of a ki cp node of 5.0.x follows ki-cp.ki.local, the ntp
+    # server the node runs itself, which hands out a correction it does not
+    # apply. check-node-state.sh refuses that before an upgrade. This installer
+    # points a ki cp node at ki_cp_ntp_server_upstream_servers instead
+    - name: Execute setup-ntp-client.sh
+      shell: "{{ scripts }}/all-node/ntp-client/setup-ntp-client.sh {{ vars_path_arg }}"
+
+- hosts: k8s_node:ki_cp_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    vars_path_arg: "--vars-path {{ ki_tmp_vars_path }}"
+  tasks:
+    # What upgrade-cluster.yml asks first. Waited for here, where a clock that
+    # does not come is about the services this playbook just rendered, rather
+    # than refused there. Not fatal: a site without an upstream it can reach
+    # turns the check off with ki_preflight_clock_offset_max_seconds
+    - name: Wait for the clock of the node to be synchronised
+      shell: "timedatectl show -p NTPSynchronized --value"
+      register: clock_result
+      until: clock_result.stdout == "yes"
+      retries: 30
+      delay: 10
+      changed_when: false
+      failed_when: false
+      when: ki_preflight_clock_offset_max_seconds is not none
+
+    - name: Print a clock that did not synchronise
+      debug:
+        msg: "[WARN] The clock of this node is still not synchronised. upgrade-cluster.yml refuses it; check the upstream of ki_cp_ntp_server_upstream_servers and the dns server of the ki cp nodes"
+      when:
+        - ki_preflight_clock_offset_max_seconds is not none
+        - clock_result.stdout != "yes"
+
+    - name: Execute adopt-legacy-node.sh --record
+      shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/adopt-legacy-node.sh {{ vars_path_arg }} --record legacy-{{ legacy_release | default('5.0') }}"
+
+- import_playbook: tasks/reset-vars-file.yml

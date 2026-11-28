@@ -40,9 +40,20 @@
           shell: "{{ lb_admin_cmd }} drain {{ inventory_hostname }}"
           delegate_to: "{{ item }}"
           loop: "{{ ki_cp_ihs }}"
+          # Not with one k8s cp node: the last backend drained is no apiserver at all
+          when: k8s_cp_nodes | length > 1
 
+        # etcd is written again only when its own arguments changed: replacing it
+        # for an apiserver argument takes the only etcd of a one node control
+        # plane away under kubeadm (update-k8s-cp-config.sh says more)
         - name: Execute update-k8s-cp-config.sh
-          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/update-k8s-cp-config.sh {{ vars_path_arg }}"
+          shell: >-
+            sudo {{ ki_opt_scripts_path }}/k8s-node/update-k8s-cp-config.sh {{ vars_path_arg }}
+            {{ '--etcd' if etcd_args_changed | bool else '' }}
+          vars:
+            etcd_args_changed: >-
+              {{ hostvars['localhost']['ki_var_changes']['control_plane']
+                 | selectattr('name', 'equalto', 'k8s_etcd_extra_args') | list | length > 0 }}
           when: control_plane_changed | bool
 
         # Not conditioned on the manifests having been left alone. Writing them

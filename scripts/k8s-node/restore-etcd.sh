@@ -209,8 +209,14 @@ wait_etcd_stopped() {
 # etcd that is still writing to it. Not being able to tell is a reason to stop
 etcd_container_running() {
   local output
-  output=$(crictl ps --name '^etcd$' -q 2>&1) ||
-    die "[ERROR] Failed to ask crictl what is running on this node, so whether etcd has stopped can not be told\n$output"
+  if ! output=$(crictl ps --name '^etcd$' -q 2>&1); then
+    # No container runtime to ask is a runtime that runs nothing, as long as no
+    # etcd process is left either. Measured: a rollback run again after it had
+    # stopped half way through the packages of the snapshot, with containerd
+    # not starting until the configuration of the snapshot is back
+    pgrep -x etcd >/dev/null || return 1
+    die "[ERROR] Failed to ask crictl what is running on this node, and an etcd process is still there\n$output"
+  fi
 
   [[ -n $output ]]
 }

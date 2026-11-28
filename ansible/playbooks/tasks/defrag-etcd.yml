@@ -32,6 +32,8 @@
           shell: "{{ lb_admin_cmd }} drain {{ inventory_hostname }}"
           delegate_to: "{{ item }}"
           loop: "{{ ki_cp_ihs }}"
+          # Not with one k8s cp node: the last backend drained is no apiserver at all
+          when: k8s_cp_nodes | length > 1
 
         - name: Execute defrag-etcd.sh
           shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/defrag-etcd.sh {{ vars_path_arg }}"

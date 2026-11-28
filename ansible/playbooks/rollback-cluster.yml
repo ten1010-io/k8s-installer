@@ -1,0 +1,157 @@
+# Puts the cluster back to a snapshot of snapshot-cluster.yml: the packages,
+# the configuration and the ki cp services every node had, and etcd as it was.
+#
+# This is the only way down. kubeadm has no downgrade and the schema of the
+# applications only moves forward, so going back means going back in time:
+# everything the cluster recorded after the snapshot (workloads created,
+# changed or deleted, the releases installed by an upgrade of the applications)
+# is lost, and the workloads come back as they were when the snapshot was taken.
+# Data on volumes is not touched either way. The applications of the snapshot
+# meet the data they left on their volumes, plus whatever was written after
+# it - which is what a schema migration of an upgrade does - so a rollback past
+# one needs the backup of that database too.
+#
+#   -e snapshot_id=<name>     required
+#   -e confirm_data_loss=     required
+#
+# The whole cluster stops for the time this runs: etcd and kube-apiserver are
+# stopped on every k8s cp node before any node is touched.
+- import_playbook: tasks/begin-playbook.yml
+  vars:
+    playbook: "rollback-cluster"
+
+- import_playbook: tasks/prepare-vars.yml
+
+- hosts: localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Check the snapshot to go back to was named
+      fail:
+        msg: "Name the snapshot to go back to with -e snapshot_id=<name>. snapshot-cluster.yml prints it"
+      when: snapshot_id is not defined
+
+    - name: Check the loss of everything written after the snapshot is intended
+      fail:
+        msg: >-
+          Going back to a snapshot loses everything the cluster recorded after it
+          was taken. Run this again with -e confirm_data_loss= to say that is intended
+      when: confirm_data_loss is not defined
+
+    - name: "Set_fact variable[\"etcd_restore_cluster_token\"]"
+      set_fact:
+        etcd_restore_cluster_token: "ki-etcd-{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+
+- hosts: k8s_node:ki_cp_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    restore_node_cmd: "sudo {{ ki_opt_scripts_path }}/all-node/snapshot/restore-node.sh --vars-path {{ ki_tmp_vars_path }} --id {{ snapshot_id }}"
+  tasks:
+    - name: Execute restore-node.sh check
+      shell: "{{ restore_node_cmd }} check"
+
+    # restore-etcd.sh restores with the etcdutl that install-programs.sh lays
+    # down. A cluster only taken over and not upgraded yet has none
+    - name: Execute install-programs.sh
+      shell: "sudo {{ ki_opt_scripts_path }}/all-node/linux-bin/install-programs.sh --vars-path {{ ki_tmp_vars_path }}"
+      when: inventory_hostname in k8s_cp_nodes
+
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    snapshot_dir: "{{ ki_var_root_path }}/snapshots/{{ snapshot_id }}"
+    node_snapshot_path: "{{ ki_tmp_root_path }}/etcd-restore.db"
+  tasks:
+    - when: inventory_hostname in k8s_cp_nodes
+      block:
+        - name: "Fetch the etcd snapshot of node[\"{{ k8s_cp_nodes[0] }}\"]"
+          fetch:
+            src: "{{ snapshot_dir }}/etcd.db"
+            dest: "{{ ki_tmp_root_path }}/etcd-restore.db"
+            flat: yes
+          become: yes
+          delegate_to: "{{ k8s_cp_nodes[0] }}"
+          run_once: true
+
+        - name: "Create output directory[\"{{ ki_tmp_root_path }}\"]"
+          shell: "{{ ki_create_tmp_root_cmd }}"
+
+        - name: "Copy it to file[\"{{ node_snapshot_path }}\"]"
+          copy:
+            src: "{{ ki_tmp_root_path }}/etcd-restore.db"
+            dest: "{{ node_snapshot_path }}"
+            mode: "0600"
+          become: yes
+
+        - name: Execute restore-etcd.sh stop
+          shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/restore-etcd.sh --vars-path {{ ki_tmp_vars_path }} stop"
+
+- hosts: k8s_node:ki_cp_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    restore_node_cmd: "sudo {{ ki_opt_scripts_path }}/all-node/snapshot/restore-node.sh --vars-path {{ ki_tmp_vars_path }} --id {{ snapshot_id }}"
+  tasks:
+    - name: Execute restore-node.sh packages
+      shell: "{{ restore_node_cmd }} packages"
+
+    - name: Execute restore-node.sh services
+      shell: "{{ restore_node_cmd }} services"
+      when: inventory_hostname in groups['ki_cp_node']
+
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    restore_cmd: "sudo {{ ki_opt_scripts_path }}/k8s-node/restore-etcd.sh --vars-path {{ ki_tmp_vars_path }}"
+    node_snapshot_path: "{{ ki_tmp_root_path }}/etcd-restore.db"
+  tasks:
+    - when: inventory_hostname in k8s_cp_nodes
+      block:
+        - name: Execute restore-etcd.sh restore
+          shell: >-
+            {{ restore_cmd }}
+            --snapshot {{ node_snapshot_path }}
+            --cluster-token {{ hostvars['localhost']['etcd_restore_cluster_token'] }}
+            --confirm-data-loss
+            restore
+
+        - name: Execute restore-etcd.sh start
+          shell: "{{ restore_cmd }} start"
+
+        - name: "Delete file[\"{{ node_snapshot_path }}\"]"
+          shell: "sudo rm -f {{ node_snapshot_path }}"
+
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Execute restore-node.sh start
+      shell: "sudo {{ ki_opt_scripts_path }}/all-node/snapshot/restore-node.sh --vars-path {{ ki_tmp_vars_path }} --id {{ snapshot_id }} start"
+
+- hosts: k8s_node:!broken_node
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    knn: "{{ ih_to_hostname_dict[inventory_hostname] | lower | replace('_', '-') }}"
+  tasks:
+    - name: Wait for node[\"{{ knn }}\"] to be Ready
+      shell: "sudo kubectl --kubeconfig /etc/kubernetes/admin.conf wait --for=condition=Ready node/{{ knn }} --timeout=10m"
+      delegate_to: "{{ k8s_cp_nodes[0] }}"
+      changed_when: false
+
+- hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Print what is left
+      debug:
+        msg: >-
+          The cluster is back at snapshot[{{ snapshot_id }}]. This installer stays in
+          /opt/k8s-installer on every node; the records it wrote after the snapshot
+          (applied-release of a takeover) went back with /etc/k8s-installer. The
+          releases an upgrade of the applications installed are gone from the
+          cluster with etcd, but not their data on volumes
+
+- import_playbook: tasks/reset-vars-file.yml
