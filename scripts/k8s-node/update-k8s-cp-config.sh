@@ -4,23 +4,26 @@ SCRIPT_DIR_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 
 print_usage() {
   cat <<EOF
-Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path]
+Usage: $(basename "${BASH_SOURCE[0]}") [-h] [-v] [--vars-path path] [--etcd]
 Available options:
 -h, --help      Print this help and exit
 -v, --verbose   Print script debug info
 --vars-path     File path
+--etcd          Write the etcd manifest of this node as well, which restarts etcd
 EOF
   exit
 }
 
 parse_params() {
   vars_path=""
+  etcd_upgrade="false"
 
   while :; do
     case "${1-}" in
     -h | --help) print_usage ;;
     -v | --verbose) set -x ;;
     --no-color) NO_COLOR=1 ;;
+    --etcd) etcd_upgrade="true" ;;
     --vars-path)
       [[ -z "${2-}" ]] && die "[ERROR] Missing required value for option: ${1-}"
       vars_path="${2-}"
@@ -117,12 +120,13 @@ main() {
 # is a second thing happening under one word. renew-certs.yml is where that is
 # asked for.
 #
-# etcd upgrade is off as well. It is on by default for this phase too, and it
-# replaces the etcd static pod even when its manifest comes out the same. With one
-# control plane node that takes the only etcd away: the apiserver loses its
-# storage, and kubeadm itself then fails to list the etcd endpoints through it
-# (11-26, the test cluster: "could not retrieve the list of etcd endpoints").
-# Nothing that reaches this script changes etcd.
+# etcd upgrade is off unless --etcd says otherwise. It is on by default for this
+# phase too, and it replaces the etcd static pod even when its manifest comes out
+# the same. With one control plane node that takes the only etcd away: the
+# apiserver loses its storage, and kubeadm itself then fails to list the etcd
+# endpoints through it (11-26, the test cluster: "could not retrieve the list of
+# etcd endpoints"). The one change that has to reach etcd is k8s_etcd_extra_args,
+# and apply-control-plane-changes.yml passes --etcd for that one only.
 #
 # The patches directory is the one kubeadm was given at init and at join, so a
 # release that starts patching a control plane component is not left out here
@@ -130,7 +134,7 @@ rewrite_control_plane() {
   msg "[INFO] Writing the control plane manifests of this node from the configuration of the cluster"
   kubeadm upgrade node phase control-plane \
       --certificate-renewal=false \
-      --etcd-upgrade=false \
+      --etcd-upgrade="$etcd_upgrade" \
       --patches "$ki_etc_kubeadm_path""/patches" ||
     die "[ERROR] Failed to write the control plane manifests of this node"
 

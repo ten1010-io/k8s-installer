@@ -145,11 +145,14 @@
       delay: 10
       changed_when: false
       failed_when: false
+      when: ki_preflight_clock_offset_max_seconds is not none
 
     - name: Print a clock that did not synchronise
       debug:
         msg: "[WARN] The clock of this node is still not synchronised. upgrade-cluster.yml refuses it; check the upstream of ki_cp_ntp_server_upstream_servers and the dns server of the ki cp nodes"
-      when: clock_result.stdout != "yes"
+      when:
+        - ki_preflight_clock_offset_max_seconds is not none
+        - clock_result.stdout != "yes"
 
     - name: Execute adopt-legacy-node.sh --record
       shell: "sudo {{ ki_opt_scripts_path }}/k8s-node/adopt-legacy-node.sh {{ vars_path_arg }} --record legacy-{{ legacy_release | default('5.0') }}"

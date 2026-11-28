@@ -105,7 +105,10 @@ check_snapshot() {
 }
 
 restore_packages_and_files() {
-  systemctl stop kubelet
+  # A ki cp node that is not a k8s node has no kubelet to stop
+  if systemctl cat kubelet.service >/dev/null 2>&1; then
+    systemctl stop kubelet
+  fi
 
   # Every ki cp service down before its compose files go back. docker is
   # restarted below, and a container of the upgraded release still standing then
@@ -141,15 +144,18 @@ restore_packages_and_files() {
   tar -C / -xzf "$snap/files.tar.gz"
 
   # etcd and kube-apiserver of the snapshot wait where restore-etcd.sh start
-  # takes them from. The stop command of restore-etcd.sh moved the ones of the
-  # upgraded release there, and those are not to come back
-  if [[ -d $held_manifests_path ]]; then
-    local m
-    for m in "${HELD_BY_RESTORE_ETCD[@]}"; do
-      rm -f "$held_manifests_path/$m"
-      [[ -f $k8s_manifests_path/$m ]] && mv "$k8s_manifests_path/$m" "$held_manifests_path/$m"
-    done
-  fi
+  # takes them from, so that nothing starts the etcd of the snapshot on the data
+  # it is about to replace (the kubelet package may start kubelet as dpkg
+  # installs it). The held directory sits inside /etc/kubernetes, which went
+  # aside with the rest above - with the manifests of the upgraded release the
+  # stop command held, which are not to come back - so it is made anew here
+  # rather than looked for
+  local m
+  for m in "${HELD_BY_RESTORE_ETCD[@]}"; do
+    [[ -f $k8s_manifests_path/$m ]] || continue
+    mkdir -p "$held_manifests_path"
+    mv "$k8s_manifests_path/$m" "$held_manifests_path/$m"
+  done
 
   systemctl daemon-reload
   systemctl restart containerd
@@ -163,8 +169,18 @@ restore_packages_and_files() {
 stop_compose_projects() {
   command -v docker >/dev/null && docker compose version >/dev/null 2>&1 || return 0
 
+  # Asked apart from the loop: a failure inside the list of a for is no failure
+  # to set -e, and a docker that does not answer would have stopped nothing
+  local names
+  if ! names=$(docker compose ls -a --format json | $yq_cmd -p json '.[].Name'); then
+    msg "[WARN] docker does not list its compose projects. Restarting docker and asking once more"
+    systemctl restart docker
+    names=$(docker compose ls -a --format json | $yq_cmd -p json '.[].Name') ||
+      die "[ERROR] docker does not list its compose projects even after a restart, so the ki cp services can not be taken down"
+  fi
+
   local name
-  for name in $(docker compose ls -a --format json | $yq_cmd -p json '.[].Name'); do
+  for name in $names; do
     docker compose -p "$name" down && continue
     msg "[WARN] Failed to take compose project[\"$name\"] down. Restarting docker and trying once more"
     systemctl restart docker

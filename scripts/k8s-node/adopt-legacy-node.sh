@@ -131,11 +131,15 @@ check_node() {
   [[ -d $LEGACY_ROOT_PATH ]] ||
     msg "[WARN] Node[\"$inventory_hostname\"] has no \"$LEGACY_ROOT_PATH\". The legacy installer keeps it on the node it ran from, so this is expected of every other node"
 
-  [[ -f /etc/kubernetes/kubelet.conf ]] ||
-    die "[ERROR] Node[\"$inventory_hostname\"] has no /etc/kubernetes/kubelet.conf, so it is not a node of a running cluster. Add it with add-node.yml once the cluster is taken over"
-
   [[ -d $ki_etc_root_path ]] ||
     die "[ERROR] Node[\"$inventory_hostname\"] has no \"$ki_etc_root_path\". The installers of 5.0.x write it on every node they build, so this is not a node of one"
+
+  # A ki cp node that is not a k8s node runs the ki cp services and no kubelet.
+  # The rest is about the kubernetes of a node
+  [[ $($yq_cmd ".groups.k8s_node | contains([\"$inventory_hostname\"])" < "$vars_path") = "true" ]] || return 0
+
+  [[ -f /etc/kubernetes/kubelet.conf ]] ||
+    die "[ERROR] Node[\"$inventory_hostname\"] has no /etc/kubernetes/kubelet.conf, so it is not a node of a running cluster. Add it with add-node.yml once the cluster is taken over"
 
   [[ -f /etc/kubernetes/manifests/kube-apiserver.yaml ]] && require_apiserver_flags_declared
 
@@ -159,7 +163,8 @@ require_apiserver_flags_declared() {
     name=${flag%%=*}; name=${name#--}
     value=${flag#*=}
     [[ $name =~ ^(audit-|authentication-token-webhook-|authentication-config|authorization-config|encryption-provider-config|admission-control-config-file|oidc-) ]] || continue
-    [[ $($yq_cmd --null-input "$declared | map(select(.name == \"$name\" and .value == \"$value\")) | length") -ge 1 ]] ||
+    # Through the environment: a value is whatever the manifest says, quotes included
+    [[ $(N="$name" V="$value" $yq_cmd --null-input "$declared | map(select(.name == strenv(N) and (.value | tostring) == strenv(V))) | length") -ge 1 ]] ||
       missing+=("$flag")
   done < <($yq_cmd '.spec.containers[0].command[]' < /etc/kubernetes/manifests/kube-apiserver.yaml | grep -E '^--[^=]+=')
 
@@ -173,7 +178,7 @@ require_apiserver_flags_declared() {
   declared_volumes=$($yq_cmd -o json '[.k8s_apiserver_extra_volumes // [] | .[].hostPath]' < "$vars_path")
   while read -r path; do
     [[ $path =~ ^/etc/(kubernetes/pki|ssl/certs|ca-certificates|pki)$|^/usr/(local/)?share/ca-certificates$ ]] && continue
-    [[ $($yq_cmd --null-input "$declared_volumes | map(select(. == \"$path\")) | length") -ge 1 ]] ||
+    [[ $(P="$path" $yq_cmd --null-input "$declared_volumes | map(select(. == strenv(P))) | length") -ge 1 ]] ||
       missing+=("volume hostPath $path")
   done < <($yq_cmd '.spec.volumes[] | select(.hostPath) | .hostPath.path' < /etc/kubernetes/manifests/kube-apiserver.yaml)
 
@@ -196,8 +201,10 @@ sync_cluster_config() {
     die "[ERROR] Failed to read kubeadm-config of the cluster"
 
   tmp_vars=$(mktemp)
-  # Expanded now: the trap runs after the local is gone
-  trap "rm -f '$tmp_vars'; trap - RETURN" RETURN
+  # Expanded now: the trap runs after the local is gone. On EXIT, so that a die
+  # below does not leave a copy of vars.yml behind; this is the last thing the
+  # script does either way
+  trap "rm -f '$tmp_vars'" EXIT
   cp "$vars_path" "$tmp_vars"
   $yq_cmd -i ".k8s_version = \"$($yq_cmd '.kubernetesVersion' <<<"$current")\"" "$tmp_vars"
 
